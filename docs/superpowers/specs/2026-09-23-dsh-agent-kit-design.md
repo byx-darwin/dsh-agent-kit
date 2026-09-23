@@ -164,11 +164,12 @@ dsh plugin --profile <name> add @mc/dsh-agent-kit <业务包> \
 ```
 
 - 公开发布到 npm；发布前确认拥有 `@mc` scope 的发布权限，否则更换 scope。
+- 业务包必须把本包同时声明在 `peerDependencies` 与 `devDependencies` 中，保证一个 Profile 只加载一份本包实例；开发期可用 `link:` 指向本地 checkout。
+- 按语义化版本发布，不兼容的接口变化升主版本号。
 - 使用本包需要本机已登录 `dws`、Claude Code、Codex。
 
 ## 实施前需核实
 
 1. `ctx.subagents` 是否接受未执行任何轮次的根 Agent 作为父 Agent，以及创建根 Agent 所需的最小服务集合。
 2. `dws chat +messages-send` 的 JSON 输出格式与退出码约定。
-3. `dsh plugin add` 对本地路径和 tarball 的支持方式。
-4. `@typesafe-ai/sdk` 当前版本中 `noul`、`score` 构造函数与答案字段的准确名称。
+3. `@typesafe-ai/sdk` 当前版本中 `noul`、`score` 构造函数与答案字段的准确名称。
