@@ -161,4 +161,4 @@ export function apply(ctx: Context, config: Config) {
 
 ## 许可证
 
-待定。
+[MIT](LICENSE)
