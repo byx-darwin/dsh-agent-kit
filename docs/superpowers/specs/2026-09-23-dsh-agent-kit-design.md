@@ -63,9 +63,9 @@ await conn.send(frame)
 - `connect()` 返回的连接注册为 effect，随调用方插件卸载而关闭。
 - 只收发 JSON 文本帧；无法解析为 JSON 的帧记录日志后丢弃。
 - `send()` 在连接未打开时 reject，不做内部排队；是否重发由业务包决定。
-- 断线后按指数退避加抖动自动重连。握手返回 401/403 时视为配置错误，停止重连并把状态置为 `closed`，通过日志报错。
+- 断线后按指数退避加抖动自动重连。握手返回 401/403，或连接以 `fatalCloseCodes` 中的关闭码断开时，视为鉴权或配置错误：停止重连，把状态置为 `closed`，通过日志报错。
 - 使用 `ws` 库；客户端定时发送 WS ping，超过读超时未收到任何帧则主动断开并重连。
-- Config：`pingIntervalMs`、`readTimeoutMs`、`reconnect.initialDelayMs`、`reconnect.maxDelayMs`、`reconnect.jitter`。
+- Config：`pingIntervalMs`、`readTimeoutMs`、`reconnect.initialDelayMs`、`reconnect.maxDelayMs`、`reconnect.jitter`；`connect()` 参数另接受 `fatalCloseCodes`（默认空），由业务包按对端约定给出。
 
 ### ctx.dingtalk：钉钉推送
 
