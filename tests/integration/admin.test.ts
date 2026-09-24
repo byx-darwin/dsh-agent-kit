@@ -55,6 +55,68 @@ describe('AgentKitAdmin', () => {
     expect(await admin.clearSecret('credentials')).toEqual({ configured: false })
   })
 
+  /**
+   * 回归测试：真实 dsh 里的 `credentials` 服务（`@deepseek-ai/dsh-credentials-local`）用 chokidar 监听
+   * `$DSH_HOME/.credentials.yaml`、默认 100ms 防抖才把刚写入的内容并入内存快照；`setSecret`/`clearSecret`
+   * 自己直接对这份文件加锁写入后，若立刻用这个（可能还没跟上防抖窗口的）实时服务去 `describe`，读到的
+   * 还是旧快照——在真实 dsh Web 走查中复现过：点「保存 Key」后网络响应就是 `{ configured: false }`，页面
+   * 停留在「未配置」，且不会再自动重试。这里模拟一个「resolve() 前几次仍返回旧值、之后才追上」的
+   * `credentials` 服务，确认 `setSecret`/`clearSecret` 会重试到状态追上写入动作为止，而不是把这个防抖期
+   * 内的旧快照直接返回给调用方。
+   */
+  it('retries describing the key through a credentials service that lags behind its own file write', async () => {
+    // 模拟 resolve()：`liveValue` 是实时服务内存快照里“看得见”的值，`current` 是我们刚写完文件之后
+    // 的真实值；防抖窗口内（staleCallsLeft > 0）resolve() 还只报告旧的 `liveValue`，过了窗口才追上
+    // `current`——这与 chokidar 的 `awaitWriteFinish` 防抖行为一致。
+    let resolveCalls = 0
+    let staleCallsLeft = 0
+    let liveValue: string | undefined
+    let current: string | undefined
+    root.provide('credentials', {
+      resolve: async (ref: string) => {
+        resolveCalls++
+        if (ref !== 'TYPESAFE_API_KEY') return undefined
+        if (staleCallsLeft > 0) {
+          staleCallsLeft--
+        } else {
+          liveValue = current
+        }
+        return liveValue === undefined ? undefined : { value: liveValue }
+      },
+    } as never)
+    root.provide('loader', { entries: () => [{ id: 'agent-kit-ws', disabled: false, fiber: { state: 2 } }] } as never)
+    root.provide('webServer', { host: '127.0.0.1' } as never)
+    await root.plugin(AgentKitAdmin, { profileDir, keyStore: { env: {}, platform: 'linux', credentialsFile: join(home, '.credentials.yaml') } } as never)
+    const admin = root.get('agentKitAdmin') as unknown as AgentKitAdmin
+
+    staleCallsLeft = 2
+    current = 'ts-lagging-key'
+    expect(await admin.setSecret('credentials', 'ts-lagging-key')).toEqual({ configured: true, source: 'credentials' })
+    expect(resolveCalls).toBe(3) // 前 2 次撞见防抖窗口内的旧快照（未配置），第 3 次才追上
+
+    const callsBeforeClear = resolveCalls
+    staleCallsLeft = 2
+    current = undefined
+    expect(await admin.clearSecret('credentials')).toEqual({ configured: false })
+    expect(resolveCalls).toBe(callsBeforeClear + 3) // 前 2 次仍看到清除前的旧值，第 3 次才追上
+  })
+
+  /**
+   * 回归测试：真实 dsh Web 走查中发现，`loader.entries()` 返回的 `id` 并不是 `KIT_ENTRIES` 里的裸 id，
+   * 而是带着宿主 `insert:` 树前缀、用 `:` 拼接的完整路径（例如 `include:agent-kit-dingtalk`）。旧代码
+   * 直接用裸 id 去 `Map.get()`，在真实宿主里永远查不到对应 entry，导致 `phase` 恒为 `null`（页面显示
+   * 「未运行」），即便 fiber 其实已经是 active——这里模拟同样的前缀，确认状态上报按最后一段匹配、不受
+   * 前缀影响。
+   */
+  it('matches loader entries whose id carries a host insert-tree prefix', async () => {
+    root.provide('loader', { entries: () => [{ id: 'include:agent-kit-ws', disabled: false, fiber: { state: 2 } }] } as never)
+    root.provide('webServer', { host: '127.0.0.1' } as never)
+    await root.plugin(AgentKitAdmin, { profileDir, keyStore: { env: {}, platform: 'linux', credentialsFile: join(home, '.credentials.yaml') } } as never)
+    const admin = root.get('agentKitAdmin') as unknown as AgentKitAdmin
+    const s = await admin.status()
+    expect(s.services.find((x) => x.id === 'agent-kit-ws')).toMatchObject({ enabled: true, phase: 'active' })
+  })
+
   it('is read-only when the web server is exposed beyond loopback', async () => {
     const admin = await setup('0.0.0.0')
     const s = await admin.status()

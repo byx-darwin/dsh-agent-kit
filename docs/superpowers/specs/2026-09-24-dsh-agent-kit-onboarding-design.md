@@ -1,7 +1,7 @@
 # @mc/dsh-agent-kit 配置引导设计：doctor、setup 与 Web 设置页
 
 - 日期：2026-09-24
-- 状态：待评审
+- 状态：已实施（2026-09-24 完成 `doctor`/`setup`/`admin`/`client` 全部代码与真实 dsh Web 走查核实，见文末「核实结论」）
 - 前置文档：[2026-09-23-dsh-agent-kit-design.md](2026-09-23-dsh-agent-kit-design.md)
 
 ## 背景
@@ -179,3 +179,17 @@ src/
 3. **前端类型包**：`@deepseek-ai/dsh-client-ui-slots`、`dsh-client-ui-primitives` 等的已发布版本落后于 dsh 0.1.5-rc.3，可能需要在本包内维护一份类型声明。
 
 另需核实：`dsh-credentials-local` 文件格式与并发写入行为（见 `secrets/`）。
+
+## 核实结论（2026-09-24）
+
+「风险与实施前验证」列出的三点均已验证可行：前端模块按 `window.__ModuleLoader__.load({ id, factory })` 外包装即可被 dsh Web 加载并注册设置页；`AgentKitAdmin` 通过 `ctx.get('webServer')?.host === '127.0.0.1'` 判断本机绑定，作为默认 fail-closed 的只读闸门；未额外维护 `dsh-client-ui-slots`/`dsh-client-ui-primitives` 的本地类型声明（实测已发布版本类型可用）。`dsh-credentials-local` 确认是纯文件后端（`$DSH_HOME/.credentials.yaml`），不对外暴露写入方法，只有 `resolve`/`describe`/`readRecord` 等只读接口，写入需直接改文件并遵守它自己的跨进程锁；用 chokidar 监听、`awaitWriteFinish.stabilityThreshold` 默认 ~100ms 防抖。
+
+在按 `.superpowers/sdd/2026-09-24-dsh-agent-kit-onboarding/task-10-brief.md` 做真实 dsh Web 走查（`@deepseek-ai/dsh@0.1.5-rc.3`，headless Chromium）时，发现并修复了 5 个产品 bug，均补了自动化回归测试（先确认改动前测试能复现失败，再验证修复后通过）：
+
+1. **`$mount` 时机问题**（`src/client/index.tsx`）：初版在模块 `factory` 顶层就尝试挂载设置页，但此时 dsh 提供的插槽容器尚未就绪；改为在 `settings.section` 插槽的挂载回调里再渲染。覆盖测试：`tests/unit/client-mount.test.tsx`。
+2. **`remote.agentKitAdmin` 取用方式错误**（`src/client/remote.ts`）：初版直接按属性访问 `ctx.agentKitAdmin`，但 dsh 前端 `ctx` 上的远程服务需要显式 `ctx.get('remote.agentKitAdmin')` 才能取到代理对象，属性访问恒为 `undefined`。覆盖测试：`tests/unit/client-page.test.tsx` 中 `createAdminApi` 一节。
+3. **loader entry id 前缀不匹配导致 `phase` 恒为 `null`**（`src/admin/service.ts`）：真实 dsh 里 `loader.entries()` 返回的 id 带有宿主 `insert:` 树的前缀（用 `cordis-plugin-loader` 的 `EntryTree.sep`即 `:` 拼接，例如 `include:agent-kit-dingtalk`），而不是 `KIT_ENTRIES` 里的裸 id；旧代码直接用裸 id 查 `Map`，在真实宿主里永远查不到对应 entry，页面持续显示「未运行」即便对应 fiber 其实已经是 active。改为按 `:` 切分取最后一段索引，前缀无关且兼容裸 id。新增回归测试 `tests/integration/admin.test.ts` 的 `matches loader entries whose id carries a host insert-tree prefix`。
+4. **冲突提示因不必要的整体重挂载而消失**（`src/client/settings-page.tsx`）：`ServiceCard` 用 `key={\`${s.id}-${generation}\`}` 强制在“首次加载”场景整体重建卡片以清空表单本地状态；但冲突处理路径原先复用了同一个会自增 `generation` 的 `load()` 作为 `onConflict`，导致冲突提示写入 `ServiceCard` 自己的本地 state 后，紧接着的重挂载又把它清空——单测因 `findByText` 轮询恰好抓到重挂载前的一帧而没有暴露，真实浏览器走查（保存后等待再读取文案）则稳定复现「提示一闪而过」。改为单独一个只刷新 `status`、不自增 `generation` 的 `refreshAfterConflict` 回调。强化了 `tests/unit/client-page.test.tsx` 里的冲突用例（等待第二次 `status()` 落地后断言提示仍在）。
+5. **TypeSafe Key 保存后页面短暂显示「未配置」**（`src/admin/service.ts`）：`setSecret`/`clearSecret` 直接给 `$DSH_HOME/.credentials.yaml` 加锁写入（这是该 provider 期望的写入方式，因为它自己没有暴露写接口），但写完立刻通过实时 `credentials` 服务查询时，该服务用 chokidar 监听文件、有 ~100ms 防抖才会把新内容并入内存快照，读到的往往还是写入前的旧快照；`KeyPanel` 保存后只 `load()` 一次、没有重试，页面因此停留在「未配置」。真实走查中用网络时间戳确认过：`setSecret` 自己的响应就是 `{ configured: false }`，整个往返只花几十毫秒，远小于防抖窗口。修复为在 `setSecret`/`clearSecret` 返回前对 `describeTypesafeKey` 做几次短间隔重试，直到状态追上本次写入动作。新增回归测试 `tests/integration/admin.test.ts` 的 `retries describing the key through a credentials service that lags behind its own file write`（模拟一个 resolve() 有防抖延迟的假 credentials 服务）。
+
+以上五个 bug 修复后，用同一套走查脚本重新验证了 brief 要求的 5 个子步骤（4 步为真实网络交互，第 5 步「以 `host: 0.0.0.0` 启动 → 只读」因 dsh CLI 自身拒绝 `--host 0.0.0.0`——"it would expose remote code execution to the network"——而改为渲染生产环境 `SettingsPage` 组件、注入等价的只读 `AdminStatus` 做模拟，行为由既有的 `is read-only when the web server is exposed beyond loopback` 集成测试与 `disables editing when read-only` 单元测试覆盖），截图见 `docs/walkthrough/2026-09-24-onboarding/`。

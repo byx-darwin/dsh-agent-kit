@@ -12,7 +12,7 @@ export function apply(ctx: ClientContext): void {
   let disposeRemote: (() => void) | undefined
   const ready = ctx.remote.$mount(AGENT_KIT_REMOTE).then((d) => (disposeRemote = d))
   ctx.effect(() => () => disposeRemote?.(), 'agent-kit: remote')
-  const api = createAdminApi(ctx.remote)
+  const api = createAdminApi(ctx)
   const lazyApi = {
     status: async () => (await ready, api.status()),
     saveService: async (...a: Parameters<typeof api.saveService>) => (await ready, api.saveService(...a)),

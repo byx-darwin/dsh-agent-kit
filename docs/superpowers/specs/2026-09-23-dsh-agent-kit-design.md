@@ -293,7 +293,11 @@ const { answers } = await ctx.jev.judge({
   - 阈值示例：`if (answers.wrong.noul >= 0.7) escalate()`；`if (answers.pick.confidence < 0.6) askHuman()`。
 - 返回 `{ model, answers, usage? }`。
 - `@typesafe-ai/sdk` 为可选 peer 依赖：只有启用 jev Service 时才需要安装。
-- API Key 优先从 `TYPESAFE_API_KEY` 读取。未设置且配置了 `keychainService` 时，在 macOS 上通过 `/usr/bin/security find-generic-password -a <keychainAccount> -s <服务名> -w` 读取钥匙串（不经过 shell、5 秒超时、环境变量白名单），`keychainService` 可给多个服务名按顺序尝试，读到的值同样登记为脱敏密钥。与其他工具共享 TypeSafe Key 时统一使用中立服务名 `ai.typesafe.api-key`（导出常量 `SHARED_KEYCHAIN_SERVICE`；gitflow-cli 的迁移见 byx-darwin/gitflow-cli#407），迁移期可配置为 `[ai.typesafe.api-key, gitflow-cli-typesafe]`。非 macOS 上 `keychainService` 被忽略并记录警告。仅在 jev Service 启用时校验，两处都取不到则该 Service 启动失败。
+- API Key 按以下优先级解析（`secrets/` 统一实现，`doctor`/`setup`/Web 设置页共用同一套读取逻辑）：
+  1. 环境变量 `TYPESAFE_API_KEY`。
+  2. macOS 钥匙串（仅 macOS）：未设置环境变量且配置了 `keychainService` 时，通过 `/usr/bin/security find-generic-password -a <keychainAccount> -s <服务名> -w` 读取（不经过 shell、5 秒超时、环境变量白名单），`keychainService` 可给多个服务名按顺序尝试，读到的值同样登记为脱敏密钥。与其他工具共享 TypeSafe Key 时统一使用中立服务名 `ai.typesafe.api-key`（导出常量 `SHARED_KEYCHAIN_SERVICE`；gitflow-cli 的迁移见 byx-darwin/gitflow-cli#407），迁移期可配置为 `[ai.typesafe.api-key, gitflow-cli-typesafe]`。非 macOS 上 `keychainService` 被忽略并记录警告。
+  3. dsh 凭据文件（`$DSH_HOME/.credentials.yaml`，由 `@deepseek-ai/dsh-credentials-local` 管理）：`doctor`/`setup`/Web 设置页保存 Key 时若目标平台不支持钥匙串（或用户显式选择该目标），直接写入这份文件；该 provider 只对外暴露只读接口（`resolve`/`describe`/`readRecord` 等），写入按其自身约定的跨进程锁直接改文件，用 chokidar 监听、默认 ~100ms 防抖才把新内容并入内存快照（`admin/`、`cli/setup` 对此有专门的重试处理，见「核实结论」）。
+  仅在 jev Service 启用时校验，三处都取不到则该 Service 启动失败。
 - `timeoutMs` 是一次 `judge()` 的总时长（包含 SDK 内部重试）；超出或 `signal` 中止时取消请求。SDK 默认对 408 / 429 / 5xx 与连接错误最多重试 2 次，其 `timeout` 只约束单次尝试，因此本包用自己的定时器与 `AbortSignal` 控制总时长。创建 SDK 客户端时 `logLevel: 'off'`，避免 SDK 在 debug 日志中输出请求体。
 - 请求失败抛出 `JevError`（`KitError`），`code` 与 `retryable`：
   - `unavailable`（网络错误、5xx、408、超时）：可重试。
@@ -321,19 +325,28 @@ Config：
 - **资源上限**：`maxPayloadBytes`、`maxPendingMessages`、`maxQueueSize` 均有默认值，防止超大帧、消息洪泛和无上限排队。
 - **Session 审计数据**：claude-code / codex 委托不产生 dsh Session。若业务包自行使用会持久化 Session 的 provider，Session 中保存完整 prompt 与输出，部署要求 dsh Web 界面只绑定 `127.0.0.1` 或放在鉴权代理之后。
 - 发给 Claude Code、Codex、TypeSafe 的内容由业务包决定，业务包负责数据最小化。
+- **Web 设置页写入限制**：`AgentKitAdmin` 的写入类远程方法（`saveService`/`setSecret`/`clearSecret`）默认 fail closed——只有确认 `ctx.get('webServer')?.host === '127.0.0.1'` 时才允许写入；`webServer` 未加载、`host` 为其他值（包括对外暴露的 `0.0.0.0`）时一律只读并说明原因，避免把配置/密钥写入接口暴露给公网。这与 dsh CLI 自身拒绝 `--host 0.0.0.0` 的安全限制是两道独立的防线（详见 [2026-09-24-dsh-agent-kit-onboarding-design.md](2026-09-24-dsh-agent-kit-onboarding-design.md)）。
 
 ## 目录结构
 
 ```text
 dsh-agent-kit/
   package.json            # name: @mc/dsh-agent-kit，type: module，dsh.bundle.patch，files 白名单，子路径 exports
+  bin/dsh-agent-kit.mjs    # cli/main.ts 的可执行入口
   src/
     index.ts              # 导出全部 Service、KitError、untrusted()、Jev 问题构造函数与类型
     common/               # KitError、脱敏、子进程终止、健康状态与 Service 基类
     ws/  dingtalk/  agent-tasks/  jev/   # 各自的 index.ts 默认导出 Service 类，供 loader 按子路径加载
+    profile/              # 定位 Profile、读写 cordis.patch.yml 中 agent-kit-* 行（含版本冲突检测）
+    secrets/              # TypeSafe Key 的三级来源解析与写入：环境变量 / macOS 钥匙串 / dsh 凭据文件
+    checks/               # doctor 与 setup、admin 共用的体检项（Node 版本、dws 登录态、provider、Key 等）
+    cli/                  # `dsh-agent-kit doctor` / `setup` 的命令行实现与交互式 prompter
+    admin/                # AgentKitAdmin：dsh Web 设置页的服务端远程方法（status/saveService/setSecret/clearSecret）
+    client/               # dsh Web 设置页的前端模块（settings-page.tsx、service-card.tsx 等），构建为独立产物
     testing/              # 以 @mc/dsh-agent-kit/testing 导出
   fixtures/fake-dws.mjs   # 假 dws 脚本（随包发布，供 testing 使用）
-  patch.yml               # bundle 默认 patch 层：以禁用状态注册四个 Service
+  patch.yml               # bundle 默认 patch 层：以禁用状态注册四个 Service，并常驻注册 admin/client 入口
+  scripts/build-client.mjs # 用 esbuild 把 src/client 打包为 dsh 前端模块外包装产物
   tests/
     unit/  integration/  e2e/  fixtures/dws/   # fixtures 为录制的真实 dws 输出
   docs/superpowers/specs/

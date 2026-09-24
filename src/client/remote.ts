@@ -79,12 +79,29 @@ async function unwrap<T>(p: Promise<RemoteResult<T>>): Promise<T> {
   throw new AdminError(payload.code ?? 'unknown', payload.message ?? 'request failed', payload.errors)
 }
 
-export function createAdminApi(remote: ClientContext['remote']): AdminApi {
-  const svc = remote.agentKitAdmin as Record<string, (...args: unknown[]) => Promise<RemoteResult<never>>>
+/**
+ * `remote.$mount(AGENT_KIT_REMOTE)` 挂载的命名空间会被 cordis 注册成挂在**根 ctx** 上、名字里带点的
+ * 服务 `remote.agentKitAdmin`（`RemoteNamespaceService` 构造时 `super(ctx, \`remote.${namespace}\`)`
+ * 传给根 ctx，不是 `remote` 这个 Service 对象的嵌套属性）。
+ *
+ * 取用时不能用属性访问（`ctx.remote.agentKitAdmin` 或 `ctx['remote.agentKitAdmin']`）——cordis 的 Context
+ * 代理会对属性读取做网关检查：只有在插件的静态 `inject` 数组里声明过的服务名才允许属性访问，否则会抛
+ * `cannot get property "remote.agentKitAdmin" without inject`（在真实 dsh Web 走查中复现过）。而
+ * `agentKitAdmin` 这个服务本来就要等我们自己调用的 `$mount()` resolve 之后才存在，不能预先声明进
+ * `inject`（那样 `apply()` 会因为等不到它而永远不执行，`$mount()` 也就永远不会被调用——是个死锁，
+ * 同样在走查中复现过）。`dsh-api-gateway` 自身在同样场景下用的是 cordis 提供的、不抛异常的
+ * `ctx.get(name)`（如 `this.ownerCtx.get(serviceKey)` / `ctx.get('connection')`），未挂载时只返回
+ * `undefined`。所以这里必须用 `ctx.get('remote.agentKitAdmin')`，且必须在每次方法调用时才读取
+ * （而不是在 `createAdminApi` 执行的当下、mount 还没完成时）——否则闭包会一直捕获尚未挂载时读到的
+ * `undefined`，之后无论等多久调用都会抛出 `Cannot read properties of undefined (reading 'status')`
+ * （同样在走查中复现过）。
+ */
+export function createAdminApi(ctx: ClientContext): AdminApi {
+  const svc = () => ctx.get('remote.agentKitAdmin') as Record<string, (...args: unknown[]) => Promise<RemoteResult<never>>>
   return {
-    status: () => unwrap(svc.status!()),
-    saveService: (id, enabled, config, expectedVersion) => unwrap(svc.saveService!(id, enabled, config, expectedVersion)),
-    setSecret: (target, value) => unwrap(svc.setSecret!(target, value)),
-    clearSecret: (target) => unwrap(svc.clearSecret!(target)),
+    status: () => unwrap(svc().status!()),
+    saveService: (id, enabled, config, expectedVersion) => unwrap(svc().saveService!(id, enabled, config, expectedVersion)),
+    setSecret: (target, value) => unwrap(svc().setSecret!(target, value)),
+    clearSecret: (target) => unwrap(svc().clearSecret!(target)),
   }
 }

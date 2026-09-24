@@ -30,7 +30,9 @@ function status(over: Partial<AdminStatus> = {}): AdminStatus {
   }
 }
 
-function fakeApi(s: AdminStatus): AdminApi & { saveService: ReturnType<typeof vi.fn>; setSecret: ReturnType<typeof vi.fn> } {
+function fakeApi(
+  s: AdminStatus,
+): AdminApi & { status: ReturnType<typeof vi.fn>; saveService: ReturnType<typeof vi.fn>; setSecret: ReturnType<typeof vi.fn> } {
   return {
     status: vi.fn(async () => s),
     saveService: vi.fn(async () => ({ version: 'v2' })),
@@ -62,9 +64,19 @@ describe('SettingsPage', () => {
   it('shows a conflict message and reloads', async () => {
     const api = fakeApi(status())
     api.saveService.mockRejectedValueOnce(Object.assign(new Error('conflict'), { code: 'conflict' }))
+    api.status.mockResolvedValueOnce(status()).mockResolvedValueOnce(status({ version: 'v2' }))
     render(<SettingsPage api={api} t={t} />)
     fireEvent.click(await screen.findByRole('button', { name: `${zh.save} WebSocket` }))
     expect(await screen.findByText(zh.conflict!)).toBeTruthy()
+    // 回归测试：冲突后的自动刷新只应更新 status，不应把卡片整体卸载重建（否则 ServiceCard 自己
+    // 存的 message 本地 state 会被清空、提示一闪而过——真实 dsh Web 走查中复现过，点击保存后等待
+    // 一段时间再读取文案时提示已经消失）。这里显式等到 refreshAfterConflict 的 api.status() 落地
+    // （用新的 version 断言），确认提示依然在场。
+    await waitFor(() => expect(api.status).toHaveBeenCalledTimes(2))
+    expect(screen.getByText(zh.conflict!)).toBeTruthy()
+    // 且下一次保存应带上刷新后拿到的最新 version（而不是发生冲突时那个过期的 version）。
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} WebSocket` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenLastCalledWith('agent-kit-ws', true, {}, 'v2'))
   })
 
   it('shows field errors from the server', async () => {
@@ -128,13 +140,14 @@ describe('SettingsPage', () => {
 
 describe('createAdminApi', () => {
   it('unwraps remote results and parses server error payloads', async () => {
-    const remote = {
-      agentKitAdmin: {
+    const services: Record<string, unknown> = {
+      'remote.agentKitAdmin': {
         status: async () => ({ ok: true, value: status() }),
         saveService: async () => ({ ok: false, error: { code: 'gateway/bad-request', message: JSON.stringify({ code: 'conflict', message: '已被修改' }) } }),
       },
     }
-    const api = createAdminApi(remote as never)
+    const ctx = { get: (name: string) => services[name] }
+    const api = createAdminApi(ctx as never)
     expect((await api.status()).profile).toBe('kit')
     await expect(api.saveService('agent-kit-ws', true, null, 'v1')).rejects.toMatchObject({ code: 'conflict', message: '已被修改' })
   })
