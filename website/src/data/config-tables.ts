@@ -51,7 +51,8 @@ function typeLabel(n: SchemaNode): string {
 function formatDefault(n: SchemaNode): string {
   const d = n.meta?.default
   if (d === undefined) return '—'
-  if (typeof d === 'object') return JSON.stringify(d)
+  // 逗号后留空格，让较长的默认值（如工具白名单）可以在表格里换行
+  if (typeof d === 'object') return JSON.stringify(d).replace(/,/g, ', ')
   return String(d)
 }
 

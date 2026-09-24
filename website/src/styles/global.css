@@ -127,6 +127,8 @@ main > .prose.wide {
 /* 代码 */
 code {
   font: 13px/1.7 var(--mono);
+  /* 关闭连字：=> 与 >= 按原样显示，避免读者照抄时混淆 */
+  font-variant-ligatures: none;
   background: var(--card);
   padding: 0.1em 0.35em;
   border-radius: 3px;
@@ -141,6 +143,7 @@ pre {
   margin: 1.2em 0;
   overflow-x: auto;
   font: 13px/1.7 var(--mono);
+  font-variant-ligatures: none;
 }
 
 pre code {
@@ -192,6 +195,13 @@ td {
 th {
   font-weight: 700;
   white-space: nowrap;
+}
+
+/* 表格里的代码不在单词中间断开，只在空格与标点处换行 */
+td code,
+th code {
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 /* MDX 中直接书写的表格没有外层包裹，限制其宽度并允许自身滚动 */
