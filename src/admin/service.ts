@@ -116,19 +116,53 @@ export class AgentKitAdmin extends TypertRemoteService {
     return this.profile
   }
 
+  /**
+   * 只读闸门：默认关闭（fail closed）。仅当 `webServer.host` 恰好为 `'127.0.0.1'` 时才可写；
+   * `webServer` 未加载、或其 `host` 为 `undefined`、或绑定了其他地址，一律只读。
+   */
   private readOnlyReason(profile: ProfileInfo | undefined): string | undefined {
     if (!profile) return '无法定位 Profile 目录'
     const host = (this.ctx as unknown as { get(name: 'webServer'): WebServer | undefined }).get('webServer')?.host
-    if (host !== undefined && host !== '127.0.0.1') return 'dsh Web 未绑定 127.0.0.1，设置页为只读'
-    return undefined
+    if (host === '127.0.0.1') return undefined
+    return 'dsh Web 未绑定 127.0.0.1（或未加载 webServer），设置页为只读'
+  }
+
+  private keyTargets(): KeyTarget[] {
+    return (this.keyStore.platform ?? process.platform) === 'darwin' ? ['keychain', 'credentials'] : ['credentials']
   }
 
   async status(): Promise<AdminStatus> {
     const profile = await this.locate()
-    if (!profile) failWith('profile_not_found', '无法定位 Profile 目录')
-    const snapshot = await readKitEntries(profile.patchFile)
     const loader = (this.ctx as unknown as { get(name: 'loader'): Loader }).get('loader')
     const entries = new Map(Array.from(loader.entries(), (e) => [e.id, e] as const))
+    const keyTargets = this.keyTargets()
+
+    if (!profile) {
+      // 无法定位 Profile 目录：不再抛错，返回只读的降级状态，供设置页展示原因。
+      return {
+        profile: '',
+        patchReload: 'startup',
+        version: '',
+        writable: false,
+        readOnlyReason: '无法定位 Profile 目录',
+        services: KIT_ENTRIES.map((meta) => {
+          const entry = entries.get(meta.id)
+          return {
+            id: meta.id,
+            title: meta.title,
+            enabled: false,
+            phase: entry?.fiber ? (PHASE_BY_STATE[entry.fiber.state] ?? null) : null,
+            health: null,
+            config: undefined,
+          }
+        }),
+        checks: [],
+        typesafeKey: await describeTypesafeKey(this.keyStore),
+        keyTargets,
+      }
+    }
+
+    const snapshot = await readKitEntries(profile.patchFile)
     const report = await runChecks(await createCheckContext(profile, { snapshot, keyStore: this.keyStore }))
     const reason = this.readOnlyReason(profile)
     const jevConfig = (snapshot.entries['agent-kit-jev'].config ?? {}) as { keychainService?: string | string[]; keychainAccount?: string }
@@ -153,7 +187,7 @@ export class AgentKitAdmin extends TypertRemoteService {
       }),
       checks: report.results,
       typesafeKey: await describeTypesafeKey({ ...this.keyStore, keychainService: jevConfig.keychainService, keychainAccount: jevConfig.keychainAccount }),
-      keyTargets: (this.keyStore.platform ?? process.platform) === 'darwin' ? ['keychain', 'credentials'] : ['credentials'],
+      keyTargets,
     }
   }
 

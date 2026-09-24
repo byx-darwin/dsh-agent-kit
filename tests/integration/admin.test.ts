@@ -63,4 +63,41 @@ describe('AgentKitAdmin', () => {
     await expect(admin.saveService('agent-kit-ws', false, null, s.version)).rejects.toThrow(/read_only/)
     await expect(admin.setSecret('credentials', 'x')).rejects.toThrow(/read_only/)
   })
+
+  it('is read-only when webServer is not loaded at all (fail closed)', async () => {
+    const admin = await setup(undefined)
+    const s = await admin.status()
+    expect(s.writable).toBe(false)
+    expect(s.readOnlyReason).toMatch(/127\.0\.0\.1/)
+    await expect(admin.saveService('agent-kit-ws', false, null, s.version)).rejects.toThrow(/read_only/)
+    await expect(admin.setSecret('credentials', 'x')).rejects.toThrow(/read_only/)
+  })
+
+  it('reports a degraded read-only status when the profile cannot be located', async () => {
+    root.provide('loader', { entries: () => [{ id: 'agent-kit-ws', disabled: false, fiber: { state: 2 } }] } as never)
+    root.provide('webServer', { host: '127.0.0.1' } as never)
+    await root.plugin(AgentKitAdmin, {
+      profileDir: join(home, 'profiles', 'missing'),
+      keyStore: { env: {}, platform: 'linux', credentialsFile: join(home, '.credentials.yaml') },
+    } as never)
+    const admin = root.get('agentKitAdmin') as unknown as AgentKitAdmin
+    const s = await admin.status()
+    expect(s).toMatchObject({
+      profile: '',
+      patchReload: 'startup',
+      version: '',
+      writable: false,
+      readOnlyReason: '无法定位 Profile 目录',
+      checks: [],
+    })
+    expect(s.services).toHaveLength(s.services.length)
+    for (const svc of s.services) {
+      expect(svc.enabled).toBe(false)
+      expect(svc.health).toBeNull()
+      expect(svc.config).toBeUndefined()
+    }
+    expect(s.services.find((x) => x.id === 'agent-kit-ws')).toMatchObject({ phase: 'active' })
+    expect(s.typesafeKey).toEqual({ configured: false })
+    expect(s.keyTargets).toEqual(['credentials'])
+  })
 })
