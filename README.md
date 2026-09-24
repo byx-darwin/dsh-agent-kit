@@ -2,7 +2,7 @@
 
 构建常驻 Agent Worker 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件工具包：WebSocket 接入、钉钉推送、Claude Code / Codex 任务委托、TypeSafe Jev 校验。
 
-> **状态：设计阶段。** 接口以 [设计文档](docs/superpowers/specs/2026-09-23-dsh-agent-kit-design.md) 为准，首个版本发布前可能调整。
+> **状态：已实现，待发布 `0.1.0`。** 接口以 [设计文档](docs/superpowers/specs/2026-09-23-dsh-agent-kit-design.md) 为准，首个版本发布前可能调整。
 
 ## 为什么需要它
 
@@ -21,13 +21,12 @@
 |---|---|
 | `ctx.agentWs` | WebSocket 客户端（仅 `wss://`）：可刷新的鉴权请求头、心跳、指数退避重连、并发与背压控制；鉴权失败或指定关闭码时进入 `failed` 状态并可慢速重试 |
 | `ctx.dingtalk` | 通过钉钉 `dws` CLI 发送文本 / Markdown 消息，支持 `user` / `bot` / `webhook` 身份、群聊 / 单聊 / 多群、@ 人、幂等键和 `dryRun` |
-| `ctx.agentTasks` | 调用 dsh 已注册的 subagent provider（如 `claude-code`、`codex`）执行一次性任务：默认只读权限、每个任务独立目录、类型化的 JSON Schema 输出、并发与排队上限 |
+| `ctx.agentTasks` | 调用 dsh 已注册的 subagent provider（如 `claude-code`、`codex`）执行一次性任务：默认只读权限（无法由本包强制的 provider 需运维声明权限上限）、每个任务独立目录、类型化的 JSON Schema 输出、并发与排队上限 |
 | `ctx.jev` | 调用 TypeSafe Jev，返回 Choice / Noul / Score 的类型化判断和概率 |
 
 - 四个 Service 默认禁用，按需启用；未启用的 Service 不校验配置，也不影响其他 Service。
 - 每个 Service 提供 `health()`；进入 `failed` 时触发 `agent-kit/service-failed` 事件，便于接入外部监控。
 - 所有错误都是 `KitError`，带 `code` 与 `retryable`，调用方据此决定是否重试。
-- 每个 Agent 任务都会生成一个 dsh Session，可以在 dsh Web 界面中查看和审计，并按保留期自动清理。
 
 ## 架构
 
@@ -52,8 +51,8 @@
 - Node.js `^22.19` 或 `>=24`
 - [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh) CLI `0.1.5-rc.3`（当前为预发布版本，dsh 与 cordis 相关依赖需锁定到与之一致的版本）
 - 使用 `ctx.dingtalk`：已安装并登录 `dws`；服务器环境推荐 `bot` 身份
-- 使用 `ctx.agentTasks`：已安装 `@deepseek-ai/dsh-subagent-claude-code` 和/或 `@deepseek-ai/dsh-subagent-codex`，并完成 Claude Code / Codex 的原生登录
-- 使用 `ctx.jev`：安装 `@typesafe-ai/sdk`，并设置环境变量 `TYPESAFE_API_KEY`
+- 使用 `ctx.agentTasks`：安装 `@deepseek-ai/dsh-subagent-claude-code` 和/或 `@deepseek-ai/dsh-subagent-codex`（`ctx.subagents` 与子进程服务由 dsh 的 base bundle 提供），并完成 Claude Code / Codex 的原生登录（provider 会剔除名字含 KEY / TOKEN / SECRET / PASSWORD 的环境变量，依赖这类变量鉴权时需在 provider 的 Config `env` 中显式给出）
+- 使用 `ctx.jev`：安装 `@typesafe-ai/sdk`，并设置环境变量 `TYPESAFE_API_KEY`；macOS 上也可以用 `keychainService` 从钥匙串读取，推荐与 gitflow-cli 等工具共享的服务名 `ai.typesafe.api-key`（保存：`security add-generic-password -a "$USER" -s ai.typesafe.api-key -U -w`）
 - 生产部署：Profile 进程由 systemd、pm2 等进程守护托管
 
 ## 安装
@@ -70,6 +69,8 @@ dsh plugin --profile my-agent add @mc/dsh-agent-kit \
   @deepseek-ai/dsh-subagent-claude-code@0.1.5-rc.3 \
   @deepseek-ai/dsh-subagent-codex@0.1.5-rc.3
 dsh plugin --profile my-agent add ./my-business-plugin-0.1.0.tgz
+
+# 在 Profile 的 cordis.patch.yml 中启用需要的 Service（见下文「配置」）
 
 dsh --profile my-agent --dump-config   # 检查各层是否生效
 dsh --profile my-agent --no-open
@@ -97,7 +98,7 @@ dsh --profile my-agent --no-open
 
 `@deepseek-ai/cordis` 的版本与目标 dsh 依赖的版本保持一致（dsh `0.1.5-rc.3` 对应 `4.0.2`）。开发期可以用 `link:` 指向本包的本地 checkout。
 
-插件示例（接口草案）：
+插件示例：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -146,7 +147,7 @@ export function apply(ctx: Context, config: Config) {
         traceId: frame.id,
       })
 
-      // answers 的字段结构以 @typesafe-ai/sdk 的类型为准（待核实）
+      // noul 为回答"是"的概率；choice 带 confidence 与各选项概率
       await conn.send({ id: frame.id, result: draft.output, verified: answers.wrong.noul < 0.7 })
     },
     onError: (err, frame) => {
@@ -158,20 +159,57 @@ export function apply(ctx: Context, config: Config) {
 }
 ```
 
-没有 `dws` 或 Agent 登录态时，可以把 dingtalk 设为 `dryRun: true`，并使用 `@mc/dsh-agent-kit/testing` 导出的本地 WebSocket 服务端、假 subagent provider、Jev mock 和假 dws 脚本开发与测试。
+没有 `dws` 或 Agent 登录态时，可以把 dingtalk 设为 `dryRun: true`，并使用 `@mc/dsh-agent-kit/testing` 导出的工具开发与测试：
+
+```ts
+import { createFakeDws, createJevMock, FakeSubagentProvider, FakeSubagentRuntime, startTestWsServer } from '@mc/dsh-agent-kit/testing'
+
+const server = await startTestWsServer()          // ws://127.0.0.1:<port>，可模拟 401、关闭 pong
+const dws = createFakeDws({ send: [{ mode: 'partial', failTargets: ['cidB'] }] })
+process.env.DWS_CONFIG_DIR = dws.dir              // 假 dws 从这里读取场景；dingtalk 配置 dwsPath: dws.path
+const restoreJev = createJevMock().install()      // jev 不发网络请求
+const provider = new FakeSubagentProvider({ name: 'claude-code', handler: () => '```json\n{"category":"a"}\n```' })
+await ctx.plugin(FakeSubagentRuntime, { providers: [provider] }) // 或注册到真实 ctx.subagents
+```
 
 完整接口、错误码、配置默认值和卸载语义见 [设计文档](docs/superpowers/specs/2026-09-23-dsh-agent-kit-design.md)。
 
 ## 配置
 
-各 Service 的可变参数都是 cordis.yml 中经过校验的配置字段，均有默认值与取值范围，可在 Profile 的 `cordis.patch.yml` 中启用 Service 并覆盖配置。
+各 Service 的可变参数都是 cordis.yml 中经过校验的配置字段，均有默认值与取值范围。本包的 bundle 以禁用状态注册四个 loader 行（`agent-kit-ws`、`agent-kit-dingtalk`、`agent-kit-agent-tasks`、`agent-kit-jev`），在 Profile 的 `cordis.patch.yml` 中按 id 启用并给出配置：
+
+```yaml
+- id: agent-kit-ws
+  disabled: false
+- id: agent-kit-dingtalk
+  disabled: false
+  config:
+    identity: bot
+    robotCode: dingxxxx
+    defaultTarget: { chatId: cidxxxx }
+- id: agent-kit-agent-tasks
+  disabled: false
+  config:
+    workspaceDir: /var/lib/my-agent/tasks
+    declaredPermissions:
+      claude-code: read-only                   # claude-code 默认 permissionMode: dontAsk，不能执行命令或写文件
+- id: agent-kit-jev
+  disabled: false                              # 需要 @typesafe-ai/sdk 与环境变量 TYPESAFE_API_KEY
+  config:
+    keychainService: [ai.typesafe.api-key, gitflow-cli-typesafe]  # 可选：macOS 上未设置环境变量时按顺序从钥匙串读取；旧名仅用于迁移期
+```
+
+按 id 修改 `config` 时整段替换；未给出的字段使用默认值。
 
 | Service | 主要字段 |
 |---|---|
 | `agentWs` | `pingIntervalMs`、`readTimeoutMs`、`reconnect.initialDelayMs`、`reconnect.maxDelayMs`、`reconnect.jitter`、`stableResetMs`、`fatalRetryDelayMs`、`maxPayloadBytes`、`maxPendingMessages` |
 | `dingtalk` | `identity`（必填）、`defaultTarget`、`robotCode`、`webhookTokenEnv`、`dwsPath`、`timeoutMs`、`killGraceMs`、`retry.maxAttempts`、`preflightIntervalMs`、`dryRun` |
-| `agentTasks` | `workspaceDir`（必填）、`defaultTimeoutMs`、`maxConcurrency`、`maxQueueSize`、`maxTurns`、`keepWorkdir`、`sessionRetentionDays` |
-| `jev` | `model`、`timeoutMs` |
+| `agentTasks` | `workspaceDir`（必填）、`defaultTimeoutMs`、`maxConcurrency`、`maxQueueSize`、`keepWorkdir`、`declaredPermissions`、`toolAllowlist` |
+| `jev` | `model`、`timeoutMs`、`keychainService`、`keychainAccount` |
+
+- `agentTasks.declaredPermissions`：claude-code、codex 不支持按任务过滤工具，权限由 provider 实例自己的配置决定。运维在这里声明其实际权限上限（`read-only` / `workspace-write`）；未声明或上限高于任务请求的档位时，任务以 `unsupported_permissions` 失败。
+- `dingtalk` 的 `webhook` 身份只能把 token 作为命令行参数传给 dws（会出现在 `ps` 中），不推荐使用。
 
 ## 安全
 
@@ -184,11 +222,21 @@ export function apply(ctx: Context, config: Config) {
 
 ## 路线图
 
-- [ ] 完成设计文档中的「实施前需核实」项
-- [ ] 四个 Service 的首个实现与测试
+- [x] 完成设计文档中的「实施前需核实」项
+- [x] 四个 Service 的首个实现与测试
 - [ ] 发布 `0.1.0` 到 npm
 - [ ] 通用的「Agent 执行 → Jev 校验 → 升级」级联 helper
 - [ ] 钉钉卡片消息
+
+## 开发
+
+```sh
+npm install
+npm run typecheck
+npm test                 # 单元 + 集成测试（集成测试会先构建 lib/，并在真实 dsh loader 中加载 patch.yml）
+npm run test:coverage
+npm run test:e2e         # 端到端冒烟，按环境变量启用，见 tests/e2e/smoke.test.ts
+```
 
 ## 许可证
 

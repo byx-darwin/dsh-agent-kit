@@ -1,7 +1,7 @@
 # @mc/dsh-agent-kit 设计
 
 - 日期：2026-09-23
-- 状态：待评审（第二版，已合入第一轮多角色评审意见，见文末「评审记录」）
+- 状态：已实施（第三版：合入第一轮多角色评审意见，并按「实施前核实结论」调整设计，见文末「核实结论」与「评审记录」）
 
 ## 背景
 
@@ -14,7 +14,7 @@
 - 提供四个与业务无关的 Service：`ctx.agentWs`、`ctx.dingtalk`、`ctx.agentTasks`、`ctx.jev`。
 - 每个 Service 可单独启用；未启用的 Service 不校验配置、不影响其他 Service。
 - 每个 Service 的可变参数都是 cordis.yml 中经过校验的 `Config` 字段，均有明确默认值与取值范围。
-- 密钥只从环境变量读取，且不传递给任何子进程；钉钉凭据由 `dws` 自己的登录态管理，本包不保存。
+- 密钥从环境变量读取（Jev 在 macOS 上可选从钥匙串读取），且不传递给任何子进程；钉钉凭据由 `dws` 自己的登录态管理，本包不保存。
 - Agent 默认以最小权限运行，来自外部的数据一律视为不可信。
 - 常驻运行时，任何 Service 进入不可用状态都能被外部发现。
 - 业务包只依赖本包导出的 TypeScript 接口即可开发，并能在没有 dws / Agent 登录态的环境下本地调试。
@@ -47,7 +47,27 @@
 └───────────────────────────────────────────────────────────┘
 ```
 
-本包是一个 npm 包，内部每个 Service 一个目录，各自独立注册。`patch.yml` 中四个 Service 默认以**禁用**状态注册，Profile 按需启用；只有启用的 Service 在加载时校验配置与环境变量。业务包只 inject 用到的 Service。
+本包是一个 npm 包，内部每个 Service 一个目录，各自以子路径导出（`@mc/dsh-agent-kit/ws`、`/dingtalk`、`/agent-tasks`、`/jev`）并独立注册。`patch.yml` 中四个 Service 默认以**禁用**状态注册（`disabled: true`，loader 不会 import 禁用行的模块），Profile 按需启用；只有启用的 Service 在加载时校验配置与环境变量。业务包只 inject 用到的 Service。
+
+| loader 行 id | 模块 | Context 属性 | 依赖的其他 Service |
+|---|---|---|---|
+| `agent-kit-ws` | `@mc/dsh-agent-kit/ws` | `ctx.agentWs` | 无 |
+| `agent-kit-dingtalk` | `@mc/dsh-agent-kit/dingtalk` | `ctx.dingtalk` | 无 |
+| `agent-kit-agent-tasks` | `@mc/dsh-agent-kit/agent-tasks` | `ctx.agentTasks` | `subagents`（dsh-subagent） |
+| `agent-kit-jev` | `@mc/dsh-agent-kit/jev` | `ctx.jev` | 无 |
+
+在 Profile 的 `cordis.patch.yml` 中按 id 启用，例如：
+
+```yaml
+- id: agent-kit-dingtalk
+  disabled: false
+  config:
+    identity: bot
+    robotCode: dingxxxx
+    defaultTarget: { chatId: cidxxxx }
+```
+
+按 id 修改 `config` 时整段替换，不与 bundle 中的值合并；未给出的字段取 Config 默认值。
 
 暂不拆包。出现以下任一情况时再拆分：某个 Service 被不使用其他 Service 的项目单独依赖；某个 Service 的依赖（如 `@typesafe-ai/sdk`）的体积或发布节奏明显拖累其他 Service。
 
@@ -63,11 +83,14 @@ class KitError extends Error {
   code: string        // 各 Service 自己的错误码
   retryable: boolean  // 调用方据此决定是否重试
   cause?: unknown     // 已脱敏
+  details?: Record<string, unknown>  // 已脱敏
 }
 export function isKitError(e: unknown): e is KitError
 ```
 
-- 业务包用 `isKitError()` 与 `code` 判断错误，不依赖 `instanceof`（避免多份实例时判断失效）。
+配置或环境变量非法时抛出 `ConfigError`（`code: invalid_config`），对应 Service 启动失败。
+
+- 业务包用 `isKitError()` 与 `code` 判断错误，不依赖 `instanceof`（避免多份实例时判断失效；实现上用 `Symbol.for` 标记）。
 - 错误信息与 `cause` 在构造时经过统一脱敏（见「安全」）。
 
 ### 生命周期与卸载
@@ -77,7 +100,7 @@ export function isKitError(e: unknown): e is KitError
 
 ### 子进程终止
 
-本包自己启动的子进程（dws）超时或卸载时：先向进程组发 SIGTERM，宽限 `killGraceMs`（默认 5000）后发 SIGKILL。子进程只继承环境变量白名单（见「安全」）。
+本包自己启动的子进程（dws）以独立进程组启动、不经过 shell；超时或卸载时先向进程组发 SIGTERM，宽限 `killGraceMs`（默认 5000）后发 SIGKILL，父进程退出后再向进程组补发一次 SIGKILL，确保孙进程也被回收。子进程只继承环境变量白名单（见「安全」）。
 
 ### 健康状态与可观测性
 
@@ -86,12 +109,12 @@ export function isKitError(e: unknown): e is KitError
   - dingtalk：成功、失败次数，最近一次失败时间与错误码。
   - agentTasks：运行中数、排队数、按结果分类的完成数、耗时分布。
   - jev：成功、失败次数（按错误码）。
-- 状态变为 `failed` 时，除日志外还触发 Cordis 事件 `agent-kit/service-failed`，业务包或 Profile 可据此向外部监控上报。
-- 日志为结构化字段，所有 Service 调用接受可选的 `traceId` 并写入日志，便于用事件 ID 串起一次处理链路。
+- 状态变为 `failed` 时，除日志外还触发 Cordis 事件 `agent-kit/service-failed`（参数 `{ service, detail, error? }`，已脱敏），业务包或 Profile 可据此向外部监控上报。只在从非 failed 变为 failed 时触发一次；恢复后再次失败会再次触发。
+- 日志为结构化字段，所有 Service 调用接受可选的 `traceId` 并写入日志，便于用事件 ID 串起一次处理链路。日志通过 `ctx.logger('agent-kit:<service>')` 输出；注意 cordis 默认只导出 error / info 级别，warn / debug 需要在 Profile 的日志 exporter 中调高级别。
 
 ## Service 接口
 
-以下为接口草案，最终签名在实施计划中确定。
+以下为已实现的接口。
 
 ### ctx.agentWs：WebSocket 客户端
 
@@ -121,9 +144,11 @@ await conn.close()
   - 待处理消息超过 `maxPendingMessages` 时暂停读取 socket，回落到阈值以下后恢复（背压）。
   - `onMessage` 抛错交给 `onError`，默认只记日志，不断开连接。
 - `send()` 在连接未处于 `open` 时 reject（`code: not_open`, `retryable: true`），不做内部排队；是否重发由业务包决定。
-- 断线后按指数退避加抖动自动重连；连接稳定保持 `stableResetMs` 后退避时间重置为初始值。
+- 断线后按指数退避加抖动自动重连：第 n 次延迟为 `min(maxDelayMs, initialDelayMs × 2^n) × (1 − jitter × random)`，抖动只向下，保证不超过 `maxDelayMs`；连接稳定保持 `stableResetMs` 后退避时间重置为初始值（为 0 时一连上即重置）。
 - 握手返回 401/403，或连接以 `fatalCloseCodes` 中的关闭码断开时，视为鉴权或配置错误：状态置为 `failed`，`health()` 返回 `failed` 并触发 `agent-kit/service-failed`。若 `fatalRetryDelayMs > 0`，则按该间隔慢速重试（重试前重新获取 `headers`）；为 0 时不再重试，由进程托管或人工恢复。
-- 客户端定时发送 WS ping，超过读超时未收到任何帧（含 pong）则主动断开并重连。
+- 客户端定时发送 WS ping，超过读超时未收到任何帧（含 pong）则主动断开并重连。背压暂停读取期间读超时暂停计时。
+- `onStateChange` 在 `connect()` 时先收到 `connecting`；之后的状态序列例如 `open → reconnecting → open → closed`，fatal 后慢速重试为 `failed → connecting → open`。
+- 背压说明：`ws.pause()` 只停止继续读取 socket，已进入接收缓冲区的帧仍会被解析，因此暂停时待处理数可能略高于 `maxPendingMessages`。
 
 Config：
 
@@ -145,25 +170,35 @@ Config：
 
 ```ts
 const r = await ctx.dingtalk.send({
-  markdown: '## 标题\n正文',
+  markdown: '## 标题\n正文',             // 或 text: '纯文本'，二选一
   title: '标题',
   target: { chatId: 'cid...' },          // 或 { userId } / { openDingtalkId } / { chatIds: [...] }（仅 bot）
-  at: { userIds: ['...'], all: false },
+  at: { userIds: ['...'], all: false },  // 另有 openDingtalkIds（user / bot）、mobiles（仅 webhook）
   idempotencyKey: 'evt_...',
   traceId: 'evt_...',
+  signal,                                // 可选，中止时终止 dws 子进程
 })
 // r: { results: Array<{ target, ok: boolean, messageId?: string, error?: KitError }> }
 ```
 
-- 调用 `dws chat +messages-send` 子进程：用 `execFile`（不经过 shell），参数统一写成 `--key=value` 形式，避免以 `-` 开头的正文被当成选项；固定附加 `--yes -f json`，保证常驻进程不会卡在交互确认上；超时后按「子进程终止」规则回收。
+- 调用 `dws chat +messages-send` 子进程：不经过 shell，参数统一写成 `--key=value` 形式，避免以 `-` 开头的正文被当成选项（已用真实 dws 验证）；固定附加 `--yes --format=json`，保证常驻进程不会卡在交互确认上；超时后按「子进程终止」规则回收。
 - `dwsPath` 必须为绝对路径（默认在启动时通过 `PATH` 解析为绝对路径并记录）。
-- `target` 省略时使用配置的 `defaultTarget`；`chatId`、`userId`、`openDingtalkId` 在拼装参数前用正则校验格式。单次调用的 `target` 覆盖默认值，多个业务包共用本包时互不影响。
-- 支持的目标与身份矩阵以 dws 为准：`user` 支持群聊与单聊；`bot` 支持多群（最多 100 个，返回逐目标结果）；`webhook` 的目标由 token 所在群决定。
+- `target` 省略时使用配置的 `defaultTarget`；`chatId`、`userId`、`openDingtalkId`、`robotCode`、@ 列表与幂等键在拼装参数前用正则校验格式，并拒绝以 `-` 开头的值（`invalid_target`）。单次调用的 `target` 覆盖默认值，多个业务包共用本包时互不影响。
+- 目标与身份矩阵（以 dws v1.0.62 为准）：
+
+  | 身份 | `chatId` | `chatIds` | `userId` | `openDingtalkId` | @ 参数 | 幂等键 |
+  |---|---|---|---|---|---|---|
+  | `user` | `--chat-id` | 不支持 | `--user` | `--open-dingtalk-id` | `openDingtalkIds`、`all` | 支持 |
+  | `bot` | `--groups`（单个） | `--groups`（≤ 100，去重） | `--users` | `--open-dingtalk-ids` | `userIds`、`openDingtalkIds`、`all` | 忽略 |
+  | `webhook` | 不允许传 target，目标由 token 所在群决定 | | | | `userIds`、`mobiles`、`all` | 忽略 |
+
+  bot 身份统一走 `--groups` / `--users` 等批量参数，dws 返回 `im.batch-write.v1` 逐目标 ledger。
 - `idempotencyKey` 在 `user` 身份下透传为 `--idempotency-key`，其他身份下忽略并只记录一次警告。
-- 自动重试：仅在 `user` 身份且给出 `idempotencyKey` 时，对 `retryable` 的失败（超时、网络错误）最多重试 `retry.maxAttempts` 次；其他情况不自动重试，避免重复发送。
-- 命令非零退出或输出无法解析时抛出 `DingtalkSendError`（`KitError`），`code` 为 `timeout`、`exit_nonzero`、`bad_output`、`invalid_target` 之一，包含退出码和经过脱敏、截断的 stderr 摘要。bot 多群发送的部分失败不抛错，体现在 `results` 中。
+- 自动重试：仅在 `user` 身份且给出 `idempotencyKey` 时，对 `retryable` 的失败（超时，或 dws 错误类别为 network / timeout / rate_limit / server / unavailable）最多重试 `retry.maxAttempts` 次，间隔 500ms 起指数增长；其他情况不自动重试，避免重复发送。
+- 失败抛出 `DingtalkSendError`（`KitError`），`code` 为 `timeout`（可重试）、`exit_nonzero`（按 dws 错误类别决定是否可重试）、`bad_output`、`invalid_target`、`send_failed`、`aborted`、`spawn_failed` 之一，`details` 中包含退出码、dws 错误类别和经过脱敏、截断的 stderr 摘要（dws 失败时把 `{ error: { category, code, message } }` 写到 stderr）。bot 批量发送的部分失败（乃至全部失败）不抛错，体现在 `results` 中。
 - `dryRun: true` 时附加 `--dry-run`，只做参数解析与日志、不真实发送，用于本地开发与测试。
-- 加载时校验身份与必填字段的组合，不合法则该 Service 启动失败。启动时及每隔 `preflightIntervalMs` 检查一次 dws 登录态（具体命令见「实施前需核实」），失效时 `health()` 返回 `failed`。
+- 加载时校验身份与必填字段的组合、`dwsPath` 可执行、`defaultTarget` 格式，不合法则该 Service 启动失败。启动时及每隔 `preflightIntervalMs` 执行 `dws auth status --format=json` 检查登录态（`authenticated` 且 token 或 refresh token 有效），失效时 `health()` 返回 `failed` 并触发事件；`webhook` 身份与 `dryRun` 不做该检查。
+- `webhook` 身份：dws 只支持以 `--webhook-token` 命令行参数传入 token（会出现在 `ps` 中），因此**不推荐**，启动时记录警告；token 从 `webhookTokenEnv` 指定的环境变量读取并登记为脱敏密钥。
 
 Config：
 
@@ -172,7 +207,7 @@ Config：
 | `identity` | 无（必填） | `user` \| `bot` \| `webhook`。服务器环境推荐 `bot`，`user` 依赖个人登录态 |
 | `defaultTarget` | 无 | 省略 `target` 时使用 |
 | `robotCode` | 无 | `bot` 身份必填 |
-| `webhookTokenEnv` | 无 | `webhook` 身份必填，环境变量名；传递方式见「实施前需核实」 |
+| `webhookTokenEnv` | 无 | `webhook` 身份必填，环境变量名（不推荐该身份，见上） |
 | `dwsPath` | `PATH` 中解析 | 绝对路径 |
 | `timeoutMs` | 15000 | [1000, 120000] |
 | `killGraceMs` | 5000 | ≥ 0 |
@@ -188,51 +223,54 @@ const r = await ctx.agentTasks.run<Verdict>({
   title: 'task title',
   prompt: [
     '请判断下面的事件是否异常。',
-    untrusted('event', eventJson),   // 本包导出，用分隔标记包裹外部数据并声明其不是指令
+    untrusted('event', eventJson),   // 本包导出，用随机分隔标记包裹外部数据并声明其不是指令
   ],
-  outputSchema,                      // JSONSchemaType<Verdict>
-  model: 'optional-model-id',
+  outputSchema,                      // JSONSchemaType<Verdict>；省略时 output 为 undefined
+  model: 'optional-model-id',        // 仅传给声明了 agentOptions 能力的 provider
   permissions: 'read-only',          // 默认值
   timeoutMs: 120_000,
   signal,
   traceId,
-  onEvent: (e) => {},                // 可选，转发 provider 的过程事件
+  onEvent: (e) => {},                // 可选：queued / started / finished 生命周期事件
 })
-// r: { sessionId, text, output: Verdict, usage?, durationMs }
+// r: { sessionId, taskId, text, output: Verdict, durationMs }
 ```
 
-- `provider` 是 `ctx.subagents` 中已注册的 provider 名称，例如 `claude-code`、`codex`。
-- 每次运行在配置的工作目录下创建一个根 Session 作为父 Agent，再通过 `ctx.subagents` 发起一次性委托；Session 标题使用 `title`，可在 dsh Web 界面审计。该做法能否成立见「实施前需核实」第 1 项。
+- `provider` 是 `ctx.subagents` 中已注册的 provider 名称，例如 `claude-code`、`codex`。本 Service `inject: ['subagents']`；`ctx.subagents`（`@deepseek-ai/dsh-subagent`）与 provider 依赖的 `subprocess` 服务已由 dsh 的 base bundle 加载，Profile 只需安装对应 provider。
+- **委托方式**：每个任务通过 `ctx.subagents.start(provider, request)` 发起一次性委托。`parent` 使用一个只含 `session.header.cwd` 的桩对象，不创建根 Session（核实结论第 1 项）；`sessionId` 为 provider 返回的运行 ID。claude-code / codex 本身不持久化 Session，因此这些任务**不会**出现在 dsh Web 界面中；审计依赖本包的结构化日志（只记录长度与哈希）与业务包自己的记录。
 - **隔离与权限**：
-  - 每个任务在 `workspaceDir/<taskId>/` 下使用一个新建的空目录，结束后删除（`keepWorkdir: true` 时保留，便于排查）。
-  - `permissions` 默认 `read-only`：不允许 Bash、不允许写文件、不允许网络访问；可选 `workspace-write`（允许在任务目录内写文件），不提供更高权限档位。具体映射到 provider 的工具过滤能力，见「实施前需核实」。
+  - 每个任务在 `workspaceDir/<taskId>/` 下使用一个新建的空目录（权限 0700）作为 Agent 的 cwd，结束后删除（`keepWorkdir: true` 时保留，便于排查）。`workspaceDir` 必须是绝对路径，且不能是进程工作目录或其祖先。
+  - `permissions` 默认 `read-only`，可选 `workspace-write`，不提供更高档位。映射方式：
+    - provider 支持工具过滤（`capabilities.toolFilter`，如 dsh 进程内 provider）时，传入工具白名单 `toolFilter.allow`：`read-only` 为 `read`、`read_image`、`glob`、`grep`、`todo_write`；`workspace-write` 另加 `write`、`edit`、`str_replace_editor`（可通过 `toolAllowlist` 调整）。白名单之外的工具（含 bash、网络）都不可见。
+    - provider 不支持工具过滤（claude-code、codex）时，权限由该 provider 实例自身的配置决定。运维必须在 `declaredPermissions` 中声明该 provider 的实际权限上限；未声明、或声明的上限高于本次请求的档位时，任务以 `unsupported_permissions` 失败（fail-closed）。已验证 claude-code 默认的 `permissionMode: dontAsk` 下 Agent 不能执行命令、不能写文件，可声明为 `read-only`。
   - Agent 的 `text` 与 `output` 视为不可信数据：本包只做 Schema 校验，业务包在据此触发推送等副作用前必须按白名单校验取值。
-- **结构化输出**：给出 `outputSchema` 时，优先使用 provider 原生的结构化输出能力（`outputSchema` → `result.structured`）；provider 不支持时，从最终答案中提取 JSON 兜底：
+- **结构化输出**：给出 `outputSchema` 时，若 provider 声明了 `outputSchema` 能力（目前只有 dsh 进程内 provider）且 Schema 顶层为 object，使用原生结构化输出（`result.structured`）；否则（claude-code、codex）在 prompt 末尾追加「在一个 json 代码块中输出符合该 JSON Schema 的结果」的要求，并从最终答案中提取 JSON：
   - 取最后一个标注为 `json` 的代码块；没有则取最后一个未标注语言的代码块；都没有则把整段答案作为 JSON 解析。
   - 选中的候选解析失败时直接判为 `invalid_output`，不回退到更早的代码块。
   - 空答案判为 `invalid_output`。
-  - 解析结果用 Ajv 校验，通过后放入 `output`，类型由 `outputSchema` 推断。
+  - 解析结果（含原生结构化结果）一律再用 Ajv 校验，通过后放入 `output`，类型由 `outputSchema` 推断。
 - 失败抛出 `AgentTaskError`（`KitError`），`code` 与 `retryable`：
-  - `provider_failed`：由 provider 错误决定，能区分时细分为限流（可重试）与鉴权失败（不可重试）。
+  - `provider_failed`：provider 未注册、委托基础设施出错（可重试），或 provider 以 `error` / `refusal` / `max-tokens` 结束。按 provider 的诊断信息细分：限流（可重试）；鉴权失败（不可重试，同时 `health()` 置为 `failed`，下次成功后恢复）；其他不可重试。
   - `timeout`：可重试。
   - `invalid_output`：不可重试。
   - `aborted`：不可重试。
   - `queue_full`：可重试。
-- **并发与背压**：同时最多 `maxConcurrency` 个任务运行，其余按 FIFO 排队；排队数达到 `maxQueueSize` 时新调用立即以 `queue_full` 失败。`signal` 在排队期中止时移出队列、不占用并发槽；运行期中止时取消委托；调用时 `signal` 已中止则立即以 `aborted` 失败。
-- **成本控制**：单任务受 `timeoutMs` 和 `maxTurns` 限制（provider 支持时）；`usage` 在 provider 提供时返回，并计入 `health()`。
-- **Session 保留**：本包创建的 Session 超过 `sessionRetentionDays` 后清理（依赖 dsh 的删除能力，见「实施前需核实」）。
+  - `unsupported_permissions`：不可重试，见上。
+- **并发与背压**：同时最多 `maxConcurrency` 个任务运行，其余按 FIFO 排队；排队数达到 `maxQueueSize` 时新调用立即以 `queue_full` 失败，`health()` 为 `degraded`。`signal` 在排队期中止时移出队列、不占用并发槽；运行期中止时取消委托；调用时 `signal` 已中止则立即以 `aborted` 失败；Service 卸载时排队和运行中的任务都以 `aborted` 结束。
+- **成本控制**：单任务受 `timeoutMs` 限制，超时即取消委托。provider 不提供轮次上限与 usage（核实结论第 4 项），因此不再提供 `maxTurns` 配置，结果中也没有 `usage`；`health()` 统计按结果分类的完成数与耗时分布（p50 / p95 / max）。
+- **子进程环境变量**：provider 启动 Agent 时会剔除名字匹配 `KEY|PASSWORD|SECRET|TOKEN` 的变量与 `DSH_*`。若 Agent 依赖这类变量鉴权（例如 `ANTHROPIC_AUTH_TOKEN`），需要在 provider 自己的 Config `env` 中显式给出；本包的密钥（`TYPESAFE_API_KEY` 等）因此不会进入 Agent 进程。
 
 Config：
 
 | 字段 | 默认值 | 取值范围 |
 |---|---|---|
-| `workspaceDir` | 无（必填） | 专用目录，不得是业务代码目录 |
+| `workspaceDir` | 无（必填） | 绝对路径的专用目录，不得是进程工作目录或其祖先 |
 | `defaultTimeoutMs` | 600000 | [10000, 3600000] |
 | `maxConcurrency` | 2 | [1, 16] |
 | `maxQueueSize` | 100 | ≥ 0 |
-| `maxTurns` | 20 | ≥ 1 |
 | `keepWorkdir` | false | |
-| `sessionRetentionDays` | 14 | ≥ 1 |
+| `declaredPermissions` | `{}` | provider 名 → `read-only` \| `workspace-write`，用于不支持工具过滤的 provider |
+| `toolAllowlist` | 见上 | `{ 'read-only': string[], 'workspace-write': string[] }`，用于支持工具过滤的 provider |
 
 ### ctx.jev：Jev 判断
 
@@ -248,58 +286,70 @@ const { answers } = await ctx.jev.judge({
 })
 ```
 
-- 包装 `@typesafe-ai/sdk`，重新导出 `choice`、`noul`、`score` 等问题构造函数与答案类型，保留 SDK 的答案类型推断。`answers` 各字段的结构以 SDK 类型为准，本文档在核实后补充字段含义与阈值使用示例。
+- 包装 `@typesafe-ai/sdk`（0.6）的 `client.systemOne()`。本包在主入口中按 SDK 的线上格式重新定义 `choice`、`noul`、`score` 问题构造函数与答案类型（测试保证与 SDK 输出一致），未启用 jev 的项目无需安装 SDK；答案类型按问题推断：
+  - `noul(instructions, { true, false })` → `{ type: 'noul', noul }`，`noul` 为回答"是"（true）的概率，范围 [0, 1]。
+  - `choice(instructions, { A: 描述, B: 描述 })` → `{ type: 'choice', choice: 'A' | 'B', confidence, probabilities: { A, B } }`。
+  - `score(instructions, [档位0描述, 档位1描述, ...])` → `{ type: 'score', score, confidence, legend, probabilities }`，`score` 为期望分数，可能介于整数档位之间。
+  - 阈值示例：`if (answers.wrong.noul >= 0.7) escalate()`；`if (answers.pick.confidence < 0.6) askHuman()`。
+- 返回 `{ model, answers, usage? }`。
 - `@typesafe-ai/sdk` 为可选 peer 依赖：只有启用 jev Service 时才需要安装。
-- API Key 从 `TYPESAFE_API_KEY` 读取；仅在 jev Service 启用时校验，缺失则该 Service 启动失败。
-- `timeoutMs` 是一次 `judge()` 的总时长（包含 SDK 内部重试）；超出或 `signal` 中止时取消请求。
+- API Key 优先从 `TYPESAFE_API_KEY` 读取。未设置且配置了 `keychainService` 时，在 macOS 上通过 `/usr/bin/security find-generic-password -a <keychainAccount> -s <服务名> -w` 读取钥匙串（不经过 shell、5 秒超时、环境变量白名单），`keychainService` 可给多个服务名按顺序尝试，读到的值同样登记为脱敏密钥。与其他工具共享 TypeSafe Key 时统一使用中立服务名 `ai.typesafe.api-key`（导出常量 `SHARED_KEYCHAIN_SERVICE`；gitflow-cli 的迁移见 byx-darwin/gitflow-cli#407），迁移期可配置为 `[ai.typesafe.api-key, gitflow-cli-typesafe]`。非 macOS 上 `keychainService` 被忽略并记录警告。仅在 jev Service 启用时校验，两处都取不到则该 Service 启动失败。
+- `timeoutMs` 是一次 `judge()` 的总时长（包含 SDK 内部重试）；超出或 `signal` 中止时取消请求。SDK 默认对 408 / 429 / 5xx 与连接错误最多重试 2 次，其 `timeout` 只约束单次尝试，因此本包用自己的定时器与 `AbortSignal` 控制总时长。创建 SDK 客户端时 `logLevel: 'off'`，避免 SDK 在 debug 日志中输出请求体。
 - 请求失败抛出 `JevError`（`KitError`），`code` 与 `retryable`：
-  - `unavailable`（网络错误、5xx、超时）：可重试。
+  - `unavailable`（网络错误、5xx、408、超时）：可重试。
   - `rate_limited`（429）：可重试。
   - `unauthorized`（401/403）：不可重试，同时 `health()` 置为 `failed`。
-  - `bad_request`：不可重试。
+  - `bad_request`（其余 4xx 与参数错误）：不可重试。
   - `aborted`：不可重试。
 
 Config：
 
 | 字段 | 默认值 | 取值范围 |
 |---|---|---|
-| `model` | `jev-latest` | SDK 支持的模型名 |
+| `model` | `jev-latest` | SDK 支持的模型名（可用 `client.models.list()` 查询）；单次调用可用 `model` 覆盖 |
 | `timeoutMs` | 30000 | [1000, 300000] |
+| `keychainService` | 无 | macOS 钥匙串服务名或服务名列表（按顺序尝试），推荐 `ai.typesafe.api-key`；仅在未设置 `TYPESAFE_API_KEY` 时读取 |
+| `keychainAccount` | `$USER` | 钥匙串条目的账户名 |
 
 ## 安全
 
-- **凭据不进入子进程**：本包启动的子进程只继承环境变量白名单（`PATH`、`HOME`、`LANG`，以及 dws 运行所需的变量，实施时确定）；`TYPESAFE_API_KEY`、WebSocket 令牌等不传入。Agent 子进程由 subagent provider 启动，能否限制其环境变量见「实施前需核实」；核实前，文档要求部署时不要把与 Agent 无关的密钥放进 Profile 进程环境。
-- **不可信数据与提示注入**：来自 WebSocket 的数据一律视为不可信。传给 Agent 时用 `untrusted()` 包裹；Agent 默认 `read-only` 权限，在每个任务独立的空目录内运行；Agent 输出只有经过 Schema 与业务白名单校验后才能触发副作用。
-- **命令行注入**：dws 通过 `execFile` 调用，参数使用 `--key=value` 形式，目标 ID 先经过格式校验，`dwsPath` 为绝对路径。
-- **统一脱敏**：所有日志与错误对象经过同一个脱敏函数。该函数按已知密钥值精确替换（WebSocket 鉴权头、Jev API Key、webhook token），并截断长文本。消息正文、WebSocket 帧、Agent 原始输出只记录长度与哈希；`ws` 握手错误、dws stderr、`invalid_output` 的原文都经过该函数。
+- **凭据不进入子进程**：本包启动的子进程（dws）只继承环境变量白名单：`PATH`、`HOME`、`LANG`、`LC_ALL`、`LC_CTYPE`、`TZ`、`TMPDIR`、`USER`、`LOGNAME`，以及 dws 所需的 `DWS_CONFIG_DIR`、`DWS_KEYCHAIN_DIR`、`DWS_DISABLE_KEYCHAIN`、`XDG_CONFIG_HOME`（已验证 dws 在该环境下可读取登录态）；`TYPESAFE_API_KEY`、WebSocket 令牌等不传入。Agent 子进程由 subagent provider 启动，provider 会剔除名字含 KEY / PASSWORD / SECRET / TOKEN 的变量，Agent 需要的凭据由 provider 自己的 Config `env` 显式给出。
+- **不可信数据与提示注入**：来自 WebSocket 的数据一律视为不可信。传给 Agent 时用 `untrusted()` 包裹（每次生成随机的分隔标记，外部数据无法伪造结束标记）；Agent 默认 `read-only` 权限，在每个任务独立的空目录内运行；不支持工具过滤的 provider 需显式声明权限上限，否则拒绝运行；Agent 输出只有经过 Schema 与业务白名单校验后才能触发副作用。
+- **命令行注入**：dws 不经过 shell 调用，参数使用 `--key=value` 形式，目标 ID 先经过格式校验，`dwsPath` 为绝对路径。
+- **统一脱敏**：所有日志与错误对象经过同一个脱敏函数。该函数按已登记的密钥值精确替换（WebSocket 鉴权头的值在每次连接前登记、Jev API Key、webhook token），把名字形如 authorization / token / secret / api key / password / cookie 的字段整体替换，并截断长文本。消息正文、WebSocket 帧、prompt 与 Agent 原始输出只记录长度与哈希；`ws` 握手错误、dws stderr、`invalid_output` 的原因都经过该函数。
 - **传输**：强制 `wss://`，不允许关闭证书校验，不跟随重定向。
 - **资源上限**：`maxPayloadBytes`、`maxPendingMessages`、`maxQueueSize` 均有默认值，防止超大帧、消息洪泛和无上限排队。
-- **Session 审计数据**：Session 中保存完整 prompt 与输出。部署要求 dsh Web 界面只绑定 `127.0.0.1` 或放在鉴权代理之后，并配合 `sessionRetentionDays` 清理。
+- **Session 审计数据**：claude-code / codex 委托不产生 dsh Session。若业务包自行使用会持久化 Session 的 provider，Session 中保存完整 prompt 与输出，部署要求 dsh Web 界面只绑定 `127.0.0.1` 或放在鉴权代理之后。
 - 发给 Claude Code、Codex、TypeSafe 的内容由业务包决定，业务包负责数据最小化。
 
 ## 目录结构
 
 ```text
 dsh-agent-kit/
-  package.json            # name: @mc/dsh-agent-kit，type: module，dsh.bundle，files 白名单
+  package.json            # name: @mc/dsh-agent-kit，type: module，dsh.bundle.patch，files 白名单，子路径 exports
   src/
-    index.ts              # 导出全部 Service、KitError 与类型
-    common/               # KitError、脱敏、子进程终止、健康状态
-    ws/  dingtalk/  agent-tasks/  jev/
+    index.ts              # 导出全部 Service、KitError、untrusted()、Jev 问题构造函数与类型
+    common/               # KitError、脱敏、子进程终止、健康状态与 Service 基类
+    ws/  dingtalk/  agent-tasks/  jev/   # 各自的 index.ts 默认导出 Service 类，供 loader 按子路径加载
     testing/              # 以 @mc/dsh-agent-kit/testing 导出
-  patch.yml               # bundle 默认 patch 层：以禁用状态注册四个 Service，默认配置
+  fixtures/fake-dws.mjs   # 假 dws 脚本（随包发布，供 testing 使用）
+  patch.yml               # bundle 默认 patch 层：以禁用状态注册四个 Service
   tests/
-    unit/  integration/  e2e/  fixtures/
+    unit/  integration/  e2e/  fixtures/dws/   # fixtures 为录制的真实 dws 输出
   docs/superpowers/specs/
 ```
 
-- `@deepseek-ai/cordis` 与 `@deepseek-ai/dsh-*` 均为 `peerDependencies`，版本与目标 dsh 版本精确对齐（当前 dsh `0.1.5-rc.3` 依赖 cordis `4.0.2`），不放进 `dependencies`，避免装出重复实例、破坏 Context 类型扩展。`@typesafe-ai/sdk` 为可选 peer。
+- `@deepseek-ai/cordis`（`4.0.2`）与 `@deepseek-ai/schemastery`（`^3.18.2`）为 `peerDependencies`，版本与目标 dsh 版本对齐（dsh `0.1.5-rc.3` 依赖 cordis `4.0.2`），不放进 `dependencies`，避免装出重复实例、破坏 Context 类型扩展。`@typesafe-ai/sdk` 为可选 peer。本包不 import `@deepseek-ai/dsh-subagent`，而是按其结构定义所需的类型，避免强制依赖并避免与其 Context 类型扩展冲突。运行时依赖只有 `ws` 与 `ajv`。
 - ESM、TypeScript `strict: true`；注册都通过 `ctx.effect()` / `ctx.on()`。
-- `@mc/dsh-agent-kit/testing` 导出：本地 WebSocket 测试服务端、假 subagent provider、Jev mock、假 dws 脚本。业务包可以用它们在没有 dws / Agent 登录态的环境下开发和测试。
+- `@mc/dsh-agent-kit/testing` 导出（业务包可以用它们在没有 dws / Agent 登录态的环境下开发和测试）：
+  - `startTestWsServer()`：本机随机端口的 WebSocket 服务端，可模拟握手拒绝（`rejectNext(401)`）、关闭自动 pong、广播帧，并记录握手头与收到的帧。
+  - `FakeSubagentProvider`（结构与 dsh-subagent 的 provider 一致，可注册到真实 `ctx.subagents`）与 `FakeSubagentRuntime`（没有 dsh-subagent 时提供最小的 `ctx.subagents`）。
+  - `createJevMock()`：替换 JevService 的 SDK 客户端，默认按问题生成确定的答案；`jevHttpError(status)` 模拟 HTTP 错误。
+  - `createFakeDws()` / `fakeDwsPath`：假 dws 脚本，场景（成功、失败、挂起、非法输出、bot 部分失败、登录态失效）从 `$DWS_CONFIG_DIR/fake-dws.json` 读取，并记录每次调用的参数与环境变量名。
 
 ## 测试
 
-测试框架使用 Vitest；与时间相关的测试（退避、心跳、超时）一律使用假时钟。覆盖率门槛：行 80%、分支 70%。CI 在 Linux 与 macOS 上、按支持的 Node 版本矩阵运行。
+测试框架使用 Vitest；与时间相关的测试（退避、心跳、超时）一律使用假时钟。覆盖率门槛：行 80%、分支 70%（当前约为行 97%、分支 89%）。CI 在 Linux 与 macOS 上、按支持的 Node 版本矩阵运行（`.github/workflows/ci.yml`）。
 
 ### 单元测试
 
@@ -313,12 +363,12 @@ dsh-agent-kit/
 
 ### 集成测试
 
-在真实 dsh（锁定版本）中加载 `patch.yml`：默认全部禁用时 Profile 正常启动；只启用部分 Service 时，未启用的 Service 缺少配置不影响启动；启用后四个 Service 都能被 inject；卸载后连接、定时器、子进程全部回收。
+用 dsh 自己的启动流程（`@deepseek-ai/dsh-app-boot` 的 `boot()` 与 bundle patch 加载，锁定版本）加载已构建的 `lib/` 与 `patch.yml`：默认全部禁用时 Profile 正常启动；只启用部分 Service 时，未启用的 Service 缺少配置不影响启动；启用的 Service 配置非法时启动失败；启用后四个 Service 与真实 `dsh-subagent` 一起都能被 inject 并协同工作；卸载后连接以 1001 关闭、在途 dws 子进程及其子进程全部回收。
 
 ### 契约与端到端测试
 
-- 契约：把真实 dws 输出（成功、非零退出、bot 多群部分失败）与真实 subagent 结果录制为 `tests/fixtures/`，纳入版本管理；假 dws 与假 provider 基于这些 fixture，升级 dws 或 dsh 版本时重新录制。
-- 端到端冒烟：真实 dws 向测试群发一条消息，真实 subagent 执行一个最小任务，真实 Jev 做一次判断。通过 CI secrets 注入凭据，只在夜间或手动触发时运行，PR 上默认跳过。
+- 契约：真实 dws 输出录制在 `tests/fixtures/dws/`（`--mock` 下的 user 单发与 bot 多群成功、各身份的 `--dry-run`、参数校验失败的 stderr 与退出码、`auth status`），解析器直接以这些 fixture 做测试，假 dws 的输出结构与之一致；升级 dws 版本时重新录制。bot 多群部分失败时 `failures` 条目的真实结构需要真实机器人发送才能录制，目前按 `im.batch-write.v1` 的 `{ target, ... }` 约定宽松解析（取 `error.message` / `message` / `reason`），待首次夜间端到端运行时补录。subagent 结果的结构（`{ output, structured?, diagnostic?, stopReason }`）来自 dsh-subagent 的类型定义，并由真实 claude-code 端到端测试覆盖。
+- 端到端冒烟（`npm run test:e2e`）：真实 dws 向测试群或指定用户（单聊）发一条消息，真实 subagent 执行一个最小任务并验证默认权限下不能执行命令或写文件，真实 Jev 做一次判断。每项通过环境变量单独启用（见 `tests/e2e/smoke.test.ts`），通过 CI secrets 注入凭据，只在夜间或手动触发时运行（`.github/workflows/e2e.yml`），PR 上默认跳过。
 
 测试只使用通用示例数据，不包含任何具体业务项目的数据。
 
@@ -333,23 +383,23 @@ dsh plugin --profile <name> add @mc/dsh-agent-kit <业务包> \
 
 - subagent 包必须显式指定版本：其 `latest` 标签目前指向 `0.0.1-rc.1`，与 dsh `0.1.5-rc.3` 不匹配。
 - 公开发布到 npm。发布前先注册或确认 `@mc` scope 的发布权限，否则更换 scope；发布账号开启 2FA，发布时附带 provenance；`package.json` 用 `files` 白名单限定发布内容，不包含 install 脚本。
-- 业务包必须把本包同时声明在 `peerDependencies` 与 `devDependencies` 中，目的是让一个 Profile 只加载一份本包实例（是否生效见「实施前需核实」）；开发期可用 `link:` 指向本地 checkout。
+- 业务包必须把本包同时声明在 `peerDependencies` 与 `devDependencies` 中，目的是让一个 Profile 只加载一份本包实例（见「核实结论」第 6 项）；开发期可用 `link:` 指向本地 checkout。
 - 按语义化版本发布，不兼容的接口变化升主版本号。
-- 运行前提：启用 dingtalk 时本机需已登录 `dws`（服务器环境推荐 `bot` 身份）；启用 agentTasks 时需已登录对应的 Claude Code / Codex。登录态失效会反映在 `health()` 中。
+- 运行前提：启用 dingtalk 时本机需已登录 `dws`（服务器环境推荐 `bot` 身份）；启用 agentTasks 时需安装对应 provider（`ctx.subagents` 与 `subprocess` 服务由 dsh 的 base bundle 提供，行 id 分别为 `subagent`、`subprocess`），并已登录对应的 Claude Code / Codex（依赖 token 类环境变量鉴权时，经 provider 的 Config `env` 显式传入）。登录态失效会反映在 `health()` 中。
 - 部署要求：Profile 进程由 systemd、pm2 等进程守护托管；每条上游连接只部署一个实例；升级时先停旧实例（卸载流程会中止在途任务），失败可回滚到上一个版本号。
 
-## 实施前需核实
+## 核实结论
 
-以下每一项都要先用原型或文档核实，结论写回本文档后再进入实施。第 1、2 项决定对应 Service 的设计能否成立，优先核实。
+以下各项已在实施前用原型、源码阅读或真实命令核实（dsh `0.1.5-rc.3`、dws `v1.0.62`、`@typesafe-ai/sdk` `0.6.0`），结论已体现在上文设计中。
 
-1. `ctx.subagents` 能否用未执行任何轮次的根 Agent 作为父 Agent（`SubagentStartRequest` 要求 `parent: Agent`、`prompt: ContentBlock[]`），以及创建根 Agent 所需的最小服务集合；provider 原生 `outputSchema` / `result.structured` 的行为。
-2. dws webhook token 能否通过环境变量或文件传入，而不是 `--webhook-token` 命令行参数（命令行参数会出现在 `ps` 中）。如不能，`webhook` 身份在文档中标注为不推荐，或推动 dws 支持。
-3. `dws chat +messages-send -f json` 的 JSON 输出格式（含 bot 多群的逐目标结果）与退出码约定；检查 dws 登录态的命令。
-4. subagent provider 是否支持工具过滤、禁用 Bash 与网络、限制轮次、限制子进程环境变量，以及如何映射到 `permissions`、`maxTurns`。
-5. dsh 如何加载 bundle 的 `patch.yml`，以及如何表达「默认禁用」。
-6. `dsh plugin add` 如何解析依赖：peer 声明能否保证一个 Profile 只有一份本包及 cordis 实例。
-7. dsh 是否提供删除 Session 的能力，用于 `sessionRetentionDays`。
-8. `@typesafe-ai/sdk` 当前版本中 `noul`、`score` 构造函数与答案字段的准确名称和含义、内置重试行为、可用的模型名。
+1. **父 Agent 与结构化输出**：`ctx.subagents.start(name, request)` 的 `parent` 在 claude-code / codex provider 中只被读取 `session.header.cwd`，runtime 只把它当作事件作用域的键；只有返回 `localAgent` 的 provider 才需要真实 Session。因此用只含 cwd 的桩对象作为父 Agent，不需要创建根 Agent（真实 claude-code 端到端测试已通过）。claude-code / codex 不支持 `outputSchema`（能力声明全为 false，传入会被拒绝），只有 dsh 进程内 provider 支持原生 `result.structured`，所以结构化输出以文本提取为主、原生为辅。
+2. **webhook token**：dws 不支持从环境变量或文件读取 webhook token，只能用 `--webhook-token` 参数。`webhook` 身份标注为不推荐，启动时警告。
+3. **dws 输出与登录态**：成功时 stdout 为 JSON（单目标 `{ ok, result, sendReceipt }`；bot 批量为 `im.batch-write.v1`：`{ succeeded: [{ target, result }], failures: [...], partial }`；`--dry-run` 为 `{ dry_run: true, actions }`）；失败时非零退出并在 stderr 输出 `{ error: { category, code, message } }`（例如参数校验错误 `category: validation`、退出码 3）。登录态用 `dws auth status --format=json`。录制的输出见 `tests/fixtures/dws/`。
+4. **provider 能力**：claude-code / codex 不支持工具过滤、禁用 Bash / 网络、轮次上限，也不返回 usage；权限由 provider 实例配置决定（claude-code `permissionMode` 默认 `dontAsk`，codex 默认 `never`）。provider 启动子进程时剔除含 KEY / PASSWORD / SECRET / TOKEN 的环境变量，所需凭据经其 Config `env` 显式传入。因此：`permissions` 对这类 provider 采用「运维声明 + fail-closed」；删除 `maxTurns` 配置与结果中的 `usage`。
+5. **bundle 加载与默认禁用**：dsh 读取 `package.json` 的 `dsh.bundle.patch`，patch 文件为 YAML 数组；`- insert: [{ id, name, disabled: true }]` 注册一行禁用的插件，禁用行的模块不会被 import、配置不会被校验。Profile 用 `- id: <id>` 加 `disabled: false` 与 `config` 启用（`config` 整段替换）。
+6. **依赖解析**：`dsh plugin add` 使用 pnpm（`nodeLinker: hoisted`、`autoInstallPeers: false`），并把 dsh 安装的依赖闭包链接到 Profile 的上级 `node_modules`。cordis、schemastery 声明为 peer 时使用 dsh 自带的唯一实例；若放进 `dependencies` 会装出第二份遮蔽它。业务包把本包声明为 peer 时同理只有一份本包实例。
+7. **Session 删除**：dsh 没有删除 Session 的 API（只有 `WorkspaceRegistry.archiveSession()` 隐藏）。claude-code 以 `persistSession: false`、codex 以 `ephemeral: true` 运行，不产生本地 Session，因此删除 `sessionRetentionDays`。
+8. **TypeSafe SDK**：入口为 `new TypeSafeClient({ apiKey, defaultModel, timeout, retry })` 与 `client.systemOne({ state, questions, model? }, { signal })`；问题构造函数为 `noul`、`choice`、`score`，答案字段见「ctx.jev」；默认模型 `jev-latest`；默认最多重试 2 次，`timeout` 为单次尝试超时，没有总时长预算；错误类为 `APIError` 子类（按 HTTP 状态）、`APIConnectionError`、`APITimeoutError`、`APIUserAbortError`。
 
 ## 评审记录
 
@@ -363,3 +413,10 @@ dsh plugin --profile <name> add @mc/dsh-agent-kit <业务包> \
 - 接入体验：新增统一的 `KitError`（含 `retryable`）；新增 `onMessage` 的并发、错误与中止语义；新增泛型 `parse` 与 `run<T>`；连接句柄增加 `state`、`close()`、`whenOpen()`；`headers` 支持传函数；钉钉支持单聊、多群、@ 和逐目标结果；新增 `dryRun` 与 `@mc/dsh-agent-kit/testing`；Jev 新增 `signal`，`timeoutMs` 明确为总时长。
 - 测试：所有 Config 字段写明默认值与取值范围；测试表补齐缺口；明确 JSON 提取的边界规则；引入假时钟和覆盖率门槛；新增集成测试、fixture 契约测试和夜间端到端测试。
 - 暂不采纳：备用告警通道（列为非目标，通过健康状态与事件暴露）；`withRetry` helper 与业务包脚手架（等第二个项目出现时再评估，第一版靠 `retryable` 字段支持调用方自行重试）；A2UI 卡片消息（第一版只支持文本与 Markdown）。
+
+### 实施（2026-09-23）
+
+- 新增 Jev 的可选钥匙串读取（`keychainService` / `keychainAccount`），与 gitflow-cli 共享 TypeSafe key。
+- 按核实结论调整：agentTasks 改用桩父 Agent，不创建根 Session、不在 Web 界面审计；删除 `maxTurns`、`sessionRetentionDays` 与结果中的 `usage`；不支持工具过滤的 provider 需在 `declaredPermissions` 中声明权限上限，新增错误码 `unsupported_permissions`；webhook 身份标注为不推荐。
+- 补充：dingtalk 支持 `text` 正文、调用级 `signal`，新增错误码 `send_failed`、`aborted`、`spawn_failed`；各 Config 的输入类型允许省略有默认值的字段（导出 `ConfigInput`）；Jev 问题构造函数在本包内按 SDK 线上格式重新定义，使 SDK 成为真正可选的依赖。
+- 端到端：dingtalk 以 user 身份单聊发送、agentTasks 真实 claude-code 任务、Jev 真实判断均已在本地跑通（2026-09-24）。
