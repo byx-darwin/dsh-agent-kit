@@ -79,7 +79,7 @@ export const SERVICES: ServiceMeta[] = [
       'webhook 身份只能把 token 作为命令行参数传给 dws（会出现在 ps 中），不推荐使用。',
       '自动重试只在 user 身份且给出 idempotencyKey 时进行，避免重复发送。',
       'status() 实时检查登录态；login() 发起设备流登录，拿到授权链接即返回，由业务包决定怎么交给要登录的人；logout() 退出登录。webhook 身份的 login() / logout() 报 unsupported。',
-      'dws 的登录态是本机共享的：login() 会替换本机当前的钉钉登录，logout() 会退出本机全部钉钉账号。',
+      'dws 的登录态是本机共享的，同一系统用户下的其他 dws 程序也会看到登录与退出；logout() 只退出当前账号（--profile=<corpId>:<userId>）。',
     ],
     errors: [
       { code: 'timeout', retryable: '是', meaning: 'dws 超时，子进程按「先 SIGTERM、宽限后 SIGKILL」回收。' },

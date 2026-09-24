@@ -69,7 +69,7 @@ export function renderLlmsFull(): string {
     '- 两个包：@mc/dsh-agent-kit 是给业务包用的库（六个 Service 与 testing 工具）；@mc/dsh-agent-kit-admin 是可选的运维工具（doctor / setup 命令行、dsh Web 设置页、业务包设置入口登记），以常驻行 agent-kit-admin 注册。',
     '- 六个 Service 默认禁用、按需启用；业务包只 inject 用到的 Service，并只把 @mc/dsh-agent-kit 声明为 peer 依赖。',
     '- 只需要发通知时推荐 inject notify：同一时间发往一个渠道，由 agent-kit-notify 的 channel（dingtalk / feishu）决定；修改配置原地生效，业务包也可以用 ctx.notify.use(channel) 在运行中切换，不需要改业务代码。',
-    '- 钉钉与飞书都提供 status() / login() / logout()：login() 是设备流登录，拿到授权链接（verificationUrl）即返回，由业务包决定怎么交给要登录的人，completed 在授权完成、过期、拒绝或 cancel() 时 resolve。dws 的 logout 会退出本机全部钉钉账号。',
+    '- 钉钉与飞书都提供 status() / login() / logout()：login() 是设备流登录，拿到授权链接（verificationUrl）即返回，由业务包决定怎么交给要登录的人，completed 在授权完成、过期、拒绝或 cancel() 时 resolve。钉钉 logout() 只退出当前账号（dws auth logout --profile=<corpId>:<userId>）。',
     '- 本包运行时从不安装 CLI；dws（dingtalk-workspace-cli@1.0.62）与 lark-cli（@larksuite/cli@1.0.96）只由 admin 包的 setup 在用户确认后安装。',
     '- 来自 WebSocket 的数据与 Agent 输出都视为不可信：传给 Agent 时用 untrusted() 包裹；触发副作用前按业务白名单校验。',
     '',

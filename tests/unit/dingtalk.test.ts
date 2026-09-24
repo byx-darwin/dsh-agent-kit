@@ -432,7 +432,7 @@ describe('DingtalkService login state', () => {
 
   it('reports status, logs out and logs back in with the device flow', async () => {
     const svc = await start()
-    expect(await svc.status()).toMatchObject({ channel: 'dingtalk', identity: 'user', online: true, account: '测试用户 @ 测试组织' })
+    expect(await svc.status()).toMatchObject({ channel: 'dingtalk', identity: 'user', online: true, account: '张三 @ 示例公司' })
     expect(await svc.logout()).toMatchObject({ online: false, detail: 'dws is not logged in' })
     expect(svc.health().status).toBe('failed')
     const session = await svc.login()
@@ -442,6 +442,8 @@ describe('DingtalkService login state', () => {
     expect(await session.completed).toMatchObject({ online: true })
     expect(svc.health().status).toBe('ok')
     expect(dws.calls().some((c) => c.args.join(' ') === 'auth login --device --no-browser --format=json')).toBe(true)
+    // 只退出当前账号，不用 dws 默认的「退出全部账号」
+    expect(dws.calls().find((c) => c.args[1] === 'logout')!.args).toEqual(['auth', 'logout', '--profile=dingcorp:u1', '--yes', '--format=json'])
   })
 
   it('resolves completed offline when the login is denied or cancelled', async () => {
