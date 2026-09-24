@@ -12,8 +12,6 @@
 # 注意：按 id 修改 config 时整段替换，不与这里的默认值合并；未给出的字段使用 Config 的默认值。
 
 - insert:
-    - id: agent-kit
-      name: '@mc/dsh-agent-kit'
     - id: agent-kit-ws
       name: '@mc/dsh-agent-kit/ws'
       disabled: true

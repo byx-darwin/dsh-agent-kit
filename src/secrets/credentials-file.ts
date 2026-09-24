@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { isMap, parseDocument } from 'yaml'
-import { resolveDshHome } from '../profile/locate.js'
+import { resolveDshHome } from '../common/dsh-home.js'
 
 /** dsh-credentials-local 使用的文件：$DSH_HOME/.credentials.yaml（version 1，refs 映射）。 */
 export function credentialsFile(home = resolveDshHome()): string {

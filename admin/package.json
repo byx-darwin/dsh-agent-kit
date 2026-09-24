@@ -1,0 +1,66 @@
+{
+  "name": "@mc/dsh-agent-kit-admin",
+  "version": "0.1.0",
+  "description": "Optional ops tooling for @mc/dsh-agent-kit: doctor / setup CLI, dsh Web settings page, and business-package entry registration",
+  "license": "MIT",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "bin": {
+    "dsh-agent-kit": "./bin/dsh-agent-kit.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./entry": {
+      "types": "./lib/entry.d.ts",
+      "default": "./lib/entry.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "bin",
+    "patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": "^22.19 || >=24"
+  },
+  "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node scripts/build-client.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.10.1",
+    "diff": "^8.0.4",
+    "yaml": "^2.9.1"
+  },
+  "peerDependencies": {
+    "@mc/dsh-agent-kit": "^0.1.0",
+    "@deepseek-ai/cordis": "4.0.2 || 4.0.4",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.5-rc.3 || 0.1.7-alpha.2",
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  }
+}

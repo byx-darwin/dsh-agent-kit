@@ -1,5 +1,8 @@
 export { KitError, ConfigError, isKitError, type ConfigInput, type KitErrorOptions, type ServiceName } from './common/errors.js'
 export { redact, registerSecret, digest } from './common/redact.js'
+export { BASE_ENV_WHITELIST, pickEnv, runProcess, type RunProcessOptions, type RunProcessResult } from './common/process.js'
+export { resolveExecutable } from './common/executable.js'
+export { resolveDshHome } from './common/dsh-home.js'
 export type { HealthStatus, ServiceHealth, ServiceFailedEvent } from './common/service.js'
 
 export { AgentWsService, WsConfig, WsError, type AgentWsHandle, type AgentWsCounters, type ConnectOptions, type ConnectionState, type HeadersInit, type MessageContext } from './ws/index.js'
@@ -78,17 +81,4 @@ export {
   type ScoreResponse,
 } from './jev/index.js'
 
-export { name, inject, apply } from './admin/plugin.js'
-export type { AgentKitAdmin, AdminStatus, AdminServiceStatus } from './admin/service.js'
-export {
-  defineEntry,
-  type AgentKitEntry,
-  type EntryCheckContext,
-  type EntryCheckResult,
-  type EntryField,
-  type EntryFieldKind,
-  type EntrySecret,
-} from './admin/entry.js'
-export type { CheckResult, CheckStatus } from './checks/types.js'
-export type { FieldError, KitId } from './profile/kit-entries.js'
 export { describeSecretRef, isSecretRef, readCredential, resolveSecretRef, type SecretRefSource } from './secrets/index.js'

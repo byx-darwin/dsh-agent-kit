@@ -1,0 +1,6 @@
+# @mc/dsh-agent-kit-admin bundle 默认 patch 层：常驻加载 AgentKitAdmin（dsh Web「设置 → Agent Kit」页
+# 的服务端），并让 dsh 发现本包的前端模块。本包是可选的运维工具；业务包只依赖 @mc/dsh-agent-kit。
+
+- insert:
+    - id: agent-kit-admin
+      name: '@mc/dsh-agent-kit-admin'

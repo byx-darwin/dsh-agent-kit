@@ -4,7 +4,6 @@ import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { boot, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
-import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import { createFakeDws } from '../../src/testing/fake-dws.js'
 import { createFakeLark } from '../../src/testing/fake-lark.js'
 import { FakeSubagentProvider } from '../../src/testing/fake-subagent.js'
@@ -63,7 +62,6 @@ describe('bundle patch.yml in a real dsh loader', () => {
     for (const name of ['agentWs', 'dingtalk', 'feishu', 'notify', 'agentTasks', 'jev']) expect(c.get(name)).toBeUndefined()
     const ids = BUNDLE_PATCHES.flatMap((p: any) => p.insert ?? []).map((e: any) => [e.id, e.name, e.disabled])
     expect(ids).toEqual([
-      ['agent-kit', '@mc/dsh-agent-kit', undefined],
       ['agent-kit-ws', '@mc/dsh-agent-kit/ws', true],
       ['agent-kit-dingtalk', '@mc/dsh-agent-kit/dingtalk', true],
       ['agent-kit-feishu', '@mc/dsh-agent-kit/feishu', true],
@@ -71,14 +69,6 @@ describe('bundle patch.yml in a real dsh loader', () => {
       ['agent-kit-agent-tasks', '@mc/dsh-agent-kit/agent-tasks', true],
       ['agent-kit-jev', '@mc/dsh-agent-kit/jev', true],
     ])
-  })
-
-  it('exposes AgentKitAdmin as a Remote service', async () => {
-    const c = await start([])
-    const admin = c.get('agentKitAdmin')
-    expect(admin).toBeDefined()
-    const names = remoteMethods(admin as object).map((m) => m.exportName ?? m.method).sort()
-    expect(names).toEqual(['clearSecret', 'saveService', 'setSecret', 'status'])
   })
 
   it('enabling one service does not require config for the others', async () => {
