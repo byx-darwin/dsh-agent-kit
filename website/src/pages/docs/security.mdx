@@ -18,13 +18,14 @@ import Notice from '../../components/Notice.astro'
 - 读到的密钥只在本进程内存中使用，并登记为脱敏密钥：日志与错误中出现时会被替换。
 - 写入钥匙串时，密钥通过标准输入传给 `security` 命令，不出现在进程参数中。
 - dsh 凭据文件写入时持有与 dsh 相同的跨进程锁并原子替换；POSIX 上权限为 0600，Windows 上收紧为仅当前用户可访问。
-- Web 设置页与服务端接口只返回「是否已配置」与来源，永不返回密钥本身。
+- admin 包的 Web 设置页与服务端接口只返回「是否已配置」与来源，永不返回密钥本身。
+- 设备流登录的授权链接只返回给调用 `login()` 的业务包，本包不会把它发到任何地方；拿到链接的人可以用它登录，请只交给应当登录的人。钉钉的 `logout()` 会退出本机全部钉钉账号。
 
 ## 子进程
 
 - 本包启动的子进程（dws、lark-cli）不经过 shell，只继承环境变量白名单：`PATH`、`HOME`、`LANG`、`LC_ALL`、`LC_CTYPE`、`TZ`、`TMPDIR`、`USER`、`LOGNAME`，以及 dws 所需的 `DWS_CONFIG_DIR`、`DWS_KEYCHAIN_DIR`、`DWS_DISABLE_KEYCHAIN`、`XDG_CONFIG_HOME`；lark-cli 所需的 `LARKSUITE_CLI_CONFIG_DIR`、`LARKSUITE_CLI_PROFILE`、`LARKSUITE_CLI_BRAND`、`LARKSUITE_CLI_CA_PATH`、`LARKSUITE_CLI_PROXY_ADDRESS`、`LARKSUITE_CLI_PROXY_ENABLE`、`XDG_CONFIG_HOME`、`USERPROFILE`、`APPDATA`、`LOCALAPPDATA`（导出为 `LARK_ENV_WHITELIST`）。`TYPESAFE_API_KEY`、WebSocket 令牌，以及 `LARKSUITE_CLI_APP_SECRET`、`*_ACCESS_TOKEN` 这类飞书凭据变量都不会传入。
 - dws、lark-cli 参数统一写成 `--key=value`，目标 ID 先做格式校验，`dwsPath`、`larkPath` 必须是绝对路径。
-- 本包运行时从不安装 CLI。只有 `setup` 在列出将要运行的命令、得到你的确认后，才运行锁定版本的 `npm i -g dingtalk-workspace-cli@1.0.62` 或 `npm i -g @larksuite/cli@1.0.96`；参数全部来自本包内的常量，不含用户输入。
+- 两个包运行时都不安装 CLI。只有 admin 包的 `setup` 在列出将要运行的命令、得到你的确认后，才运行锁定版本的 `npm i -g dingtalk-workspace-cli@1.0.62` 或 `npm i -g @larksuite/cli@1.0.96`；参数全部来自本包内的常量，不含用户输入。
 - 超时或卸载时连同孙进程一起回收。
 - Agent 子进程由 subagent provider 启动，provider 会剔除名字含 KEY、PASSWORD、SECRET、TOKEN 的环境变量；Agent 需要的凭据由 provider 自己的配置显式给出。
 
@@ -49,8 +50,10 @@ import Notice from '../../components/Notice.astro'
 
 ## 配置写入
 
-- `setup` 只修改 Profile 目录下 `cordis.patch.yml` 中本包的几行，保留注释与其他内容；遇到含 `!!js` 表达式的行拒绝修改。
-- Web 设置页的写入接口只在 dsh Web 绑定 `127.0.0.1` 时开放；绑定其他地址或没有加载 Web 服务时一律只读。
+写入 `cordis.patch.yml` 的只有可选的 `@mc/dsh-agent-kit-admin`；基础包不修改它。
+
+- `setup` 只修改 Profile 目录下 `cordis.patch.yml` 中 `agent-kit-*` 的几行，保留注释与其他内容；遇到含 `!!js` 表达式的行拒绝修改。
+- admin 包的 Web 设置页写入接口只在 dsh Web 绑定 `127.0.0.1` 时开放；绑定其他地址或没有加载 Web 服务时一律只读。
 - dsh Web 界面中保存了完整的会话内容，只应绑定 `127.0.0.1` 或放在鉴权代理之后。
 
 </Base>

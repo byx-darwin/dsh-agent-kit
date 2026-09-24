@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" width="960" height="560" role="img" aria-labelledby="t d">
   <title id="t">dsh-agent-kit 架构</title>
-  <desc id="d">业务包通过 inject 使用 dsh-agent-kit 的六个 Service；dsh-agent-kit 运行在 dsh 之上，并连接业务系统、钉钉、飞书、Claude Code / Codex 与 TypeSafe API；通知渠道不直连外部系统，转发给钉钉或飞书。</desc>
+  <desc id="d">业务包通过 inject 使用 dsh-agent-kit 的六个 Service；dsh-agent-kit 运行在 dsh 之上，并连接业务系统、钉钉、飞书、Claude Code / Codex 与 TypeSafe API；通知渠道不直连外部系统，转发给当前渠道（钉钉或飞书中的一个）；设置页与 doctor / setup 在可选的 @mc/dsh-agent-kit-admin 包中。</desc>
   <style>
     .serif { font-family: 'Noto Serif SC', 'Songti SC', serif; font-weight: 700; }
     .sans { font-family: 'Noto Sans SC', -apple-system, 'PingFang SC', sans-serif; }
@@ -8,7 +8,7 @@
   </style>
   <rect width="960" height="560" fill="#FAF7F0"/>
 
-  <!-- 外部系统：与 dsh-agent-kit 框纵向对齐，水平短线连接；通知渠道（肆）不直连外部系统，转发给钉钉或飞书 -->
+  <!-- 外部系统：与 dsh-agent-kit 框纵向对齐，水平短线连接；通知渠道（肆）不直连外部系统，转发给当前渠道（钉钉或飞书） -->
   <text x="40" y="160" class="sans" font-size="12" letter-spacing="2" fill="#B4532A">外部系统</text>
   <g class="sans" font-size="13" fill="#2A2622">
     <rect x="40" y="176" width="220" height="34" rx="6" fill="#FFFFFF" stroke="#E3DCCD"/>
@@ -54,7 +54,7 @@
     <rect x="618" y="220" width="90" height="80" rx="6" fill="#F1EBDF"/>
     <text x="628" y="244" class="serif" font-size="13" fill="#B4532A">肆 · 通知</text>
     <text x="628" y="268" class="mono" font-size="12" fill="#2A2622">notify</text>
-    <text x="628" y="288" font-size="11" fill="#6B6258">转发 贰 / 叁</text>
+    <text x="628" y="288" font-size="11" fill="#6B6258">转发 贰 或 叁</text>
     <rect x="716" y="220" width="90" height="80" rx="6" fill="#F1EBDF"/>
     <text x="726" y="244" class="serif" font-size="13" fill="#B4532A">伍 · 委托</text>
     <text x="726" y="268" class="mono" font-size="12" fill="#2A2622">agentTasks</text>
@@ -63,7 +63,8 @@
     <text x="824" y="268" class="mono" font-size="12" fill="#2A2622">jev</text>
   </g>
   <rect x="324" y="314" width="580" height="40" rx="6" fill="none" stroke="#E3DCCD" stroke-dasharray="4 3"/>
-  <text x="340" y="339" class="sans" font-size="12" fill="#4D463E">常驻行 agent-kit：AgentKitAdmin 服务 + dsh Web「设置 → Agent Kit」页 · 命令行 doctor / setup</text>
+  <text x="340" y="330" class="sans" font-size="12" fill="#4D463E">可选包 <tspan class="mono" font-size="11">@mc/dsh-agent-kit-admin</tspan>（常驻行 <tspan class="mono" font-size="11">agent-kit-admin</tspan>）</text>
+  <text x="340" y="346" class="sans" font-size="11" fill="#6B6258">AgentKitAdmin 服务 · dsh Web「设置 → Agent Kit」页 · 命令行 doctor / setup</text>
 
   <!-- dsh -->
   <line x1="610" y1="370" x2="610" y2="412" stroke="#2A2622" stroke-width="1.5" marker-end="url(#arrow)"/>

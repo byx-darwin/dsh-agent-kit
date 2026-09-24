@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro'
 import pkg from '../../../package.json'
+import adminPkg from '../../../admin/package.json'
 
 const ci = 'https://github.com/byx-darwin/dsh-agent-kit/actions/workflows/ci.yml'
 const peers = pkg.peerDependencies as Record<string, string>
@@ -15,9 +16,11 @@ const runtime: { name: string; version: string; note: string }[] = [
     note: optional[name]?.optional ? '可选 peer 依赖，只有启用 Jev 时需要' : 'peer 依赖，与 dsh 对齐',
   })),
   { name: '@deepseek-ai/dsh-subagent-claude-code / codex', version: '与 dsh 相同', note: '必须显式指定版本（例如 0.1.5-rc.3）：latest 标签指向 0.0.1-rc.1，与 dsh 不匹配' },
-  { name: 'dws（钉钉 CLI，dingtalk-workspace-cli）', version: 'v1.0.62', note: '已验证的版本；输出格式以该版本为准，setup 安装与 doctor 修复建议都锁定到它' },
-  { name: 'lark-cli（飞书 CLI，@larksuite/cli）', version: 'v1.0.96', note: '已验证的版本；输出格式以该版本为准，setup 安装与 doctor 修复建议都锁定到它' },
+  { name: 'dws（钉钉 CLI，dingtalk-workspace-cli）', version: 'v1.0.62', note: '已验证的版本；输出格式以该版本为准，admin 包的 setup 安装与 doctor 修复建议都锁定到它' },
+  { name: 'lark-cli（飞书 CLI，@larksuite/cli）', version: 'v1.0.96', note: '已验证的版本；输出格式以该版本为准，admin 包的 setup 安装与 doctor 修复建议都锁定到它' },
 ]
+
+const adminPeers = Object.entries(adminPkg.peerDependencies as Record<string, string>)
 
 const platforms = [
   { name: 'Linux', status: 'CI 通过', note: 'ubuntu-latest，Node 22.19 与 24' },
@@ -26,12 +29,12 @@ const platforms = [
 ]
 ---
 
-<Base title="兼容性" description="dsh-agent-kit 支持的 Node、dsh、cordis、dws、lark-cli、subagent provider 与 TypeSafe SDK 版本，以及 Linux、macOS、Windows 的状态。">
+<Base title="兼容性" description="dsh-agent-kit（基础包与可选的 admin 包）支持的 Node、dsh、cordis、dws、lark-cli、subagent provider 与 TypeSafe SDK 版本，以及 Linux、macOS、Windows 的状态。">
   <p class="eyebrow">兼容性</p>
   <h1>版本与平台</h1>
-  <p class="lead">当前版本 v{pkg.version}。下表中的依赖版本直接读取自本包的 package.json。</p>
+  <p class="lead">当前版本 v{pkg.version}。下表中的依赖版本直接读取自两个包的 package.json：<code>{pkg.name}</code>（给业务包用的库）与可选的 <code>{adminPkg.name}</code>（运维工具）。</p>
 
-  <h2>运行环境与依赖</h2>
+  <h2>运行环境与依赖：{pkg.name}</h2>
   <div class="table-wrap">
     <table>
       <thead><tr><th>组件</th><th>版本</th><th>说明</th></tr></thead>
@@ -46,6 +49,30 @@ const platforms = [
                 <code>{r.version}</code>
               </td>
               <td>{r.note}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <h2>可选的运维工具：{adminPkg.name}</h2>
+  <p>
+    版本 v{adminPkg.version}；Node 要求同为 <code>{adminPkg.engines.node}</code>。它的 peer 依赖如下，dsh、cordis 相关版本与基础包一致。setup 安装 CLI 与 doctor 修复建议使用上表中锁定的 dws、lark-cli 版本。
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>peer 依赖</th><th>版本</th></tr></thead>
+      <tbody>
+        {
+          adminPeers.map(([name, version]) => (
+            <tr>
+              <td>
+                <code>{name}</code>
+              </td>
+              <td>
+                <code>{version}</code>
+              </td>
             </tr>
           ))
         }

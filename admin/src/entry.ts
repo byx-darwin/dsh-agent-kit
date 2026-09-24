@@ -1,5 +1,5 @@
 /**
- * `@mc/dsh-agent-kit/entry`：业务包静态清单模块（`dsh.agentKit.entries`）使用的轻量入口，
+ * `@mc/dsh-agent-kit-admin/entry`：业务包静态清单模块（`dsh.agentKit.entries`）使用的轻量入口，
  * 只含条目的类型与 `defineEntry`，不加载任何 Service。
  */
 export {

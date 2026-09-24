@@ -9,16 +9,16 @@ import { faqJsonLd } from '../lib/jsonld'
 <Base title="支持" description="如何提交问题，以及 dsh-agent-kit 的常见问题。" jsonLd={[faqJsonLd()]}>
   <p class="eyebrow">支持</p>
   <h1>遇到问题</h1>
-  <p class="lead">先运行一次 doctor，它会指出缺什么、怎么修。仍然解决不了时，欢迎在 GitHub 上提 issue。</p>
+  <p class="lead">先运行一次 doctor（在可选的 <code>@mc/dsh-agent-kit-admin</code> 中），它会指出缺什么、怎么修。仍然解决不了时，欢迎在 GitHub 上提 issue。</p>
 
   <h2>提交 issue</h2>
   <p>
     请在 <a href={`${SITE.repo}/issues/new`}>GitHub Issues</a> 提交，并附上以下信息：
   </p>
   <ul>
-    <li>下面这条命令的输出（其中不包含任何密钥）：</li>
+    <li>下面这条命令的输出（其中不包含任何密钥；没装 admin 包时先用 <code>dsh plugin --profile &lt;名字&gt; add @mc/dsh-agent-kit-admin</code> 加入）：</li>
   </ul>
-  <CopyCommand command="npx @mc/dsh-agent-kit doctor --profile <名字> --json" />
+  <CopyCommand command="npx @mc/dsh-agent-kit-admin doctor --profile <名字> --json" />
   <ul>
     <li>操作系统、Node 版本、dsh 版本。</li>
     <li>相关的日志片段。本包的日志已脱敏，但提交前仍请检查是否含有业务数据。</li>

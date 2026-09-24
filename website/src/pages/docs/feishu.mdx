@@ -5,7 +5,7 @@ import Base from '../../layouts/Base.astro'
 import ServiceDoc from '../../components/ServiceDoc.astro'
 import Notice from '../../components/Notice.astro'
 
-<Base title="飞书推送" description="ctx.feishu：通过飞书官方 CLI lark-cli 发送文本与 Markdown 消息，支持 bot / user 身份、单聊、多群、@ 与幂等键。">
+<Base title="飞书推送" description="ctx.feishu：通过飞书官方 CLI lark-cli 发送文本与 Markdown 消息，支持 bot / user 身份、单聊、多群、@ 与幂等键，并提供身份状态与 user 身份的设备流登录。">
 <ServiceDoc id="feishu">
 
 ## 接口
@@ -36,7 +36,7 @@ const r = await ctx.feishu.send({
 | 身份 | 需要的准备 | 适用 |
 |---|---|---|
 | `bot` | `lark-cli config init`，填写飞书应用的 App ID / App Secret | 服务器环境推荐，无需用户登录 |
-| `user` | 在 `bot` 的基础上再运行 `lark-cli auth login --scope "im:message.send_as_user im:message"` | 以登录用户的名义发送 |
+| `user` | 在 `bot` 的基础上再登录：运行 `lark-cli auth login --scope "im:message.send_as_user im:message"`，或由业务包调用 `ctx.feishu.login()`（见下文） | 以登录用户的名义发送 |
 
 两种身份都以 `--as=<身份>` 传给 lark-cli。凭据由 lark-cli 自己的配置与系统钥匙串保存，本包不读取、不保存。
 
@@ -64,13 +64,32 @@ const r = await ctx.feishu.send({
 - lark-cli 的幂等键最长 50 个字符。单目标且不超长时原样使用，便于在飞书侧对账；多目标或超长时，按「原始键 + 目标」派生一个逐目标的键，否则只有第一个目标能收到。
 - 只有给出 `idempotencyKey` 时，才会对可重试的失败（超时，或 lark-cli 错误类别为 network / timeout / rate_limit / server / internal / unavailable）最多重试 `retry.maxAttempts` 次，间隔从 500ms 起指数增长。没有幂等键时不自动重试，避免重复发送。
 
+<h3 id="login">登录状态与登录</h3>
+
+```ts
+const st = await ctx.feishu.status()
+// { channel: 'feishu', identity: 'user', online: false, account?: '张三', detail, checkedAt }
+
+const s = await ctx.feishu.login()     // 仅 user 身份；{ channel, verificationUrl, userCode?, expiresAt, completed, cancel() }
+await postToOps(s.verificationUrl)      // 由业务包决定怎么把链接交给要登录的人
+const after = await s.completed         // 授权完成后的状态
+
+await ctx.feishu.logout()               // 仅 user 身份；返回退出后的状态
+```
+
+- `status()`：执行 `lark-cli auth status --json` 实时检查所配身份是否可用；`account` 在 user 身份下是用户名或 open_id，在 bot 身份下是应用 App ID。`dryRun` 时只报告，不改变 `health()`。
+- `login({ signal? })`：运行 `lark-cli auth login --scope=im:message.send_as_user im:message --no-wait --json` 立即拿到授权链接并返回，随后在后台运行 `lark-cli auth login --device-code=<code>` 等待授权。对方授权后 `completed` 以新的状态 resolve；链接过期（15 分钟，lark-cli 给出有效期时以它为准）、被拒绝、`cancel()` 或 `signal` 中止时同样 resolve，`online` 为 `false`。登录进行中再次调用返回同一个会话。第一步失败时抛出 `login_failed`。
+- `logout()`：运行 `lark-cli auth logout`，退出 user 身份的登录，返回退出后的状态。
+- 配置了 `profile` 时，以上命令都带 `--profile=<名字>`。
+- `bot` 身份没有用户登录：它使用 `lark-cli config init` 配置的应用凭据，`status()` 照常报告应用是否可用，`login()` / `logout()` 抛出 `unsupported`。更换应用凭据请重新运行 `lark-cli config init`。
+
 ### 身份检查与 dryRun
 
 - 启动时以及每隔 `preflightIntervalMs` 执行 `lark-cli auth status --json`，检查所配身份是否可用。不可用时 `health()` 返回 `failed`，并触发 `agent-kit/service-failed` 事件。
 - `dryRun: true` 时附加 `--dry-run`，只做参数解析与日志、不真实发送，适合本地开发与测试；此时不检查身份。
 
 <Notice title="先装 lark-cli" tone="warn">
-本包不会自己安装 lark-cli。`setup` 在你启用飞书时会列出缺少的 CLI，确认后才运行 `npm i -g @larksuite/cli@1.0.96`；也可以手动安装，再运行 `lark-cli config init`。`doctor` 的 `agent-kit-feishu.lark-cli` 与 `agent-kit-feishu.identity` 两项分别检查安装与身份。
+本包不会自己安装 lark-cli。可选的 admin 包中的 `setup` 在你启用飞书时会列出缺少的 CLI，确认后才运行 `npm i -g @larksuite/cli@1.0.96`；也可以手动安装，再运行 `lark-cli config init`。`doctor` 的 `agent-kit-feishu.lark-cli` 与 `agent-kit-feishu.identity` 两项分别检查安装与身份。
 </Notice>
 
 ### larkPath 与 Windows

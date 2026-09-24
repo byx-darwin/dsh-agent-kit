@@ -14,6 +14,10 @@ export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
 
 # 用 dsh 搭一个常驻 Agent Worker
 
+<Notice title="更新说明">
+本文写于 2026-09-24。之后 `doctor`、`setup` 与设置页移到了可选包 `@mc/dsh-agent-kit-admin`：文中的 `npx @mc/dsh-agent-kit …` 请改用 `npx @mc/dsh-agent-kit-admin …`，并用 `dsh plugin --profile <名字> add @mc/dsh-agent-kit @mc/dsh-agent-kit-admin` 同时加入两个包。发通知推荐改用 `ctx.notify`，见 <a href={link('/docs/notify')}>通知渠道</a>。
+</Notice>
+
 设想这样一个场景：业务系统通过 WebSocket 不断推送事件，大部分事件可以按规则处理，但有一部分需要「看懂了再说」——判断它属于哪一类、是不是异常。判断完成后，可疑的事件要推送到钉钉，让人来复核。
 
 这个 Worker 需要一直在线，需要调用 Claude Code 这样的 Agent，需要对 Agent 的结论再做一次校验，还需要往钉钉发消息。四件事都和业务无关，但每个项目都要重写一遍。下面用 dsh-agent-kit 把它们串起来，业务包里只剩下真正属于业务的代码。

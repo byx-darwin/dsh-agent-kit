@@ -5,7 +5,7 @@ import Base from '../../layouts/Base.astro'
 import ServiceDoc from '../../components/ServiceDoc.astro'
 import Notice from '../../components/Notice.astro'
 
-<Base title="钉钉推送" description="ctx.dingtalk：通过 dws CLI 发送文本与 Markdown 消息，支持 user / bot / webhook 身份、单聊、多群、@ 与幂等键。">
+<Base title="钉钉推送" description="ctx.dingtalk：通过 dws CLI 发送文本与 Markdown 消息，支持 user / bot / webhook 身份、单聊、多群、@ 与幂等键，并提供登录状态、设备流登录与退出。">
 <ServiceDoc id="dingtalk">
 
 ## 接口
@@ -46,7 +46,29 @@ bot 身份统一走批量参数，dws 返回逐目标结果。批量发送的部
 
 只有在 `user` 身份且给出 `idempotencyKey` 时，才会对可重试的失败（超时，或 dws 错误类别为 network / timeout / rate_limit / server / unavailable）最多重试 `retry.maxAttempts` 次，间隔从 500ms 起指数增长。其他情况不自动重试，避免重复发送。
 
-### 登录态与 dryRun
+<h3 id="login">登录状态与登录</h3>
+
+```ts
+const st = await ctx.dingtalk.status()
+// { channel: 'dingtalk', identity: 'bot', online: true, account?: '张三', detail, checkedAt }
+
+const s = await ctx.dingtalk.login()   // { channel, verificationUrl, userCode?, expiresAt, completed, cancel() }
+await postToOps(s.verificationUrl)      // 由业务包决定怎么把链接交给要登录的人
+const after = await s.completed         // 授权完成后的状态
+
+await ctx.dingtalk.logout()             // 返回退出后的状态
+```
+
+- `status()`：执行 `dws auth status` 实时检查。`dryRun` 时只报告，不改变 `health()`；非 `dryRun` 时结果同时更新 `health()`。
+- `login({ signal? })`：运行 `dws auth login --device --no-browser`，从输出中取到授权链接就返回，dws 在后台等待授权。对方授权后 `completed` 以新的状态 resolve；链接过期（15 分钟，dws 给出有效期时以它为准）、被拒绝、`cancel()` 或 `signal` 中止时同样 resolve，`online` 为 `false`。登录进行中再次调用返回同一个会话。dws 在给出链接前就退出时抛出 `login_failed`。
+- `logout()`：运行 `dws auth logout`，返回退出后的状态。
+- `webhook` 身份没有登录：`status()` 总是 `online: true`，`login()` / `logout()` 抛出 `unsupported`。
+
+<Notice title="dws 的登录是本机共享的" tone="warn">
+dws 的登录态属于运行 Profile 的这个系统用户，不属于某个 Profile。`login()` 会替换本机当前的钉钉登录；`logout()` 会退出**本机全部钉钉账号**，同一用户下使用 dws 的其他程序也会受影响。调用前请确认。
+</Notice>
+
+### 登录态检查与 dryRun
 
 - 启动时以及每隔 `preflightIntervalMs` 执行 `dws auth status` 检查登录态。失效时 `health()` 返回 `failed`，并触发 `agent-kit/service-failed` 事件。
 - `dryRun: true` 时附加 `--dry-run`，只做参数解析与日志、不真实发送，适合本地开发与测试；此时不检查登录态。

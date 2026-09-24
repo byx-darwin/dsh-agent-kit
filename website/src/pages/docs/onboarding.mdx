@@ -6,35 +6,41 @@ import CopyCommand from '../../components/CopyCommand.astro'
 import Notice from '../../components/Notice.astro'
 import Figure from '../../components/Figure.astro'
 
-<Base title="配置引导" description="用 doctor 检查、用 setup 交互式配置，或在 dsh Web 的设置页里查看状态、启停 Service、修改配置与保存密钥。">
+<Base title="配置引导" description="可选的运维工具 @mc/dsh-agent-kit-admin：用 doctor 检查、用 setup 交互式配置，或在 dsh Web 的设置页里查看状态、启停 Service、修改配置与保存密钥。">
 
 <p class="eyebrow">配置引导</p>
 
 # doctor、setup 与设置页
 
+本页介绍的都来自可选的运维工具 **`@mc/dsh-agent-kit-admin`**，不在基础包 `@mc/dsh-agent-kit` 中。业务包不需要依赖它；不装它时，六个 Service 照常工作，直接编辑 `cordis.patch.yml` 即可。需要时把它加入 Profile：
+
+<CopyCommand command="dsh plugin --profile my-agent add @mc/dsh-agent-kit @mc/dsh-agent-kit-admin" npm />
+
+admin 包以常驻行 `agent-kit-admin` 注册（`ctx.agentKitAdmin`，即设置页调用的服务端接口），不影响基础包各行的启停。
+
 三种方式读写的是同一份配置：Profile 目录下 `cordis.patch.yml` 中 id 为 `agent-kit-*` 的几行，以及业务包登记进来的行（见下文「业务包的行」）。手动编辑这个文件，效果也完全一样。
 
 ## doctor：检查
 
-<CopyCommand command="npx @mc/dsh-agent-kit doctor --profile my-agent" />
+<CopyCommand command="npx @mc/dsh-agent-kit-admin doctor --profile my-agent" />
 
 - 只读，不修改任何文件，也不需要启动 dsh。
 - 只检查已启用 Service 需要的项，每项显示通过、警告、失败或跳过，未通过的项附一条修复命令。
-- 检查内容：Node 与 dsh 版本、本包是否在 Profile 的 bundle 中、配置修改能否即时生效；各 Service 的配置能否通过校验；钉钉的 dws 安装与登录态；飞书的 lark-cli 安装（`agent-kit-feishu.lark-cli`）与所配身份是否可用（`agent-kit-feishu.identity`）；通知渠道指向的每个渠道行是否已启用（`agent-kit-notify.channel-<渠道>`）；Agent 任务的 provider 安装与权限声明；Jev 的 SDK 与 Key 来源（不输出 Key 本身）。
+- 检查内容：Node 与 dsh 版本、基础包 `@mc/dsh-agent-kit` 是否在 Profile 的 bundle 中、配置修改能否即时生效；各 Service 的配置能否通过校验；钉钉的 dws 安装与登录态；飞书的 lark-cli 安装（`agent-kit-feishu.lark-cli`）与所配身份是否可用（`agent-kit-feishu.identity`）；通知渠道所选的渠道行是否已启用（`agent-kit-notify.channel`）；Agent 任务的 provider 安装与权限声明；Jev 的 SDK 与 Key 来源（不输出 Key 本身）。
 - 缺少 dws 或 lark-cli 时，修复建议给出锁定版本的安装命令：`npm i -g dingtalk-workspace-cli@1.0.62`、`npm i -g @larksuite/cli@1.0.96`。
 - `--json` 输出机器可读的报告；有失败项时退出码为 1，可以接入 CI。
 
 ## setup：交互式配置
 
-<CopyCommand command="npx @mc/dsh-agent-kit setup --profile my-agent" />
+<CopyCommand command="npx @mc/dsh-agent-kit-admin setup --profile my-agent" />
 
-1. 选择 Profile。没装本包时，会提示要执行的 `dsh plugin --profile <名字> add @mc/dsh-agent-kit`。
+1. 选择 Profile。Profile 没装基础包时，会提示要执行的 `dsh plugin --profile <名字> add @mc/dsh-agent-kit @mc/dsh-agent-kit-admin`。
 2. 多选要启用的 Service，已启用的默认勾选。
-3. 安装缺少的渠道 CLI：启用了钉钉或飞书、而 `dws` 或 `lark-cli` 不在 `PATH` 中时，把缺少的列成多选（默认全选，可以都装，也可以只装一个），再展示将要运行的命令请你确认一次。版本锁定到本包验证过的 `dingtalk-workspace-cli@1.0.62` 与 `@larksuite/cli@1.0.96`。跳过或安装失败时只打印手动安装命令，不影响后续配置。本包在其他任何时候都不会安装 CLI。
+3. 安装缺少的渠道 CLI：启用了钉钉或飞书、而 `dws` 或 `lark-cli` 不在 `PATH` 中时，把缺少的列成多选（默认全选，可以都装，也可以只装一个），再展示将要运行的命令请你确认一次。版本锁定到验证过的 `dingtalk-workspace-cli@1.0.62` 与 `@larksuite/cli@1.0.96`。跳过或安装失败时只打印手动安装命令，不影响后续配置。两个包在其他任何时候都不会安装 CLI。
 4. 逐个配置，当前值作为默认值：
    - 钉钉：选择身份；可以按群名搜索群，或直接输入群 ID；user 身份未登录时可以直接拉起 `dws auth login`；最后可以给自己发一条测试消息。
    - 飞书：选择身份（服务器环境推荐 bot）；lark-cli 还没有应用配置时可以直接拉起 `lark-cli config init`，user 身份未登录时可以直接拉起 `lark-cli auth login`；默认目标可以按群名搜索群（`lark-cli im +chat-search`），或直接输入群 chat_id（`oc_` 开头）、用户 open_id（`ou_` 开头）；选择是否 dryRun；写入后可以给默认目标发一条测试消息（群里其他人也会看到）。
-   - 通知渠道：勾选发往钉钉、飞书或两者（至少一个）；多于一个时选择每个渠道都发（all）或按顺序发、第一个成功即停止（failover），failover 时再选先发哪个。勾选了未启用的渠道时会提示。重新运行 setup 可以原地修改渠道。
+   - 通知渠道：选择一个渠道（钉钉或飞书），同一时间只用一个。选中未启用的渠道时会提示。重新运行 setup 可以原地修改渠道；业务代码里也可以用 `ctx.notify.use()` 临时切换。
    - Agent 任务：工作目录；为 claude-code、codex 声明权限上限。
    - Jev：Key 输入时不回显；显示将保存到哪里；已有 Key 时可以保留。
 5. 以差异视图展示 `cordis.patch.yml` 的改动，确认后才写入。密钥单独保存，不出现在差异中。
@@ -44,14 +50,14 @@ import Figure from '../../components/Figure.astro'
 
 ## 设置页：在 dsh Web 中操作
 
-启动 Profile 后进入 dsh Web 的「设置 → Agent Kit」：
+Profile 中装了 admin 包时，启动后进入 dsh Web 的「设置 → Agent Kit」：
 
 - 每个 Service 一张卡片：启用开关、运行状态、检查结果与配置表单。
 - 飞书卡片：发送身份、默认目标类型（群 / 单聊）与 ID、lark-cli 配置名（`--profile`，可留空）、dryRun。
-- 通知渠道卡片：勾选发往钉钉、飞书，选择多个渠道时的策略，以及 failover 时先发哪个。保存后业务包的 `ctx.notify` 立即改发新渠道，只 inject `notify` 的业务插件不重新加载。
+- 通知渠道卡片：单选发往钉钉还是飞书。保存后原地生效，业务包的 `ctx.notify` 立即改发新渠道，notify 与只 inject `notify` 的业务插件都不重新加载。
 - 界面文案跟随 dsh Web 的语言，支持中文和英文；检查项的标题、详情和修复建议由服务端生成，目前只有中文。
 - 保存时会比对配置文件的版本；如果期间有人改过这份文件（包括另一个终端里的 `setup` 或手动编辑），会提示冲突并刷新，避免覆盖。
-- 保存成功后，dsh 会用新配置重新加载对应 Service，页面随后自动刷新状态。
+- 保存成功后，dsh 会用新配置重新加载对应 Service（通知渠道例外，原地生效），页面随后自动刷新状态。
 - TypeSafe Key 只能写入或清除，不能读回；页面只显示「已配置」与来源。清除与 gitflow-cli 共用的钥匙串条目前会先确认。
 
 <Figure src="/walkthrough/settings.png" alt="Agent Kit 设置页" caption="设置 → Agent Kit：启用开关、运行状态、检查结果与配置表单。" />
@@ -67,9 +73,10 @@ import Figure from '../../components/Figure.astro'
 业务包可以把自己的 loader 行登记进来：设置页多出一张同样的卡片（启用开关、运行状态、检查结果、配置表单和密钥），`doctor` 也会列出它的检查，`scope` 为该行的 id。
 
 - 登记方式有两种：在业务包 `package.json` 的 `dsh.agentKit.entries` 里声明无副作用的清单模块；或在插件里调用 `ctx.agentKitAdmin.registerEntry(...)`。推荐用清单——业务插件没启用、配置有误或启动失败时，卡片和检查照样出现，而这正是最需要它们的时候。
-- 保存任何一行，只替换那一行的文本；其他行（包括注释和格式）逐字节不变，并与本包的行共用冲突检测。
+- 条目类型与 `defineEntry` 从 `@mc/dsh-agent-kit-admin/entry` 导入（`defineEntry` 只做类型推断，业务包把 admin 包放进 devDependencies 即可）。运行时登记的插件要 inject `agentKitAdmin`，因此 Profile 中必须装有 admin 包。
+- 保存任何一行，只替换那一行的文本；其他行（包括注释和格式）逐字节不变，并与基础包的行共用冲突检测。
 - 业务行的密钥只写入 dsh 凭据文件；密钥名可以取自配置（例如 `tokenEnv`），保存新配置后跟随新名字。
-- `patchReload: live` 时，停用本包的某一行会连带卸载所有依赖它的业务插件，dsh 进程仍在运行，systemd 等外部守护进程察觉不到。业务行声明了 `dependsOn` 时，设置页会在保存前列出会被连带停止的插件并请求确认。
+- `patchReload: live` 时，停用基础包的某一行会连带卸载所有依赖它的业务插件，dsh 进程仍在运行，systemd 等外部守护进程察觉不到。业务行声明了 `dependsOn` 时，设置页会在保存前列出会被连带停止的插件并请求确认。
 
 写法见 README 的「把业务包的配置接入设置页与 doctor」。
 
