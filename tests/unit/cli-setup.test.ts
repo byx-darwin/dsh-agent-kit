@@ -100,4 +100,65 @@ describe('setup', () => {
     expect(send).toEqual(expect.arrayContaining(['--as=user', '--user=me123', '--yes', '--format=json']))
     expect(out.join('')).toContain('测试消息已发送')
   })
+
+  /**
+   * I2 回归测试：`configureDingtalk` 曾从 `{ identity }` 起步，把已有配置里 setup 交互流程
+   * 从不询问、只能靠保留旧值的高级字段（`dwsPath`/`timeoutMs`/`killGraceMs`/`retry`/
+   * `preflightIntervalMs`）全部丢弃。这里预先写入一份带这些字段的 dingtalk 配置，切换身份到
+   * webhook 后重新保存，确认这些字段被保留，同时与新身份不兼容、或本轮流程重新询问过的字段
+   * （`robotCode`、`defaultTarget`）被正确移除。
+   */
+  it('keeps unrelated advanced dingtalk fields and drops only identity-incompatible ones', async () => {
+    writeFileSync(
+      patchFile,
+      [
+        '- id: agent-kit-dingtalk',
+        '  disabled: false',
+        '  config:',
+        '    identity: bot',
+        '    robotCode: old-bot',
+        '    dwsPath: /custom/dws',
+        '    timeoutMs: 20000',
+        '    killGraceMs: 8000',
+        '    retry:',
+        '      maxAttempts: 3',
+        '    preflightIntervalMs: 999999',
+        '    defaultTarget:',
+        '      chatId: cidOld',
+        '    dryRun: true',
+        '',
+      ].join('\n'),
+    )
+    const answers = [
+      ['agent-kit-dingtalk'], // 启用哪些
+      'webhook', // 切换身份为 webhook
+      'DING_WEBHOOK_TOKEN', // webhookTokenEnv
+      false, // dryRun
+      true, // 确认写入
+      false, // 不发送测试消息
+    ]
+    const code = await main(['setup', '--profile', 'kit'], io(), deps(answers, {
+      checkOverrides: {
+        nodeVersion: '24.1.0',
+        resolveModule: () => true,
+        findExecutable: () => '/usr/bin/dws',
+        exec: async () => ({ exitCode: 0, stdout: '{"authenticated":true,"token_valid":true}', stderr: '' }),
+        keyStore: {},
+        env: { DING_WEBHOOK_TOKEN: 'x' },
+      },
+    }))
+    expect(code).toBe(0)
+    const text = readFileSync(patchFile, 'utf8')
+    expect(text).toContain('identity: webhook')
+    expect(text).toContain('webhookTokenEnv: DING_WEBHOOK_TOKEN')
+    // 保留的高级字段
+    expect(text).toContain('dwsPath: /custom/dws')
+    expect(text).toContain('timeoutMs: 20000')
+    expect(text).toContain('killGraceMs: 8000')
+    expect(text).toContain('maxAttempts: 3')
+    expect(text).toContain('preflightIntervalMs: 999999')
+    // 与新身份不兼容、或本轮重新询问过的字段被移除
+    expect(text).not.toContain('robotCode')
+    expect(text).not.toMatch(/defaultTarget:\s*\n\s*chatId: cidOld/)
+  })
 })

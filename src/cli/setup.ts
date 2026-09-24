@@ -88,7 +88,13 @@ export async function sendSelfTestMessage(exec: CheckContext['exec'], dws: strin
 
 async function configureDingtalk(p: Prompter, current: Config, deps: SetupDeps, io: CliIO, loggedIn: boolean, exec: CheckContext['exec'], dws: string | undefined): Promise<Config> {
   const identity = await p.select(msg.DINGTALK_IDENTITY_MESSAGE, msg.DINGTALK_IDENTITY_CHOICES, (current.identity as 'bot' | 'user' | 'webhook') ?? 'bot')
-  const config: Config = { identity }
+  // 从已有配置出发，只删掉与新选身份不兼容、或本流程接下来会重新询问的字段（I2）：否则从空对象
+  // `{ identity }` 起步会把用户已经配置好的 dwsPath/timeoutMs/killGraceMs/retry/preflightIntervalMs
+  // 等高级字段全部丢弃（这些字段 setup 交互流程从不询问，只能靠保留旧值或手工编辑 patch 文件）。
+  const config: Config = { ...current, identity }
+  if (identity !== 'bot') delete config.robotCode
+  if (identity !== 'webhook') delete config.webhookTokenEnv
+  if (identity === 'webhook') delete config.defaultTarget
   if (identity === 'bot') config.robotCode = await p.input(msg.DINGTALK_ROBOT_CODE_MESSAGE, current.robotCode as string, nonEmpty)
   if (identity === 'webhook') config.webhookTokenEnv = await p.input(msg.DINGTALK_WEBHOOK_TOKEN_ENV_MESSAGE, (current.webhookTokenEnv as string) ?? msg.DINGTALK_WEBHOOK_TOKEN_ENV_DEFAULT, nonEmpty)
   if (identity !== 'webhook') {
@@ -102,7 +108,9 @@ async function configureDingtalk(p: Prompter, current: Config, deps: SetupDeps, 
       } else {
         config.defaultTarget = { chatId: await p.select(msg.DINGTALK_SELECT_GROUP_MESSAGE, groups.map((g) => ({ value: g.id, name: `${g.name}（${g.id}）` }))) }
       }
-    } else if (kind !== 'none') {
+    } else if (kind === 'none') {
+      delete config.defaultTarget
+    } else {
       config.defaultTarget = { [kind]: await p.input(kind === 'chatId' ? msg.DINGTALK_CHAT_ID_MESSAGE : msg.DINGTALK_USER_ID_MESSAGE, undefined, nonEmpty) }
     }
   }
