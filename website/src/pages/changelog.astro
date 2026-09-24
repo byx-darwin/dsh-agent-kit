@@ -1,0 +1,35 @@
+---
+import Base from '../layouts/Base.astro'
+import { CHANGELOG } from '../data/changelog'
+import { RELEASE } from '../data/release'
+---
+
+<Base title="更新日志" description="dsh-agent-kit 各版本的变更。">
+  <p class="eyebrow">更新日志</p>
+  <h1>更新日志</h1>
+  {!RELEASE.published && <p class="lead">当前版本尚未发布到 npm。</p>}
+  {
+    CHANGELOG.map((entry) => (
+      <section>
+        <h2>
+          v{entry.version} <span class="date">{entry.date}</span>
+        </h2>
+        <ul>
+          {entry.items.map((item) => (
+            <li>{item}</li>
+          ))}
+        </ul>
+      </section>
+    ))
+  }
+</Base>
+
+<style>
+  .date {
+    font-family: var(--sans);
+    font-weight: 400;
+    font-size: 14px;
+    color: var(--muted);
+    margin-left: 8px;
+  }
+</style>

@@ -1,0 +1,95 @@
+---
+import Base from '../layouts/Base.astro'
+
+const rows: { topic: string; diy: string; direct: string; kit: string }[] = [
+  {
+    topic: '断线重连与退避',
+    diy: '需自行实现',
+    direct: 'ws 库不自带重连',
+    kit: '指数退避加抖动，稳定后重置；鉴权失败进入 failed 并可慢速重试',
+  },
+  {
+    topic: '背压与并发',
+    diy: '需自行实现',
+    direct: '需自行实现',
+    kit: 'concurrency 控制并发；待处理消息超限时暂停读取 socket',
+  },
+  {
+    topic: '故障可观测',
+    diy: '需自行实现',
+    direct: '需自行实现',
+    kit: '每个 Service 提供 health()；进入 failed 时触发 agent-kit/service-failed 事件',
+  },
+  {
+    topic: '密钥不进子进程',
+    diy: '需自行实现',
+    direct: '子进程默认继承全部环境变量',
+    kit: '子进程只继承环境变量白名单；日志与错误统一脱敏',
+  },
+  {
+    topic: 'Agent 权限与隔离',
+    diy: '需自行实现',
+    direct: '取决于 provider 配置',
+    kit: '默认只读、每个任务独立空目录；无法强制时要求声明权限上限，否则拒绝运行',
+  },
+  {
+    topic: '结构化输出',
+    diy: '需自行实现',
+    direct: '部分 provider 不支持',
+    kit: '原生结构化输出或从答案中提取 JSON，统一用 Ajv 按 Schema 校验',
+  },
+  {
+    topic: 'Jev 调用总时长',
+    diy: '需自行实现',
+    direct: 'SDK 自带重试，但超时只约束单次尝试',
+    kit: '一次 judge() 有严格的总时长，包含重试',
+  },
+  {
+    topic: '测试替身',
+    diy: '需自行编写',
+    direct: '需自行编写',
+    kit: 'testing 导出本地 WebSocket 服务端、假 provider、Jev mock、假 dws',
+  },
+  {
+    topic: '配置引导',
+    diy: '需自行实现',
+    direct: '无',
+    kit: 'doctor 检查、setup 交互式配置、dsh Web 设置页',
+  },
+]
+---
+
+<Base title="对比" description="同样的四件事：每个项目自行实现、直接调用 CLI 或 SDK、使用 dsh-agent-kit，各自需要做什么。">
+  <p class="eyebrow">对比</p>
+  <h1>自己写，还是用这个包</h1>
+  <p class="lead">
+    下表比较的是做同一件事的三种方式，只列本包自身实现并经过测试的能力。「直接调用 CLI / SDK」一列描述的是这些工具本身的默认行为，不评价任何第三方产品的好坏。
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>方面</th><th>每个项目自行实现</th><th>直接调用 CLI / SDK</th><th>使用 dsh-agent-kit</th></tr>
+      </thead>
+      <tbody>
+        {
+          rows.map((r) => (
+            <tr>
+              <td>
+                <strong>{r.topic}</strong>
+              </td>
+              <td>{r.diy}</td>
+              <td>{r.direct}</td>
+              <td>{r.kit}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+  <h2>什么时候不需要它</h2>
+  <ul>
+    <li>只需要一次性脚本、不需要常驻运行：直接调用 CLI 或 SDK 更简单。</li>
+    <li>不使用 dsh：本包的四个 Service 是 dsh 插件，离开 dsh 无法使用。</li>
+    <li>对同一条上游连接需要多实例部署：本包不处理多实例下的重复消费与重复告警。</li>
+  </ul>
+</Base>

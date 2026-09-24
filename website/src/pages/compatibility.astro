@@ -1,0 +1,73 @@
+---
+import Base from '../layouts/Base.astro'
+import pkg from '../../../package.json'
+
+const ci = 'https://github.com/byx-darwin/dsh-agent-kit/actions/workflows/ci.yml'
+const peers = pkg.peerDependencies as Record<string, string>
+const optional = (pkg.peerDependenciesMeta ?? {}) as Record<string, { optional?: boolean }>
+
+const runtime: { name: string; version: string; note: string }[] = [
+  { name: 'Node.js', version: pkg.engines.node, note: '本包的 engines 声明' },
+  { name: '@deepseek-ai/dsh', version: '0.1.5-rc.3', note: '预发布版本；dsh 与 cordis 相关依赖需锁定到一致的版本' },
+  ...Object.entries(peers).map(([name, version]) => ({
+    name,
+    version,
+    note: optional[name]?.optional ? '可选 peer 依赖，只有启用 Jev 时需要' : 'peer 依赖，与 dsh 对齐',
+  })),
+  { name: '@deepseek-ai/dsh-subagent-claude-code / codex', version: '0.1.5-rc.3', note: '必须显式指定版本：latest 标签指向 0.0.1-rc.1，与 dsh 不匹配' },
+  { name: 'dws（钉钉 CLI）', version: 'v1.0.62', note: '已验证的版本；输出格式以该版本为准' },
+]
+
+const platforms = [
+  { name: 'Linux', status: 'CI 通过', note: 'ubuntu-latest，Node 22.19 与 24' },
+  { name: 'macOS', status: 'CI 通过', note: 'macos-latest，Node 22.19 与 24；TypeSafe Key 可存入钥匙串' },
+  { name: 'Windows', status: 'CI 通过', note: 'windows-latest，Node 22.19 与 24；dws 的 npm .cmd 自动定位到 dws.js，超时用 taskkill 结束进程树' },
+]
+---
+
+<Base title="兼容性" description="dsh-agent-kit 支持的 Node、dsh、cordis、dws、subagent provider 与 TypeSafe SDK 版本，以及 Linux、macOS、Windows 的状态。">
+  <p class="eyebrow">兼容性</p>
+  <h1>版本与平台</h1>
+  <p class="lead">当前版本 v{pkg.version}。下表中的依赖版本直接读取自本包的 package.json。</p>
+
+  <h2>运行环境与依赖</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>组件</th><th>版本</th><th>说明</th></tr></thead>
+      <tbody>
+        {
+          runtime.map((r) => (
+            <tr>
+              <td>
+                <code>{r.name}</code>
+              </td>
+              <td>
+                <code>{r.version}</code>
+              </td>
+              <td>{r.note}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <h2>平台</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>平台</th><th>状态</th><th>说明</th></tr></thead>
+      <tbody>
+        {
+          platforms.map((p) => (
+            <tr>
+              <td>{p.name}</td>
+              <td>{p.status}</td>
+              <td>{p.note}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+  <p>最新的 CI 结果见 <a href={ci}>GitHub Actions</a>。</p>
+</Base>

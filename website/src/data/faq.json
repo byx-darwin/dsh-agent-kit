@@ -1,0 +1,38 @@
+[
+  {
+    "question": "为什么四个 Service 默认都是禁用的？",
+    "answer": "未启用的 Service 不会被加载，也不会校验配置，所以只用其中一两个时，不需要为其余的准备配置或环境变量。在 Profile 的 cordis.patch.yml 中按 id 启用，或用 setup、设置页勾选即可。"
+  },
+  {
+    "question": "doctor 提示 dws 未登录怎么办？",
+    "answer": "在运行 Profile 的同一个系统用户下执行 dws auth login。setup 在配置 user 身份时也可以直接拉起登录。钉钉的 dryRun 模式与 webhook 身份不检查登录态。"
+  },
+  {
+    "question": "Windows 上提示找不到 dws？",
+    "answer": "本包会在 PATH 中查找 dws.exe，或把 npm 全局安装生成的 dws.cmd 定位到它背后的 dws.js。仍然找不到时，在钉钉配置中把 dwsPath 设为 dws.exe 或 dws.js 的绝对路径；不要指向 .cmd 或 .bat。"
+  },
+  {
+    "question": "claude-code 任务报 unsupported_permissions？",
+    "answer": "claude-code 和 codex 不支持按任务过滤工具，本包无法替它们强制只读，因此要求你在 agent-tasks 配置的 declaredPermissions 中如实声明 provider 实例的权限上限。claude-code 默认的 permissionMode: dontAsk 下不能执行命令或写文件，可以声明为 read-only。"
+  },
+  {
+    "question": "TypeSafe Key 应该放在哪里？",
+    "answer": "读取顺序是环境变量 TYPESAFE_API_KEY、macOS 钥匙串（默认服务名 ai.typesafe.api-key）、dsh 凭据文件 $DSH_HOME/.credentials.yaml。setup 与设置页保存时，macOS 默认写入钥匙串，Linux 与 Windows 写入 dsh 凭据文件。"
+  },
+  {
+    "question": "为什么设置页是只读的？",
+    "answer": "只有 dsh Web 绑定在 127.0.0.1 时设置页才可修改。绑定到其他地址，或没有加载 Web 服务时，设置页一律只读，避免把配置写入接口暴露到网络上。页面上会显示具体原因。"
+  },
+  {
+    "question": "没有 dws 或 Agent 登录态，怎么在本地开发业务包？",
+    "answer": "把钉钉设为 dryRun: true，并使用 @mc/dsh-agent-kit/testing 导出的本地 WebSocket 测试服务端、假 subagent provider、Jev mock 和假 dws 脚本。"
+  },
+  {
+    "question": "可以和 gitflow-cli 共用 TypeSafe Key 吗？",
+    "answer": "可以。两者在 macOS 上都读取钥匙串中服务名为 ai.typesafe.api-key 的条目。如果你的 Key 还在旧名 gitflow-cli-typesafe 下，可以复制一份到新名，或在 Jev 配置中写 keychainService: [ai.typesafe.api-key, gitflow-cli-typesafe]。"
+  },
+  {
+    "question": "Agent 任务为什么不出现在 dsh Web 的会话列表里？",
+    "answer": "claude-code 与 codex 以不持久化会话的方式运行，本包也不为每个任务创建根会话。审计依赖本包的结构化日志（prompt 与答案只记录长度与哈希）和业务包自己的记录。"
+  }
+]

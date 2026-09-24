@@ -1,0 +1,96 @@
+---
+import Base from '../layouts/Base.astro'
+import Figure from '../components/Figure.astro'
+import { SERVICES } from '../data/services'
+
+const businessPackage = `{
+  "name": "@your-org/dsh-agent-your-project",
+  "type": "module",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@mc/dsh-agent-kit": "^0.1.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@mc/dsh-agent-kit": "^0.1.0"
+  },
+  "dsh": { "bundle": { "patch": "./patch.yml" } }
+}`
+
+const enable = `# Profile 的 cordis.patch.yml
+- id: agent-kit-dingtalk
+  disabled: false
+  config:
+    identity: bot
+    robotCode: dingxxxx
+    defaultTarget: { chatId: cidxxxx }`
+---
+
+<Base title="架构" description="dsh-agent-kit 如何挂进 DeepSeek Harness：bundle patch 层、默认禁用的四个 Service、常驻的设置服务，以及业务包如何接入。" wide>
+  <div class="narrow">
+    <p class="eyebrow">架构</p>
+    <h1>一个包，四个 Service，一层 dsh</h1>
+    <p class="lead">
+      本包是一组 DeepSeek Harness（dsh）插件 Service。业务包通过 cordis 的 inject 使用它们，自己只写协议、路由、模板和流程。
+    </p>
+  </div>
+
+  <Figure src="/architecture.svg" alt="dsh-agent-kit 架构图：业务包在上，dsh-agent-kit 的四个 Service 在中间并连接外部系统，dsh 在最下层" caption="业务包 → dsh-agent-kit → dsh；四个 Service 各自连接一个外部系统。" width={960} />
+
+  <div class="narrow">
+    <h2>bundle 与 patch 层</h2>
+    <p>
+      本包在 <code>package.json</code> 中声明为 dsh 的 bundle。<code>dsh plugin add</code> 之后，dsh 会把本包的 <code>patch.yml</code> 加入 Profile 的层叠配置。patch 里注册了五行：
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>行 id</th><th>模块</th><th>Context 属性</th><th>默认</th></tr></thead>
+        <tbody>
+          <tr><td><code>agent-kit</code></td><td><code>@mc/dsh-agent-kit</code></td><td><code>ctx.agentKitAdmin</code></td><td>常驻</td></tr>
+          {
+            SERVICES.map((s) => (
+              <tr>
+                <td><code>{s.kitId}</code></td>
+                <td><code>@mc/dsh-agent-kit/{s.slug === 'agent-ws' ? 'ws' : s.slug}</code></td>
+                <td><code>{s.context}</code></td>
+                <td>禁用</td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+    <p>
+      四个 Service 默认禁用：dsh 不会导入禁用行的模块，也不会校验它的配置，所以未启用的 Service 缺少配置不影响启动。在 Profile 的 <code>cordis.patch.yml</code> 中按 id 启用即可；按 id 修改 <code>config</code> 时整段替换，不与 bundle 中的值合并。
+    </p>
+    <pre><code>{enable}</code></pre>
+    <p>
+      常驻行 <code>agent-kit</code> 很轻，不连接任何外部服务。它挂载 <code>AgentKitAdmin</code>（dsh Web 设置页调用的服务端接口），并让 dsh 发现本包的前端模块，也就是「设置 → Agent Kit」页。
+    </p>
+
+    <h2>业务包如何接入</h2>
+    <p>业务包把本包声明为 peer 依赖，保证一个 Profile 中只加载一份实例；开发期可以用 <code>link:</code> 指向本包的本地 checkout。</p>
+    <pre><code>{businessPackage}</code></pre>
+    <p>
+      业务包的插件只 inject 用到的 Service，例如 <code>export const inject = ['agentWs', 'dingtalk']</code>。Service 注册的连接、定时器、子进程都随业务包插件的生命周期释放。
+    </p>
+
+    <h2>依赖与版本对齐</h2>
+    <ul>
+      <li><code>@deepseek-ai/cordis</code>、<code>@deepseek-ai/schemastery</code>、<code>@deepseek-ai/dsh-typert-protocol</code> 是 peer 依赖，版本与目标 dsh 对齐。dsh 会把它自己的依赖提供给 Profile，peer 声明保证只有一份实例；放进 dependencies 会装出第二份，破坏 Context 类型扩展和远程方法标记。</li>
+      <li><code>@typesafe-ai/sdk</code> 是可选 peer 依赖，只有启用 Jev 时才需要安装。</li>
+      <li>本包自己的运行时依赖是 <code>ws</code>、<code>ajv</code>、<code>yaml</code>、<code>@inquirer/prompts</code>、<code>diff</code> 与 <code>@deepseek-ai/dsh-atomic-write</code>。</li>
+    </ul>
+
+    <h2>配置从哪里来</h2>
+    <p>
+      配置只有一个来源：Profile 的 <code>cordis.patch.yml</code>。<code>setup</code>、Web 设置页和手动编辑读写的都是它。Profile 为 <code>patchReload: live</code>（web 模板的默认值）时，dsh 监视这个文件，修改后用新配置重新加载对应 Service；为 <code>startup</code> 时需要重启 dsh。密钥不写进这个文件，而是保存在环境变量、钥匙串或 dsh 凭据文件中。
+    </p>
+  </div>
+</Base>
+
+<style>
+  .narrow {
+    max-width: var(--measure);
+  }
+</style>
