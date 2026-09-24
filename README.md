@@ -2,7 +2,7 @@
 
 官网：https://byx-darwin.github.io/dsh-agent-kit/
 
-构建常驻 Agent Worker 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件工具包：WebSocket 接入、钉钉推送、Claude Code / Codex 任务委托、TypeSafe Jev 校验。
+构建常驻 Agent Worker 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件工具包：WebSocket 接入、钉钉 / 飞书推送与渠道无关的通知、Claude Code / Codex 任务委托、TypeSafe Jev 校验。
 
 > **状态：已实现，待发布 `0.1.0`。** 接口以 [设计文档](docs/superpowers/specs/2026-09-23-dsh-agent-kit-design.md) 为准，首个版本发布前可能调整。
 
@@ -11,7 +11,7 @@
 很多系统都需要一个"常驻 Agent Worker"：
 
 1. 通过 WebSocket 接收业务系统推送的事件；
-2. 把告警类事件推送到钉钉群；
+2. 把告警类事件推送到钉钉群或飞书群；
 3. 把需要语义判断的任务交给 Claude Code、Codex 等 Agent 处理；
 4. 用 [TypeSafe Jev](https://docs.typesafe.ai/) 对 Agent 的结果做低成本校验，不通过时升级或转人工。
 
@@ -23,10 +23,12 @@
 |---|---|
 | `ctx.agentWs` | WebSocket 客户端（仅 `wss://`）：可刷新的鉴权请求头、心跳、指数退避重连、并发与背压控制；鉴权失败或指定关闭码时进入 `failed` 状态并可慢速重试 |
 | `ctx.dingtalk` | 通过钉钉 `dws` CLI 发送文本 / Markdown 消息，支持 `user` / `bot` / `webhook` 身份、群聊 / 单聊 / 多群、@ 人、幂等键和 `dryRun` |
+| `ctx.feishu` | 通过飞书官方 CLI `lark-cli` 发送文本 / Markdown 消息，支持 `bot` / `user` 身份、群聊 / 单聊 / 多群、@ 人、幂等键和 `dryRun` |
+| `ctx.notify` | 与渠道无关的通知：业务包只调用 `ctx.notify.send()`，发往钉钉、飞书还是两者，以及全部发送还是主备切换，由运维在设置页或 `setup` 中决定，不需要改业务代码 |
 | `ctx.agentTasks` | 调用 dsh 已注册的 subagent provider（如 `claude-code`、`codex`）执行一次性任务：默认只读权限（无法由本包强制的 provider 需运维声明权限上限）、每个任务独立目录、类型化的 JSON Schema 输出、并发与排队上限 |
 | `ctx.jev` | 调用 TypeSafe Jev，返回 Choice / Noul / Score 的类型化判断和概率 |
 
-- 四个 Service 默认禁用，按需启用；未启用的 Service 不校验配置，也不影响其他 Service。
+- 六个 Service 默认禁用，按需启用；未启用的 Service 不校验配置，也不影响其他 Service。
 - 每个 Service 提供 `health()`；进入 `failed` 时触发 `agent-kit/service-failed` 事件，便于接入外部监控。
 - 所有错误都是 `KitError`，带 `code` 与 `retryable`，调用方据此决定是否重试。
 
@@ -38,7 +40,8 @@
 │        │ inject                                 │
 │        ▼                                        │
 │  @mc/dsh-agent-kit（各 Service 单独启用）         │
-│    agentWs · dingtalk · agentTasks · jev        │
+│    agentWs · dingtalk · feishu · notify ·       │
+│    agentTasks · jev                             │
 │        │                                        │
 │        ▼                                        │
 │  dsh：subagent-claude-code / subagent-codex、    │
@@ -46,13 +49,18 @@
 └─────────────────────────────────────────────────┘
 ```
 
+`notify` 不直接连接外部系统：它在每次发送时查找已运行的 `dingtalk` / `feishu`，按配置的渠道与策略转发，业务包因此只依赖 `notify`，渠道由运维决定。
+
 本包不包含任何业务协议、事件类型、提示词或分类体系，也不保存可靠事件状态；投递可靠性由对端系统负责。一条上游连接只应部署一个实例。
 
 ## 环境要求
 
 - Node.js `^22.19` 或 `>=24`
 - [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh) CLI `0.1.5-rc.3` 或 `0.1.7-alpha.2`（均为预发布版本，dsh 与 cordis 相关依赖需锁定到与所用 dsh 一致的版本；以下示例以 `0.1.5-rc.3` 为准，使用 0.1.7 时把版本号一并替换）
-- 使用 `ctx.dingtalk`：已安装并登录 `dws`；服务器环境推荐 `bot` 身份
+- 使用 `ctx.dingtalk`：已安装并登录 `dws`（已验证 `dingtalk-workspace-cli@1.0.62`）；服务器环境推荐 `bot` 身份
+- 使用 `ctx.feishu`：已安装飞书官方 CLI `lark-cli`（npm 包 `@larksuite/cli`，已验证 `1.0.96`），并用 `lark-cli config init` 配好飞书应用的 App ID / App Secret；服务器环境推荐 `bot` 身份，`user` 身份还需要 `lark-cli auth login --scope "im:message.send_as_user im:message"`
+- 使用 `ctx.notify`：同时启用它要用到的渠道（`ctx.dingtalk` 和/或 `ctx.feishu`）
+- 本包不会自己安装上述 CLI；`setup` 会列出缺少的 CLI，经你确认后才安装（见「快速配置」）
 - 使用 `ctx.agentTasks`：安装 `@deepseek-ai/dsh-subagent-claude-code` 和/或 `@deepseek-ai/dsh-subagent-codex`（`ctx.subagents` 与子进程服务由 dsh 的 base bundle 提供），并完成 Claude Code / Codex 的原生登录（provider 会剔除名字含 KEY / TOKEN / SECRET / PASSWORD 的环境变量，依赖这类变量鉴权时需在 provider 的 Config `env` 中显式给出）
 - 使用 `ctx.jev`：安装 `@typesafe-ai/sdk`，并设置环境变量 `TYPESAFE_API_KEY`；macOS 上也可以用 `keychainService` 从钥匙串读取，推荐与 gitflow-cli 等工具共享的服务名 `ai.typesafe.api-key`（保存：`security add-generic-password -a "$USER" -s ai.typesafe.api-key -U -w`）
 - 生产部署：Profile 进程由 systemd、pm2 等进程守护托管
@@ -86,13 +94,19 @@ dsh --profile my-agent --no-open
 # 交互式生成/修改 cordis.patch.yml（带 diff 预览，需确认后才写入）
 npx @mc/dsh-agent-kit setup --profile my-agent
 
-# 体检：Node 版本、dws 登录态、Agent provider、TypeSafe Key 等是否满足已启用 Service 的要求
+# 体检：Node 版本、dws / lark-cli 的安装与登录态、Agent provider、TypeSafe Key 等是否满足已启用 Service 的要求
 npx @mc/dsh-agent-kit doctor --profile my-agent
 ```
 
+`setup` 的流程：选择 Profile → 勾选要启用的 Service → **安装缺少的渠道 CLI** → 逐个配置 → 预览 diff 并确认写入 → 自动运行 `doctor`。
+
+- 安装：如果启用了钉钉或飞书，而对应的 CLI 不在 `PATH` 中，`setup` 会把缺少的列成一个多选（默认全选，可以都装，也可以只装一个），再展示将要运行的命令请你确认一次：`npm i -g dingtalk-workspace-cli@1.0.62`、`npm i -g @larksuite/cli@1.0.96`。版本锁定到本包验证过输出格式的版本。跳过或安装失败时只打印手动安装命令，不影响后续配置。
+- 飞书：选择身份；lark-cli 还没有应用配置时可以直接运行 `lark-cli config init`，`user` 身份未登录时可以直接运行 `lark-cli auth login`；默认目标可以按群名搜索（`lark-cli im +chat-search`），或直接输入群 chat_id（`oc_…`）/ 用户 open_id（`ou_…`）；可选 `dryRun`；写入后可以给默认目标发一条测试消息。
+- 通知渠道：勾选发往钉钉、飞书或两者；多于一个时选择策略（`all` 每个都发 / `failover` 按顺序发、第一个成功即停止），`failover` 时再选先发哪个。之后重新运行 `setup` 可以原地修改渠道。
+
 `setup` 只会修改 Profile 目录下的 `cordis.patch.yml`；`doctor` 只读，不修改任何文件，`--json` 输出机器可读的体检报告，可接入 CI。两者都会在 `$DSH_HOME/profiles` 下扫描带有本包（bundles 里含 `@mc/dsh-agent-kit`）的 Profile；只有一个候选时自动选中，有多个时需要 `--profile` 指定。
 
-启动 Profile 后，dsh Web 界面的「设置」页会出现一张「Agent Kit」入口，四个 Service 各一张卡片，可以直接启用/关闭、编辑配置、查看健康状态和体检结果，效果与 CLI 等价（两者读写同一份 `cordis.patch.yml`）：
+启动 Profile 后，dsh Web 界面的「设置」页会出现一张「Agent Kit」入口，六个 Service 各一张卡片（飞书卡片可以设置身份、默认目标、lark-cli 配置名与 `dryRun`；通知渠道卡片可以勾选渠道、选择策略和 `failover` 时先发哪个，保存后业务包的 `ctx.notify` 立即改发新渠道，业务插件不重新加载），可以直接启用/关闭、编辑配置、查看健康状态和体检结果，效果与 CLI 等价（两者读写同一份 `cordis.patch.yml`）：
 
 - 保存时按乐观并发（`version`）比较，若与他人（包括另开终端手改 `cordis.patch.yml`）冲突会提示「已被修改」并自动刷新为最新内容，需要重新确认后再保存。
 - **只读闸门默认关闭（fail closed）**：只有 dsh Web 确认自己绑定在 `webServer.host === '127.0.0.1'` 时设置页才可写；未绑定回环地址（例如以 `--host 0.0.0.0` 之类的方式对外暴露）或压根没加载 `webServer` 服务时，设置页一律降级为只读，避免把配置写入接口暴露给公网。dsh CLI 自身也拒绝 `--host 0.0.0.0`（"it would expose remote code execution to the network"），二者是两道独立的防线。
@@ -130,14 +144,14 @@ CLI 与 Web 保存 Key 时会提示当前平台可选的目标（`keychain` / `c
 
 `@deepseek-ai/cordis` 的版本与目标 dsh 依赖的版本保持一致（dsh `0.1.5-rc.3` 对应 `4.0.2`，`0.1.7-alpha.2` 对应 `4.0.4`）。开发期可以用 `link:` 指向本包的本地 checkout。
 
-插件示例：
+插件示例（发通知推荐用 `ctx.notify`：业务包不关心发到钉钉还是飞书，运维可以随时在设置页或 `setup` 中切换渠道，不需要改业务代码）：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
 import { choice, isKitError, noul, untrusted } from '@mc/dsh-agent-kit'
 
 export const name = 'my-agent'
-export const inject = ['agentWs', 'dingtalk', 'agentTasks', 'jev']
+export const inject = ['agentWs', 'notify', 'agentTasks', 'jev']
 
 export function apply(ctx: Context, config: Config) {
   const conn = ctx.agentWs.connect<Frame>({
@@ -147,7 +161,8 @@ export function apply(ctx: Context, config: Config) {
     concurrency: 2,
     onMessage: async (frame, { signal }) => {
       if (frame.type === 'alert') {
-        await ctx.dingtalk.send({
+        // 发往哪些渠道由 agent-kit-notify 的 channels / strategy 决定
+        await ctx.notify.send({
           title: frame.title,
           markdown: renderAlert(frame),
           idempotencyKey: frame.id,
@@ -191,14 +206,38 @@ export function apply(ctx: Context, config: Config) {
 }
 ```
 
-没有 `dws` 或 Agent 登录态时，可以把 dingtalk 设为 `dryRun: true`，并使用 `@mc/dsh-agent-kit/testing` 导出的工具开发与测试：
+`ctx.notify.send()` 在至少一个渠道成功时正常返回，各渠道的结果在 `results` 中；所有渠道都失败时抛出 `NotifyError`（`code: all_failed`）。`channels` 中某个渠道的行未运行时，该渠道报 `channel_unavailable`。notify 不 inject 钉钉与飞书，而是在发送时查找它们，所以启用、停用或切换渠道不会重新加载 notify，也不会重新加载只 inject `notify` 的业务插件。修改 notify 自己的 `channels` / `strategy` 时，它拦截了 dsh 默认的插件重启，在原地换上新配置，业务插件同样不受影响。需要按渠道指定目标或 @ 人时：
 
 ```ts
-import { createFakeDws, createJevMock, FakeSubagentProvider, FakeSubagentRuntime, startTestWsServer } from '@mc/dsh-agent-kit/testing'
+await ctx.notify.send({
+  title: '需要人工复核',
+  markdown: body,
+  targets: { dingtalk: { chatId: 'cidxxxx' }, feishu: { chatId: 'oc_xxxx' } }, // 缺省用各渠道的 defaultTarget
+  at: { feishu: { userIds: ['ou_xxxx'] } },                                    // 两个渠道的用户 id 体系不同
+  idempotencyKey: frame.id,
+})
+```
+
+需要某个渠道特有的能力（例如钉钉的 `openDingtalkId` 目标、webhook 身份）时，直接 inject 对应的 Service，用法不变：
+
+```ts
+export const inject = ['dingtalk']            // 或 ['feishu']
+
+await ctx.dingtalk.send({ title: frame.title, markdown: renderAlert(frame), idempotencyKey: frame.id, traceId: frame.id })
+await ctx.feishu.send({ title: frame.title, markdown: renderAlert(frame), target: { chatId: 'oc_xxxx' }, idempotencyKey: frame.id })
+```
+
+没有 `dws` / `lark-cli` 或 Agent 登录态时，可以把 dingtalk / feishu 设为 `dryRun: true`，并使用 `@mc/dsh-agent-kit/testing` 导出的工具开发与测试：
+
+```ts
+import { createFakeDws, createFakeLark, createJevMock, FakeSubagentProvider, FakeSubagentRuntime, startTestWsServer } from '@mc/dsh-agent-kit/testing'
 
 const server = await startTestWsServer()          // ws://127.0.0.1:<port>，可模拟 401、关闭 pong
 const dws = createFakeDws({ send: [{ mode: 'partial', failTargets: ['cidB'] }] })
 process.env.DWS_CONFIG_DIR = dws.dir              // 假 dws 从这里读取场景；dingtalk 配置 dwsPath: dws.path
+const lark = createFakeLark({ auth: { bot: true }, send: [{ mode: 'success' }] })
+Object.assign(process.env, lark.env)               // 假 lark-cli 从 LARKSUITE_CLI_CONFIG_DIR 读取场景；feishu 配置 larkPath: lark.path
+lark.calls()                                       // 每次调用的参数与收到的环境变量名，可断言白名单
 const restoreJev = createJevMock().install()      // jev 不发网络请求
 const provider = new FakeSubagentProvider({ name: 'claude-code', handler: () => '```json\n{"category":"a"}\n```' })
 await ctx.plugin(FakeSubagentRuntime, { providers: [provider] }) // 或注册到真实 ctx.subagents
@@ -243,7 +282,7 @@ export default defineEntry({
   // ref 可以来自配置：保存新的 tokenEnv 后，设置页和 setSecret 跟随新名字
   secrets: [{ label: '上游 Token', refFrom: 'tokenEnv', ref: 'MY_AGENT_TOKEN' }],
   service: 'myAgent',                     // 行运行中时，从 ctx.myAgent.health() 读取状态
-  dependsOn: ['agent-kit-ws', 'agent-kit-dingtalk'], // 停用这些行前，设置页会提示连带停止本行
+  dependsOn: ['agent-kit-ws', 'agent-kit-notify'], // 停用这些行前，设置页会提示连带停止本行
   checks: async (ctx) => [
     { id: 'upstream', title: '上游可达', status: 'pass', detail: 'ok' },
   ],
@@ -268,7 +307,7 @@ export function apply(ctx: Context) {
 
 ## 配置
 
-各 Service 的可变参数都是 cordis.yml 中经过校验的配置字段，均有默认值与取值范围。本包的 bundle 以禁用状态注册四个 loader 行（`agent-kit-ws`、`agent-kit-dingtalk`、`agent-kit-agent-tasks`、`agent-kit-jev`），在 Profile 的 `cordis.patch.yml` 中按 id 启用并给出配置：
+各 Service 的可变参数都是 cordis.yml 中经过校验的配置字段，均有默认值与取值范围。本包的 bundle 以禁用状态注册六个 loader 行（`agent-kit-ws`、`agent-kit-dingtalk`、`agent-kit-feishu`、`agent-kit-notify`、`agent-kit-agent-tasks`、`agent-kit-jev`），在 Profile 的 `cordis.patch.yml` 中按 id 启用并给出配置：
 
 ```yaml
 - id: agent-kit-ws
@@ -279,6 +318,16 @@ export function apply(ctx: Context) {
     identity: bot
     robotCode: dingxxxx
     defaultTarget: { chatId: cidxxxx }
+- id: agent-kit-feishu
+  disabled: false                              # 需要 lark-cli，并已运行 lark-cli config init
+  config:
+    identity: bot
+    defaultTarget: { chatId: oc_xxxx }
+- id: agent-kit-notify
+  disabled: false
+  config:
+    channels: [feishu, dingtalk]               # 按顺序；failover 时即尝试顺序
+    strategy: failover                         # all（默认）：每个渠道都发；failover：第一个成功即停止
 - id: agent-kit-agent-tasks
   disabled: false
   config:
@@ -297,16 +346,23 @@ export function apply(ctx: Context) {
 |---|---|
 | `agentWs` | `pingIntervalMs`、`readTimeoutMs`、`reconnect.initialDelayMs`、`reconnect.maxDelayMs`、`reconnect.jitter`、`stableResetMs`、`fatalRetryDelayMs`、`maxPayloadBytes`、`maxPendingMessages` |
 | `dingtalk` | `identity`（必填）、`defaultTarget`、`robotCode`、`webhookTokenEnv`、`dwsPath`、`timeoutMs`、`killGraceMs`、`retry.maxAttempts`、`preflightIntervalMs`、`dryRun` |
+| `feishu` | `identity`（必填，`bot` / `user`）、`defaultTarget`、`profile`、`larkPath`、`timeoutMs`、`killGraceMs`、`retry.maxAttempts`、`preflightIntervalMs`、`dryRun` |
+| `notify` | `channels`（必填，`dingtalk` / `feishu`，至少一个且不重复）、`strategy`（`all` / `failover`） |
 | `agentTasks` | `workspaceDir`（必填）、`defaultTimeoutMs`、`maxConcurrency`、`maxQueueSize`、`keepWorkdir`、`declaredPermissions`、`toolAllowlist` |
 | `jev` | `model`、`timeoutMs`、`keychainService`、`keychainAccount` |
 
 - `agentTasks.declaredPermissions`：claude-code、codex 不支持按任务过滤工具，权限由 provider 实例自己的配置决定。运维在这里声明其实际权限上限（`read-only` / `workspace-write`）；未声明或上限高于任务请求的档位时，任务以 `unsupported_permissions` 失败。
 - `dingtalk` 的 `webhook` 身份只能把 token 作为命令行参数传给 dws（会出现在 `ps` 中），不推荐使用。
-- `dingtalk.dwsPath` 必须指向可直接执行的文件（可执行二进制、`.exe` 或 `.js`）；不支持 Windows 的 `.cmd`/`.bat` 包装脚本，因为本包用 `spawn(..., { shell: false })` 不经过 shell 启动子进程，无法解释批处理语法。
+- `feishu.defaultTarget` 可以是 `{ chatId: 'oc_…' }`（群）、`{ userId: 'ou_…' }`（用户 open_id，单聊）或 `{ chatIds: [...] }`（多个群，逐个发送，最多 100 个）；`feishu.profile` 对应 `lark-cli --profile`。
+- `feishu` 只在给出 `idempotencyKey` 时自动重试；lark-cli 的幂等键最长 50 个字符，多目标时本包逐目标派生。
+- `notify` 指向的渠道行需要单独启用；未启用时 `doctor` 的 `agent-kit-notify.channel-<渠道>` 检查失败。
+- `dingtalk.dwsPath` 必须指向可直接执行的文件（可执行二进制、`.exe` 或 `.js`）；不支持 Windows 的 `.cmd`/`.bat` 包装脚本（`feishu.larkPath` 同理），因为本包用 `spawn(..., { shell: false })` 不经过 shell 启动子进程，无法解释批处理语法。
 
 ## 安全
 
-- 密钥只从环境变量读取，且不传给本包启动的子进程；钉钉凭据由 `dws` 自己的登录态管理，本包不保存。
+- 密钥只从环境变量读取，且不传给本包启动的子进程；钉钉凭据由 `dws` 自己的登录态管理，飞书的应用凭据与令牌由 `lark-cli` 自己的配置（`lark-cli config init`）与系统钥匙串管理，本包都不保存。
+- 启动 `dws`、`lark-cli` 时不经过 shell，子进程只继承环境变量白名单。`lark-cli` 额外只放行运行所需的 `LARKSUITE_CLI_CONFIG_DIR`、`LARKSUITE_CLI_PROFILE`、`LARKSUITE_CLI_BRAND`、`LARKSUITE_CLI_CA_PATH`、`LARKSUITE_CLI_PROXY_ADDRESS`、`LARKSUITE_CLI_PROXY_ENABLE`，以及定位配置目录的 `XDG_CONFIG_HOME`、`USERPROFILE`、`APPDATA`、`LOCALAPPDATA`（见导出的 `LARK_ENV_WHITELIST`），`LARKSUITE_CLI_APP_SECRET`、`*_ACCESS_TOKEN` 等凭据类变量不会传入。
+- 本包运行时从不安装任何 CLI；只有 `setup` 在你确认后才运行锁定版本的 `npm i -g`。
 - 来自 WebSocket 的数据和 Agent 的输出都视为不可信：Agent 默认只读，在每个任务独立的空目录中运行；输出经过 Schema 与业务白名单校验后才应触发副作用。
 - 只允许 `wss://`，不关闭证书校验，不跟随重定向。
 - 日志和错误经过统一脱敏，不记录鉴权头、API Key、webhook token 和完整消息正文。
@@ -317,6 +373,7 @@ export function apply(ctx: Context) {
 
 - [x] 完成设计文档中的「实施前需核实」项
 - [x] 四个 Service 的首个实现与测试
+- [x] 飞书推送与渠道无关的通知（`ctx.feishu`、`ctx.notify`）
 - [ ] 发布 `0.1.0` 到 npm
 - [ ] 通用的「Agent 执行 → Jev 校验 → 升级」级联 helper
 - [ ] 钉钉卡片消息

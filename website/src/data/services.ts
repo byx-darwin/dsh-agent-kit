@@ -1,7 +1,7 @@
-// 四个 Service 的展示元数据。配置项表由 config-tables.ts 从源码 schema 生成；
+// 六个 Service 的展示元数据，顺序与 patch.yml 中的 loader 行一致。配置项表由 config-tables.ts 从源码 schema 生成；
 // 这里只补充 schema 里没有的内容：编号、摘要、跨字段约束、错误码，以及缺少 description 的字段说明。
 
-export type ServiceId = 'agentWs' | 'dingtalk' | 'agentTasks' | 'jev'
+export type ServiceId = 'agentWs' | 'dingtalk' | 'feishu' | 'notify' | 'agentTasks' | 'jev'
 
 export interface ServiceError {
   code: string
@@ -10,9 +10,11 @@ export interface ServiceError {
   meaning: string
 }
 
+export type ServiceNumeral = '壹' | '贰' | '叁' | '肆' | '伍' | '陆'
+
 export interface ServiceMeta {
   id: ServiceId
-  numeral: '壹' | '贰' | '叁' | '肆'
+  numeral: ServiceNumeral
   verb: string
   name: string
   /** 在 cordis Context 上的属性名。 */
@@ -95,8 +97,61 @@ export const SERVICES: ServiceMeta[] = [
     },
   },
   {
-    id: 'agentTasks',
+    id: 'feishu',
     numeral: '叁',
+    verb: '推送',
+    name: '飞书推送',
+    context: 'ctx.feishu',
+    slug: 'feishu',
+    summary: '通过飞书官方 CLI lark-cli 发送文本 / Markdown 消息，支持 bot / user 身份、群聊 / 单聊 / 多群、@ 人、幂等键和 dryRun。',
+    kitId: 'agent-kit-feishu',
+    notes: [
+      'bot 身份只需要用 lark-cli config init 配好应用的 App ID / App Secret；user 身份还需要 lark-cli auth login --scope "im:message.send_as_user im:message"。',
+      '应用凭据与令牌由 lark-cli 自己的配置和系统钥匙串管理，本包不保存，也不把它们传给子进程。',
+      '自动重试只在给出 idempotencyKey 时进行，避免重复发送；lark-cli 的幂等键最长 50 个字符，多目标时逐目标派生。',
+      'larkPath 必须是绝对路径，指向可执行文件、.exe 或 .js，不支持 Windows 的 .cmd / .bat。',
+    ],
+    errors: [
+      { code: 'timeout', retryable: '是', meaning: 'lark-cli 超时，子进程按「先 SIGTERM、宽限后 SIGKILL」回收。' },
+      { code: 'exit_nonzero', retryable: '视情况', meaning: 'lark-cli 非零退出；按错误类别（network / timeout / rate_limit / server / internal / unavailable）判断是否可重试。' },
+      { code: 'bad_output', retryable: '否', meaning: 'lark-cli 输出无法解析。' },
+      { code: 'invalid_target', retryable: '否', meaning: '目标、@ 列表、正文或幂等键格式非法（例如 chat_id 不以 oc_ 开头、超过 100 个群）。' },
+      { code: 'send_failed', retryable: '否', meaning: 'lark-cli 报告 ok: false（多目标时体现在逐目标结果中）。' },
+      { code: 'aborted', retryable: '否', meaning: '调用方 signal 中止或 Service 卸载。' },
+      { code: 'spawn_failed', retryable: '否', meaning: '无法启动 lark-cli 子进程。' },
+      INVALID_CONFIG,
+    ],
+    descriptions: {
+      timeoutMs: '单次 lark-cli 调用的超时时间。',
+      killGraceMs: '超时或卸载时，SIGTERM 之后等待多久再发 SIGKILL。',
+      'retry.maxAttempts': '给出幂等键时，可重试失败的最多重试次数。',
+      dryRun: '附加 --dry-run，只解析参数、不真实发送；同时跳过身份检查。',
+    },
+  },
+  {
+    id: 'notify',
+    numeral: '肆',
+    verb: '通知',
+    name: '通知渠道',
+    context: 'ctx.notify',
+    slug: 'notify',
+    summary: '与渠道无关的通知：业务包只调用 ctx.notify.send()，发到钉钉还是飞书、全部发送还是主备切换，由运维在设置页或 setup 中决定，不需要改业务代码。',
+    kitId: 'agent-kit-notify',
+    notes: [
+      'channels 至少一个，且不能重复；failover 时按 channels 的顺序尝试。',
+      '本 Service 不 inject 钉钉与飞书，而是在发送时查找：启用、停用或切换渠道不会重新加载 notify，也不会重新加载只 inject notify 的业务插件。',
+      'channels 中的渠道对应的行（agent-kit-dingtalk / agent-kit-feishu）需要启用；未运行的渠道在结果中报 channel_unavailable，doctor 也会把它列为失败项。',
+    ],
+    errors: [
+      { code: 'channel_unavailable', retryable: '否', meaning: '渠道对应的行未运行（未启用或启动失败），出现在该渠道的结果中，不单独抛出。' },
+      { code: 'all_failed', retryable: '否', meaning: '所有渠道都失败时抛出；details.results 列出各渠道的错误码。' },
+      INVALID_CONFIG,
+    ],
+    descriptions: {},
+  },
+  {
+    id: 'agentTasks',
+    numeral: '伍',
     verb: '委托',
     name: 'Agent 任务',
     context: 'ctx.agentTasks',
@@ -129,7 +184,7 @@ export const SERVICES: ServiceMeta[] = [
   },
   {
     id: 'jev',
-    numeral: '肆',
+    numeral: '陆',
     verb: '校验',
     name: 'Jev 判断',
     context: 'ctx.jev',

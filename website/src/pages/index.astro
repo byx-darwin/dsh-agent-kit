@@ -12,13 +12,17 @@ const base = import.meta.env.BASE_URL
 
 const patchExample = `- id: agent-kit-ws
   disabled: false
-- id: agent-kit-dingtalk
+- id: agent-kit-feishu
   disabled: false
   config:
     identity: bot
-    robotCode: dingxxxx`
+    defaultTarget: { chatId: oc_xxxx }
+- id: agent-kit-notify
+  disabled: false
+  config:
+    channels: [feishu]`
 
-const pluginExample = `export const inject = ['agentWs', 'dingtalk', 'agentTasks', 'jev']
+const pluginExample = `export const inject = ['agentWs', 'notify', 'agentTasks', 'jev']
 
 export function apply(ctx: Context, config: Config) {
   ctx.agentWs.connect<Frame>({
@@ -41,9 +45,9 @@ export function apply(ctx: Context, config: Config) {
         signal,
       })
 
-      // 推送：不相符时告警到钉钉
+      // 通知：不相符时告警；发到钉钉还是飞书由运维在设置页决定
       if (answers.wrong.noul >= 0.7) {
-        await ctx.dingtalk.send({ title: '需要人工复核', markdown: render(frame, draft), idempotencyKey: frame.id })
+        await ctx.notify.send({ title: '需要人工复核', markdown: render(frame, draft), idempotencyKey: frame.id })
       }
     },
   })
@@ -55,7 +59,7 @@ export function apply(ctx: Context, config: Config) {
     <p class="eyebrow">DEEPSEEK HARNESS 插件工具包</p>
     <h1>{SITE.tagline}</h1>
     <p class="lead">
-      连接、推送、委托、校验——四件与业务无关、却每个项目都要重写一遍的事，收进一个包里，默认安全，按需启用。
+      连接、推送、委托、校验——这几件与业务无关、却每个项目都要重写一遍的事，收进一个包里，默认安全，按需启用。
     </p>
     <p class="actions">
       <a class="button primary" href={withBasePath(base, '/quickstart')}>快速开始</a>
@@ -65,7 +69,7 @@ export function apply(ctx: Context, config: Config) {
   </section>
 
   <section>
-    <h2>四件事</h2>
+    <h2>六个 Service</h2>
     <div class="grid-2">
       {
         SERVICES.map((s) => (
@@ -78,7 +82,7 @@ export function apply(ctx: Context, config: Config) {
   <section class="narrow">
     <h2>默认安全</h2>
     <ul>
-      <li>密钥只从环境变量、钥匙串或 dsh 凭据文件读取，不传给本包启动的任何子进程；钉钉凭据由 dws 自己管理。</li>
+      <li>密钥只从环境变量、钥匙串或 dsh 凭据文件读取，不传给本包启动的任何子进程；钉钉、飞书的凭据由 dws、lark-cli 自己管理。</li>
       <li>来自 WebSocket 的数据和 Agent 的输出都视为不可信：Agent 默认只读、在独立的空目录中运行，输出经过 Schema 与业务白名单校验后才应触发副作用。</li>
       <li>只允许 <code>wss://</code>，不关闭证书校验，不跟随重定向。</li>
       <li>日志和错误统一脱敏，不记录鉴权头、API Key、webhook token 与完整消息正文。</li>
@@ -89,7 +93,7 @@ export function apply(ctx: Context, config: Config) {
   <section class="narrow">
     <h2>按需启用</h2>
     <p>
-      四个 Service 在本包的 bundle 中以禁用状态注册。只有在 Profile 的 <code>cordis.patch.yml</code> 中启用的 Service 才会加载并校验配置；未启用的 Service 不影响其他部分。
+      六个 Service 在本包的 bundle 中以禁用状态注册。只有在 Profile 的 <code>cordis.patch.yml</code> 中启用的 Service 才会加载并校验配置；未启用的 Service 不影响其他部分。
     </p>
     <pre><code>{patchExample}</code></pre>
     <p>也可以用 <code>setup</code> 交互式生成这段配置，或在 dsh Web 的设置页里直接勾选。</p>
@@ -97,7 +101,7 @@ export function apply(ctx: Context, config: Config) {
 
   <section class="narrow">
     <h2>业务包长这样</h2>
-    <p>业务包只 inject 用到的 Service，协议、路由、模板和流程留在自己的代码里。</p>
+    <p>业务包只 inject 用到的 Service，协议、路由、模板和流程留在自己的代码里。发通知用 <code>ctx.notify</code>，渠道留给运维切换。</p>
     <pre><code>{pluginExample}</code></pre>
     <p><a href={withBasePath(base, '/architecture')}>了解它与 dsh 的关系</a></p>
   </section>

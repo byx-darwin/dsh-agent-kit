@@ -1,6 +1,6 @@
 [
   {
-    "question": "为什么四个 Service 默认都是禁用的？",
+    "question": "为什么六个 Service 默认都是禁用的？",
     "answer": "未启用的 Service 不会被加载，也不会校验配置，所以只用其中一两个时，不需要为其余的准备配置或环境变量。在 Profile 的 cordis.patch.yml 中按 id 启用，或用 setup、设置页勾选即可。"
   },
   {
@@ -10,6 +10,14 @@
   {
     "question": "Windows 上提示找不到 dws？",
     "answer": "本包会在 PATH 中查找 dws.exe，或把 npm 全局安装生成的 dws.cmd 定位到它背后的 dws.js。仍然找不到时，在钉钉配置中把 dwsPath 设为 dws.exe 或 dws.js 的绝对路径；不要指向 .cmd 或 .bat。"
+  },
+  {
+    "question": "doctor 提示飞书身份不可用怎么办？",
+    "answer": "bot 身份在运行 Profile 的同一个系统用户下执行 lark-cli config init，填写飞书应用的 App ID / App Secret；user 身份再执行 lark-cli auth login --scope \"im:message.send_as_user im:message\"。setup 在配置飞书时也可以直接拉起这两个命令。飞书的 dryRun 模式不检查身份。"
+  },
+  {
+    "question": "怎么把通知从钉钉换成飞书？",
+    "answer": "业务包 inject notify、调用 ctx.notify.send() 时，只需启用并配置飞书行（agent-kit-feishu），再在设置页的「通知渠道」卡片或重新运行 setup 中勾选飞书即可，不需要改业务代码，业务插件也不会重新加载。两边都勾选时可以选择每个渠道都发（all），或按顺序发、第一个成功即停止（failover）。"
   },
   {
     "question": "claude-code 任务报 unsupported_permissions？",
@@ -24,8 +32,8 @@
     "answer": "只有 dsh Web 绑定在 127.0.0.1 时设置页才可修改。绑定到其他地址，或没有加载 Web 服务时，设置页一律只读，避免把配置写入接口暴露到网络上。页面上会显示具体原因。"
   },
   {
-    "question": "没有 dws 或 Agent 登录态，怎么在本地开发业务包？",
-    "answer": "把钉钉设为 dryRun: true，并使用 @mc/dsh-agent-kit/testing 导出的本地 WebSocket 测试服务端、假 subagent provider、Jev mock 和假 dws 脚本。"
+    "question": "没有 dws、lark-cli 或 Agent 登录态，怎么在本地开发业务包？",
+    "answer": "把钉钉或飞书设为 dryRun: true，并使用 @mc/dsh-agent-kit/testing 导出的本地 WebSocket 测试服务端、假 subagent provider、Jev mock、假 dws 脚本（createFakeDws）和假 lark-cli 脚本（createFakeLark）。"
   },
   {
     "question": "可以和 gitflow-cli 共用 TypeSafe Key 吗？",

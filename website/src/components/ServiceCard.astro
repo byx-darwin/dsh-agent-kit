@@ -1,8 +1,9 @@
 ---
 import { withBasePath } from '../lib/paths'
+import type { ServiceNumeral } from '../data/services'
 
 interface Props {
-  numeral: '壹' | '贰' | '叁' | '肆'
+  numeral: ServiceNumeral
   verb: string
   name: string
   summary: string

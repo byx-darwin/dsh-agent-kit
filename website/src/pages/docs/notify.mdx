@@ -1,0 +1,78 @@
+---
+title: 通知渠道
+---
+import Base from '../../layouts/Base.astro'
+import ServiceDoc from '../../components/ServiceDoc.astro'
+import Notice from '../../components/Notice.astro'
+import { withBasePath } from '../../lib/paths'
+
+export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
+
+<Base title="通知渠道" description="ctx.notify：与渠道无关的通知。业务包只调用 ctx.notify.send()，发到钉钉还是飞书、全部发送还是主备切换，由运维在设置页或 setup 中决定。">
+<ServiceDoc id="notify">
+
+## 接口
+
+```ts
+const r = await ctx.notify.send({
+  title: '需要人工复核',
+  markdown: '## 详情\n...',              // 或 text: '纯文本'，二选一
+  targets: {                             // 可选，按渠道覆盖目标；缺省用各渠道的 defaultTarget
+    dingtalk: { chatId: 'cid...' },
+    feishu: { chatId: 'oc_...' },
+  },
+  at: {                                  // 可选，按渠道 @ 人（两边的用户 id 体系不同）
+    dingtalk: { userIds: ['...'] },
+    feishu: { userIds: ['ou_...'] },
+  },
+  idempotencyKey: 'evt_...',             // 透传给各渠道
+  traceId: 'evt_...',
+  signal,
+})
+// r.results: Array<{ channel: 'dingtalk' | 'feishu', ok, results?, error? }>
+```
+
+业务包只需要 `inject = ['notify']`。发到哪些渠道由本行的配置决定：
+
+```yaml
+- id: agent-kit-notify
+  disabled: false
+  config:
+    channels: [feishu, dingtalk]   # 按顺序；failover 时即尝试顺序
+    strategy: failover             # all：每个渠道都发；failover：第一个成功即停止
+```
+
+运维要把通知从钉钉换到飞书，或者改成两边都发，只需在 dsh Web「设置 → Agent Kit → 通知渠道」里勾选，或重新运行 `setup`，不需要改业务代码，也不需要重新发布业务包。
+
+### 发送策略
+
+| strategy | 行为 | send() 何时抛错 |
+|---|---|---|
+| `all`（默认） | 并行发往 `channels` 中的每个渠道 | 所有渠道都失败时 |
+| `failover` | 按 `channels` 的顺序逐个尝试，第一个成功即停止 | 所有渠道都失败时 |
+
+- 有渠道成功时 `send()` 正常返回，失败的渠道体现在 `results` 中，每项带渠道自己的错误（例如 `FeishuSendError` 的 `timeout`）。
+- 所有渠道都失败时抛出 `NotifyError`，`code` 为 `all_failed`，`details.results` 列出各渠道的错误码。
+- 各渠道的重试、幂等与多目标行为不变，见 <a href={link('/docs/dingtalk')}>钉钉推送</a> 与 <a href={link('/docs/feishu')}>飞书推送</a>。
+
+### 渠道与生命周期
+
+本 Service 不 inject 钉钉与飞书，而是在每次发送时查找对应的 Service。原因是 cordis 4 的 inject 都是必需的：如果 notify inject 了渠道，停用任一渠道都会连带卸载 notify，以及所有只依赖 notify 的业务插件。
+
+现在的行为是：
+
+- 启用、停用或切换渠道只影响发送结果，不会重新加载 notify，也不会重新加载只 inject `notify` 的业务插件。设置页保存「通知渠道」卡片后立即改发新渠道。
+- 修改本行自己的 `channels` / `strategy` 时，notify 在原地换上新配置，不重启（dsh 默认会在配置变更时重启插件，进而重启所有依赖它的插件；notify 拦截了这次重启）。新配置不合法时保存被拒绝，旧配置继续生效。
+- `channels` 中某个渠道的行没有运行（未启用或启动失败）时，该渠道的结果为 `channel_unavailable`。
+- `health()`：所有渠道都不可用时为 `failed`；部分不可用，或最近一次发送有渠道失败时为 `degraded`。
+
+<Notice title="渠道行要单独启用" tone="warn">
+notify 只负责分发，真正的发送由 `agent-kit-dingtalk` 与 `agent-kit-feishu` 完成，它们需要各自启用并配置好身份和默认目标。`doctor` 的 `agent-kit-notify.channel-<渠道>` 检查项会在 notify 指向一个未启用的渠道时失败；`setup` 也会提示。
+</Notice>
+
+### 什么时候直接用 ctx.dingtalk 或 ctx.feishu
+
+需要某个渠道特有的能力时，例如钉钉的 `openDingtalkId` 目标或 webhook 身份，直接 inject 对应的 Service。只是「发一条通知」时，推荐用 `ctx.notify`，把渠道选择留给运维。
+
+</ServiceDoc>
+</Base>

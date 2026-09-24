@@ -1,0 +1,81 @@
+---
+title: 飞书推送
+---
+import Base from '../../layouts/Base.astro'
+import ServiceDoc from '../../components/ServiceDoc.astro'
+import Notice from '../../components/Notice.astro'
+
+<Base title="飞书推送" description="ctx.feishu：通过飞书官方 CLI lark-cli 发送文本与 Markdown 消息，支持 bot / user 身份、单聊、多群、@ 与幂等键。">
+<ServiceDoc id="feishu">
+
+## 接口
+
+```ts
+const r = await ctx.feishu.send({
+  markdown: '正文',                      // 或 text: '纯文本'，二选一
+  title: '标题',                         // 可选，作为加粗首行发送
+  target: { chatId: 'oc_...' },          // 或 { userId: 'ou_...' } / { chatIds: ['oc_...', ...] }
+  at: { userIds: ['ou_...'], all: false },
+  idempotencyKey: 'evt_...',
+  traceId: 'evt_...',
+  signal,                                // 可选，中止时终止 lark-cli 子进程
+})
+// r.results: Array<{ target, ok, messageId?, error? }>
+```
+
+本 Service 通过子进程调用飞书官方 CLI `lark-cli`（npm 包 `@larksuite/cli`，已验证 `1.0.96`）的 `lark-cli im +messages-send`：
+
+- 不经过 shell，参数统一写成 `--key=value` 形式，以 `-` 开头的正文也不会被当成选项。
+- 固定附加 `--format=json`，并关闭 lark-cli 的更新与 skills 提示，避免它们混入输出。
+- 子进程只继承环境变量白名单；应用凭据与令牌类变量不在其中，本包的其他密钥也不会传给 lark-cli。
+- 配置了 `profile` 时附加 `--profile=<名字>`，使用 lark-cli 的对应命名配置。
+- 超时或卸载时先发 SIGTERM，宽限 `killGraceMs` 后发 SIGKILL，连同孙进程一起回收（Windows 上用 `taskkill /T /F`）。
+
+### 身份
+
+| 身份 | 需要的准备 | 适用 |
+|---|---|---|
+| `bot` | `lark-cli config init`，填写飞书应用的 App ID / App Secret | 服务器环境推荐，无需用户登录 |
+| `user` | 在 `bot` 的基础上再运行 `lark-cli auth login --scope "im:message.send_as_user im:message"` | 以登录用户的名义发送 |
+
+两种身份都以 `--as=<身份>` 传给 lark-cli。凭据由 lark-cli 自己的配置与系统钥匙串保存，本包不读取、不保存。
+
+### 目标
+
+`target` 省略时使用配置的 `defaultTarget`；单次调用的 `target` 会覆盖它，多个业务包共用本包时互不影响。
+
+| 目标 | 格式 | 说明 |
+|---|---|---|
+| `{ chatId }` | 群 chat_id，`oc_` 开头 | 发到群 |
+| `{ userId }` | 用户 open_id，`ou_` 开头 | 发单聊 |
+| `{ chatIds }` | 多个 chat_id，最多 100 个 | 去重后逐个发送 |
+
+目标、@ 列表与幂等键在拼装参数前做格式校验，格式不符或以 `-` 开头的值会被拒绝（`invalid_target`）。lark-cli 一次只发一个目标，所以多群时逐个调用：单个群失败不中断其余的群，也不抛错，体现在 `results` 中；只有中止（`aborted`）会立即抛出。单目标时失败直接抛出。
+
+### 正文、标题与 @
+
+- `markdown` 与 `text` 二选一。
+- 飞书的 markdown 消息没有独立标题：给了 `title` 时，markdown 作为加粗首行，text 作为首行。
+- `at.userIds` 是被 @ 用户的 open_id，`at.all` 表示 @ 所有人，追加在正文末尾。
+
+### 幂等与重试
+
+- `idempotencyKey` 透传为 lark-cli 的 `--idempotency-key`，同一个键在 1 小时内只发送一次。
+- lark-cli 的幂等键最长 50 个字符。单目标且不超长时原样使用，便于在飞书侧对账；多目标或超长时，按「原始键 + 目标」派生一个逐目标的键，否则只有第一个目标能收到。
+- 只有给出 `idempotencyKey` 时，才会对可重试的失败（超时，或 lark-cli 错误类别为 network / timeout / rate_limit / server / internal / unavailable）最多重试 `retry.maxAttempts` 次，间隔从 500ms 起指数增长。没有幂等键时不自动重试，避免重复发送。
+
+### 身份检查与 dryRun
+
+- 启动时以及每隔 `preflightIntervalMs` 执行 `lark-cli auth status --json`，检查所配身份是否可用。不可用时 `health()` 返回 `failed`，并触发 `agent-kit/service-failed` 事件。
+- `dryRun: true` 时附加 `--dry-run`，只做参数解析与日志、不真实发送，适合本地开发与测试；此时不检查身份。
+
+<Notice title="先装 lark-cli" tone="warn">
+本包不会自己安装 lark-cli。`setup` 在你启用飞书时会列出缺少的 CLI，确认后才运行 `npm i -g @larksuite/cli@1.0.96`；也可以手动安装，再运行 `lark-cli config init`。`doctor` 的 `agent-kit-feishu.lark-cli` 与 `agent-kit-feishu.identity` 两项分别检查安装与身份。
+</Notice>
+
+### larkPath 与 Windows
+
+`larkPath` 必须是绝对路径；省略时启动时从 `PATH` 解析。Windows 上 npm 全局安装的是 `lark-cli.cmd`，本包会自动定位到它背后的 `run.js` 并用 node 运行。手动配置 `larkPath` 时，请指向可执行文件、`.exe` 或 `.js`，不要指向 `.cmd` / `.bat`。
+
+</ServiceDoc>
+</Base>
