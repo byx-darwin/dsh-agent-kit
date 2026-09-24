@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://byx-darwin.github.io/dsh-agent-kit/sitemap-index.xml

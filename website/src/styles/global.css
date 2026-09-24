@@ -1,0 +1,299 @@
+@import '@fontsource/noto-serif-sc/700.css';
+@import '@fontsource/noto-sans-sc/400.css';
+@import '@fontsource/noto-sans-sc/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+
+/* 视觉系统：编辑部长文。大面积只有纸色与墨色，朱红只用于小面积元素。 */
+:root {
+  --paper: #faf7f0;
+  --card: #f1ebdf;
+  --ink: #2a2622;
+  --muted: #6b6258;
+  --rule: #e3dccd;
+  --accent: #b4532a;
+  --code-bg: #1f1b18;
+  --code-fg: #efe7da;
+  --quote: #4d463e;
+
+  --serif: 'Noto Serif SC', 'Songti SC', serif;
+  --sans: 'Noto Sans SC', -apple-system, 'PingFang SC', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  --measure: 720px;
+  --wide: 1080px;
+  --gutter: 16px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 16px/1.85 var(--sans);
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--serif);
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+h1 {
+  font-size: clamp(28px, 5vw, 44px);
+  margin: 0.4em 0 0.5em;
+}
+
+h2 {
+  font-size: 26px;
+  margin: 2.2em 0 0.7em;
+}
+
+h3 {
+  font-size: 19px;
+  margin: 1.8em 0 0.5em;
+}
+
+p,
+ul,
+ol {
+  margin: 0 0 1em;
+}
+
+li + li {
+  margin-top: 0.3em;
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+strong {
+  font-weight: 700;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 2.4em 0;
+}
+
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  color: var(--accent);
+  margin: 0;
+}
+
+.lead {
+  font-size: 18px;
+  line-height: 1.85;
+  color: var(--quote);
+}
+
+/* 版式 */
+main {
+  padding: 32px 0 64px;
+}
+
+main > .prose {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+main > .prose.wide {
+  max-width: var(--wide);
+}
+
+/* 代码 */
+code {
+  font: 13px/1.7 var(--mono);
+  background: var(--card);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+
+pre {
+  background: var(--code-bg);
+  color: var(--code-fg);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin: 1.2em 0;
+  overflow-x: auto;
+  font: 13px/1.7 var(--mono);
+}
+
+pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+  overflow-wrap: normal;
+}
+
+/* Astro 默认的 Shiki 主题带内联背景色，统一到代码底色 */
+pre.astro-code {
+  background-color: var(--code-bg) !important;
+}
+
+blockquote {
+  border-left: 3px solid var(--accent);
+  margin: 1.2em 0;
+  padding: 2px 0 2px 14px;
+  font-family: var(--serif);
+  font-size: 17px;
+  color: var(--quote);
+}
+
+blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* 表格：外层可横向滚动，页面本身不滚动 */
+.table-wrap {
+  overflow-x: auto;
+  margin: 1.2em 0;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--rule);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* MDX 中直接书写的表格没有外层包裹，限制其宽度并允许自身滚动 */
+.prose > table {
+  display: block;
+  overflow-x: auto;
+}
+
+/* 顶栏与页脚 */
+.site-header {
+  border-bottom: 1px solid var(--rule);
+}
+
+.site-header .bar,
+.site-footer .bar {
+  max-width: var(--wide);
+  margin: 0 auto;
+  padding: 14px var(--gutter);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.site-header nav {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-left: auto;
+  font-size: 14px;
+}
+
+.site-header nav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.site-header nav a:hover,
+.site-header nav a[aria-current='page'] {
+  color: var(--ink);
+}
+
+.site-footer {
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.site-footer a {
+  color: var(--muted);
+}
+
+/* 按钮式链接 */
+.button {
+  display: inline-block;
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 14px;
+  text-decoration: none;
+  border: 1px solid var(--ink);
+}
+
+.button.primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.button.secondary {
+  color: var(--ink);
+}
+
+/* 通用网格 */
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 1.2em 0;
+}
+
+@media (max-width: 640px) {
+  body {
+    font-size: 15.5px;
+  }
+
+  h2 {
+    font-size: 23px;
+  }
+
+  .site-header nav {
+    margin-left: 0;
+    gap: 14px;
+  }
+
+  .grid-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
