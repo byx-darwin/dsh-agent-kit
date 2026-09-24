@@ -1,0 +1,32 @@
+name: e2e
+
+# 端到端冒烟：真实 dws / subagent / Jev，只在夜间或手动触发时运行。
+# 每项在对应 secret 缺失时自动跳过；dingtalk 与 agentTasks 需要在 runner 上预先安装并登录 dws / Claude Code，
+# 因此建议使用 self-hosted runner（通过 vars.E2E_RUNNER 指定）。
+on:
+  schedule:
+    - cron: '17 19 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ${{ vars.E2E_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:e2e
+        env:
+          AGENT_KIT_E2E_DINGTALK_CHAT_ID: ${{ secrets.AGENT_KIT_E2E_DINGTALK_CHAT_ID }}
+          AGENT_KIT_E2E_DINGTALK_USER_ID: ${{ secrets.AGENT_KIT_E2E_DINGTALK_USER_ID }}
+          AGENT_KIT_E2E_DINGTALK_IDENTITY: ${{ vars.AGENT_KIT_E2E_DINGTALK_IDENTITY }}
+          AGENT_KIT_E2E_DINGTALK_ROBOT_CODE: ${{ secrets.AGENT_KIT_E2E_DINGTALK_ROBOT_CODE }}
+          AGENT_KIT_E2E_SUBAGENT: ${{ vars.AGENT_KIT_E2E_SUBAGENT }}
+          AGENT_KIT_E2E_SUBAGENT_MODEL: ${{ vars.AGENT_KIT_E2E_SUBAGENT_MODEL }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}

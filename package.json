@@ -1,0 +1,88 @@
+{
+  "name": "@mc/dsh-agent-kit",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin services for resident agent workers: WebSocket, DingTalk, agent tasks, TypeSafe Jev",
+  "license": "MIT",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./ws": {
+      "types": "./lib/ws/index.d.ts",
+      "default": "./lib/ws/index.js"
+    },
+    "./dingtalk": {
+      "types": "./lib/dingtalk/index.d.ts",
+      "default": "./lib/dingtalk/index.js"
+    },
+    "./agent-tasks": {
+      "types": "./lib/agent-tasks/index.d.ts",
+      "default": "./lib/agent-tasks/index.js"
+    },
+    "./jev": {
+      "types": "./lib/jev/index.d.ts",
+      "default": "./lib/jev/index.js"
+    },
+    "./testing": {
+      "types": "./lib/testing/index.d.ts",
+      "default": "./lib/testing/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "patch.yml",
+    "fixtures/fake-dws.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": "^22.19 || >=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ws": "^8.18.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "@typesafe-ai/sdk": "^0.6.0"
+  },
+  "peerDependenciesMeta": {
+    "@typesafe-ai/sdk": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/cordis-plugin-loader": "^1.0.3",
+    "@deepseek-ai/dsh-app-boot": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-subagent": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-subagent-claude-code": "^0.1.5-rc.3",
+    "@deepseek-ai/dsh-subprocess-local": "^0.1.5-rc.3",
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "@typesafe-ai/sdk": "^0.6.0",
+    "@vitest/coverage-v8": "^4.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./patch.yml"
+    }
+  }
+}
