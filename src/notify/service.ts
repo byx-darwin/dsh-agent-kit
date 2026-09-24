@@ -68,21 +68,32 @@ type Channel = Pick<DingtalkService, 'send' | 'health'> | Pick<FeishuService, 's
  * 不 inject 渠道服务，而是在发送时用 `ctx.get()` 取：cordis 的 inject 都是必需的，inject 了
  * 渠道就意味着停用任一渠道都会连带卸载本服务以及所有依赖它的业务插件。现在停用或切换渠道只影响
  * 发送结果（未运行的渠道报 `channel_unavailable`），业务插件不受影响。
+ *
+ * 修改本行自己的配置（channels / strategy）同样不重载：cordis 默认在配置变更时重启插件，进而重启
+ * 所有 inject 了 notify 的业务插件；这里在本 fiber 的 `internal/update` 钩子里校验新配置并原地替换，
+ * 不调用 `next()`，从而否决这次重启。
  */
 export class NotifyService extends KitService<NotifyCounters> {
   static Config = NotifyConfig
-  readonly config: NotifyConfig
+  private current: NotifyConfig
   private lastSuccessAt: number | null = null
   private readonly counters: NotifyCounters = { success: 0, failure: 0, lastFailureAt: null, lastErrorCode: null }
 
   constructor(ctx: Context, config: NotifyConfig) {
     super(ctx, 'notify')
-    this.config = config
-    try {
-      assertNotifyConfig(config)
-    } catch (e) {
-      throw new ConfigError('notify', (e as Error).message, { field: 'channels' })
-    }
+    this.current = checked(config)
+    const self = this
+    ctx.on('internal/update', function (next, _noSave, _restart) {
+      // this 为本插件的 fiber；next 已经过 NotifyConfig 解析
+      self.current = checked(next as NotifyConfig)
+      ;(this as unknown as { config: NotifyConfig }).config = self.current
+      self.logger.info('notify config updated in place', { channels: self.current.channels, strategy: self.current.strategy })
+    })
+  }
+
+  /** 当前生效的配置；修改本行配置后原地更新。 */
+  get config(): NotifyConfig {
+    return this.current
   }
 
   private channel(name: NotifyChannel): Channel | undefined {
@@ -155,6 +166,15 @@ export class NotifyService extends KitService<NotifyCounters> {
     }
     return { status: 'ok', detail: `channels: ${this.config.channels.join(', ')} (${this.config.strategy})`, counters }
   }
+}
+
+function checked(config: NotifyConfig): NotifyConfig {
+  try {
+    assertNotifyConfig(config)
+  } catch (e) {
+    throw new ConfigError('notify', (e as Error).message, { field: 'channels' })
+  }
+  return config
 }
 
 export default NotifyService

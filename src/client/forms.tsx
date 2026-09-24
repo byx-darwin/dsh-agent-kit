@@ -143,7 +143,7 @@ function NotifyForm(p: FormProps) {
           {(id) => (
             <select id={id} disabled={p.disabled} value={channels[0]} onChange={(e) => move(e.target.value)}>
               {channels.map((c) => (
-                <option key={c} value={c}>{p.t(`notify.channel.${c}`)}</option>
+                <option key={c} value={c}>{p.t(`notify.name.${c}`)}</option>
               ))}
             </select>
           )}

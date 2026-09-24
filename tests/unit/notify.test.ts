@@ -82,6 +82,32 @@ describe('NotifyService', () => {
     expect(applied()).toBe(1)
   })
 
+  it('applies changed channels in place without restarting notify or its consumers', async () => {
+    await dingtalk()
+    await feishu()
+    const fiber = t.root.plugin(NotifyService, { channels: ['dingtalk'] } as never)
+    await fiber
+    let ctx!: Context
+    let applied = 0
+    await t.root.inject(['notify'], (c) => {
+      ctx = c
+      applied++
+    })
+    expect((await ctx.notify.send({ text: 'x' })).results.map((r) => r.channel)).toEqual(['dingtalk'])
+
+    await fiber.update({ channels: ['feishu', 'dingtalk'], strategy: 'failover' })
+    expect(applied).toBe(1)
+    // 同一个实例：更新前那次发送的计数还在
+    expect(ctx.notify.health().counters.success).toBe(1)
+    expect(ctx.notify.config).toEqual({ channels: ['feishu', 'dingtalk'], strategy: 'failover' })
+    expect((await ctx.notify.send({ text: 'y' })).results.map((r) => r.channel)).toEqual(['feishu'])
+
+    // 非法的新配置被拒绝，旧配置保持生效
+    expect(() => fiber.update({ channels: [] })).toThrow(/至少选择一个/)
+    expect(ctx.notify.config.channels).toEqual(['feishu', 'dingtalk'])
+    expect(applied).toBe(1)
+  })
+
   it('fails over in order and stops at the first success', async () => {
     dws.setScenario({ send: [{ mode: 'fail', category: 'validation' }] })
     await dingtalk()
