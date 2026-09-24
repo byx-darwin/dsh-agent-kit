@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { JevService, classify, defaultClientFactory, type JevConfig } from '../../src/jev/service.js'
 import { macosKeychain } from '../../src/secrets/keychain.js'
+import { SHARED_KEYCHAIN_SERVICE } from '../../src/secrets/typesafe-key.js'
 import { choice, noul, score } from '../../src/jev/types.js'
 import { clearSecretsForTesting } from '../../src/common/redact.js'
 import { createJevMock, defaultAnswers, jevHttpError, type JevMock } from '../../src/testing/jev-mock.js'
@@ -254,6 +255,28 @@ describe('JevService', () => {
       process.env.USER = 'bob'
       await setup({ keychainService: 'gitflow-cli-typesafe' })
       expect(calls).toEqual([['gitflow-cli-typesafe', 'bob']])
+    })
+
+    /**
+     * I1 回归测试：Web 端 `JevForm` 从不设置 `keychainService`。之前只在 jev 配置显式给出
+     * `keychainService` 时才查钥匙串，导致把 TypeSafe Key 保存到（Web 端保存动作写入的）
+     * `SHARED_KEYCHAIN_SERVICE` 之后，`JevService.init` 依然读不到它。这里不配置
+     * `keychainService`，确认在 macOS 上默认回退到 `SHARED_KEYCHAIN_SERVICE` 读取。
+     */
+    it('falls back to SHARED_KEYCHAIN_SERVICE when keychainService is not configured', async () => {
+      delete process.env.TYPESAFE_API_KEY
+      process.env.USER = 'bob'
+      const readable = {
+        read: async (service: string, account: string) => {
+          calls.push([service, account])
+          return service === SHARED_KEYCHAIN_SERVICE ? 'shared-default-key' : undefined
+        },
+        write: async () => {},
+        remove: async () => {},
+      }
+      JevService.keyStore = { platform: 'darwin', keychain: readable }
+      await setup({})
+      expect(calls).toEqual([[SHARED_KEYCHAIN_SERVICE, 'bob']])
     })
 
     it('fails to start when neither the env var nor the keychain item exists', async () => {

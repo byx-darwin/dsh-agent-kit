@@ -54,7 +54,7 @@
 TypeSafe Key 的读取顺序（三平台一致）：
 
 1. 环境变量 `TYPESAFE_API_KEY`。
-2. macOS 钥匙串：仅在 macOS 且配置了 `keychainService` 时读取（例如与 gitflow-cli 共享的 `ai.typesafe.api-key`，迁移见 byx-darwin/gitflow-cli#407）。
+2. macOS 钥匙串：仅在 macOS 上读取；未显式配置 `keychainService` 时默认查找共享服务名 `ai.typesafe.api-key`（`SHARED_KEYCHAIN_SERVICE`，例如与 gitflow-cli 共享，迁移见 byx-darwin/gitflow-cli#407），显式配置 `keychainService`（含显式空数组，表示不查钥匙串）时以其为准。
 3. dsh 凭据服务 `ctx.credentials`（`@deepseek-ai/dsh-credentials-local`，dsh base bundle 默认加载，行 id `credentials`）：保存在 `$DSH_HOME/.credentials.yaml`，权限不是仅本人可读时 dsh 拒绝启动；它自身还会回退到项目 `.env` 与 `$DSH_HOME/.env`。
 
 保存位置：macOS 默认写钥匙串 `ai.typesafe.api-key`（可选改写 dsh 凭据服务）；Linux 与 Windows 写 dsh 凭据服务。
@@ -182,7 +182,7 @@ src/
 
 ## 核实结论（2026-09-24）
 
-「风险与实施前验证」列出的三点均已验证可行：前端模块按 `window.__ModuleLoader__.load({ id, factory })` 外包装即可被 dsh Web 加载并注册设置页；`AgentKitAdmin` 通过 `ctx.get('webServer')?.host === '127.0.0.1'` 判断本机绑定，作为默认 fail-closed 的只读闸门；未额外维护 `dsh-client-ui-slots`/`dsh-client-ui-primitives` 的本地类型声明（实测已发布版本类型可用）。`dsh-credentials-local` 确认是纯文件后端（`$DSH_HOME/.credentials.yaml`），不对外暴露写入方法，只有 `resolve`/`describe`/`readRecord` 等只读接口，写入需直接改文件并遵守它自己的跨进程锁；用 chokidar 监听、`awaitWriteFinish.stabilityThreshold` 默认 ~100ms 防抖。
+「风险与实施前验证」列出的三点均已验证可行：前端模块按 `window.__ModuleLoader__.load({ id, factory })` 外包装即可被 dsh Web 加载并注册设置页；`AgentKitAdmin` 通过 `ctx.get('webServer')?.host === '127.0.0.1'` 判断本机绑定，作为默认 fail-closed 的只读闸门；`dsh-client-ui-slots`/`dsh-client-ui-primitives` 的已发布版本类型确实落后于 dsh 0.1.5-rc.3 的实际结构（如「前端类型包」一节所述），本包在 `src/client/host-types.ts` 里按实际结构维护了一份最小的本地类型声明（`ClientContext` 等），而不是照搬官方已发布的类型包。`dsh-credentials-local` 确认是纯文件后端（`$DSH_HOME/.credentials.yaml`），不对外暴露写入方法，只有 `resolve`/`describe`/`readRecord` 等只读接口，写入需直接改文件并遵守它自己的跨进程锁；用 chokidar 监听、`awaitWriteFinish.stabilityThreshold` 默认 ~100ms 防抖。
 
 在按 `.superpowers/sdd/2026-09-24-dsh-agent-kit-onboarding/task-10-brief.md` 做真实 dsh Web 走查（`@deepseek-ai/dsh@0.1.5-rc.3`，headless Chromium）时，发现并修复了 5 个产品 bug，均补了自动化回归测试（先确认改动前测试能复现失败，再验证修复后通过）：
 

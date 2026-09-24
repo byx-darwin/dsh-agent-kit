@@ -12,6 +12,7 @@ import {
   macosKeychain,
   readCredential,
   resolveTypesafeKey,
+  restrictWindowsAcl,
   saveTypesafeKey,
   writeCredential,
   type Keychain,
@@ -58,6 +59,51 @@ describe('credentials file', () => {
   })
 })
 
+/**
+ * I3：Windows 上 `mode: 0o600` 对 NTFS 无效（Node 在 win32 上忽略 POSIX 权限位），写完凭据文件后
+ * 用 `icacls <file> /inheritance:r /grant:r <USERNAME>:F` 收紧 ACL（不经过 shell，短超时）。这里
+ * 用一个假的 `aclRunner` 模拟 win32，断言调用的确切参数；不会在非 Windows 机器上真的调用 icacls。
+ */
+describe('windows ACL restriction (I3)', () => {
+  it('runs icacls with the exact shell-less args after writing on win32', async () => {
+    const calls: Array<[string, readonly string[]]> = []
+    const runner = (cmd: string, args: readonly string[]) => (calls.push([cmd, args]), { status: 0 })
+    await writeCredential('TYPESAFE_API_KEY', 'v', file, { platform: 'win32', aclRunner: runner, username: 'testuser' })
+    expect(calls).toEqual([['icacls', [file, '/inheritance:r', '/grant:r', 'testuser:F']]])
+  })
+
+  it('does not touch the ACL on non-Windows platforms', async () => {
+    const calls: unknown[] = []
+    const runner = (cmd: string, args: readonly string[]) => (calls.push([cmd, args]), { status: 0 })
+    await writeCredential('TYPESAFE_API_KEY', 'v', file, { platform: 'darwin', aclRunner: runner })
+    expect(calls).toEqual([])
+  })
+
+  it('is best-effort: the write already succeeded, so a failing icacls only reports a warning and does not throw', async () => {
+    const runner = () => ({ status: 1 })
+    const warnings: string[] = []
+    await writeCredential('TYPESAFE_API_KEY', 'v', file, { platform: 'win32', aclRunner: runner, username: 'testuser', onWarning: (m) => warnings.push(m) })
+    expect(warnings).toEqual(['icacls exited with code 1'])
+    expect(await readCredential('TYPESAFE_API_KEY', file)).toBe('v')
+  })
+
+  it('swallows a thrown error from the runner (e.g. icacls missing) and warns instead of throwing', async () => {
+    const runner = () => {
+      throw new Error('spawn icacls ENOENT')
+    }
+    const warnings: string[] = []
+    await writeCredential('TYPESAFE_API_KEY', 'v', file, { platform: 'win32', aclRunner: runner, username: 'testuser', onWarning: (m) => warnings.push(m) })
+    expect(warnings).toEqual(['icacls failed: spawn icacls ENOENT'])
+  })
+
+  it('restrictWindowsAcl warns and returns false when USERNAME is not set', async () => {
+    const warnings: string[] = []
+    const ok = await restrictWindowsAcl(file, { username: undefined, runner: () => ({ status: 0 }), onWarning: (m) => warnings.push(m) })
+    expect(ok).toBe(false)
+    expect(warnings[0]).toMatch(/USERNAME/)
+  })
+})
+
 describe('typesafe key', () => {
   const base = () => ({ env: {}, platform: 'darwin' as const, keychain: fakeKeychain, keychainAccount: 'alice', credentialsFile: file })
 
@@ -97,6 +143,23 @@ describe('typesafe key', () => {
     await clearTypesafeKey('keychain', { ...base(), keychainService: 'ai.typesafe.api-key' })
     expect(memory.has('ai.typesafe.api-key/alice')).toBe(false)
     await expect(saveTypesafeKey('keychain', 'k', { ...base(), platform: 'linux' })).rejects.toThrow(/macOS/)
+  })
+
+  it('defaults the keychain lookup to SHARED_KEYCHAIN_SERVICE on macOS when keychainService is unset', async () => {
+    memory.set('ai.typesafe.api-key/alice', 'from-shared-default')
+    // 没有传 keychainService（Web 端 JevForm 从不设置它）
+    expect(await resolveTypesafeKey(base())).toEqual({ key: 'from-shared-default', source: 'keychain:ai.typesafe.api-key' })
+  })
+
+  it('does not look up the keychain when keychainService is explicitly an empty array', async () => {
+    memory.set('ai.typesafe.api-key/alice', 'should-not-be-read')
+    await writeCredential('TYPESAFE_API_KEY', 'from-file', file)
+    expect(await resolveTypesafeKey({ ...base(), keychainService: [] })).toEqual({ key: 'from-file', source: 'credentials' })
+  })
+
+  it('does not default the keychain lookup outside macOS', async () => {
+    memory.set('ai.typesafe.api-key/alice', 'k')
+    expect(await resolveTypesafeKey({ ...base(), platform: 'linux' })).toBeUndefined()
   })
 
   it('picks the default target per platform', () => {

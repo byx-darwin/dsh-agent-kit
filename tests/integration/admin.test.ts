@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { AgentKitAdmin } from '../../src/admin/service.js'
+import { SHARED_KEYCHAIN_SERVICE, type Keychain } from '../../src/secrets/index.js'
 
 let home: string
 let profileDir: string
@@ -53,6 +54,52 @@ describe('AgentKitAdmin', () => {
     expect(await admin.setSecret('credentials', 'ts-key-123')).toEqual({ configured: true, source: 'credentials' })
     expect(JSON.stringify(await admin.status())).not.toContain('ts-key-123')
     expect(await admin.clearSecret('credentials')).toEqual({ configured: false })
+  })
+
+  it('rejects an unsupported key target as bad_request', async () => {
+    const admin = await setup('127.0.0.1')
+    await expect(admin.setSecret('keychain' as never, 'v')).rejects.toThrow(/bad_request/)
+    await expect(admin.clearSecret('keychain' as never)).rejects.toThrow(/bad_request/)
+  })
+
+  it('rejects an empty or non-string secret value as bad_request', async () => {
+    const admin = await setup('127.0.0.1')
+    await expect(admin.setSecret('credentials', '')).rejects.toThrow(/bad_request/)
+    await expect(admin.setSecret('credentials', '   ')).rejects.toThrow(/bad_request/)
+    await expect(admin.setSecret('credentials', 123 as never)).rejects.toThrow(/bad_request/)
+  })
+
+  /**
+   * I1 回归测试：Web 端 `JevForm` 从不设置 `keychainService`，之前 `setSecret`/`status()`/`jev` 检查
+   * 只在 jev 配置显式给出 `keychainService` 时才查钥匙串，导致把 TypeSafe Key 存到钥匙串后页面和
+   * `doctor` 都看不到。这里用 `keyStore: { platform: 'darwin', keychain: fake }`（未设置 jev 的
+   * `keychainService`）模拟：写入钥匙串后 `status()` 报告已配置、来源为 `keychain:ai.typesafe.api-key`，
+   * `jev` 检查同样通过。
+   */
+  it('makes a keychain-saved TypeSafe key visible in status() and the jev check on macOS (I1)', async () => {
+    const memory = new Map<string, string>()
+    const fakeKeychain: Keychain = {
+      read: async (s, a) => memory.get(`${s}/${a}`),
+      write: async (s, a, v) => void memory.set(`${s}/${a}`, v),
+      remove: async (s, a) => void memory.delete(`${s}/${a}`),
+    }
+    writeFileSync(join(profileDir, 'cordis.patch.yml'), '- id: agent-kit-ws\n  disabled: false\n- id: agent-kit-jev\n  disabled: false\n  config: {}\n')
+    root.provide('loader', { entries: () => [{ id: 'agent-kit-ws', disabled: false, fiber: { state: 2 } }] } as never)
+    root.provide('webServer', { host: '127.0.0.1' } as never)
+    await root.plugin(AgentKitAdmin, {
+      profileDir,
+      keyStore: { env: {}, platform: 'darwin', keychainAccount: 'alice', keychain: fakeKeychain, credentialsFile: join(home, '.credentials.yaml') },
+    } as never)
+    const admin = root.get('agentKitAdmin') as unknown as AgentKitAdmin
+
+    expect(await admin.setSecret('keychain', 'ts-mac-secret')).toEqual({ configured: true, source: `keychain:${SHARED_KEYCHAIN_SERVICE}` })
+    expect(memory.get(`${SHARED_KEYCHAIN_SERVICE}/alice`)).toBe('ts-mac-secret')
+
+    const status = await admin.status()
+    expect(status.typesafeKey).toEqual({ configured: true, source: `keychain:${SHARED_KEYCHAIN_SERVICE}` })
+    expect(JSON.stringify(status)).not.toContain('ts-mac-secret')
+    const jevKeyCheck = status.checks.find((c) => c.id === 'agent-kit-jev.key')
+    expect(jevKeyCheck).toMatchObject({ status: 'pass' })
   })
 
   /**

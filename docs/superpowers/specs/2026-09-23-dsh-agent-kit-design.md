@@ -295,7 +295,7 @@ const { answers } = await ctx.jev.judge({
 - `@typesafe-ai/sdk` 为可选 peer 依赖：只有启用 jev Service 时才需要安装。
 - API Key 按以下优先级解析（`secrets/` 统一实现，`doctor`/`setup`/Web 设置页共用同一套读取逻辑）：
   1. 环境变量 `TYPESAFE_API_KEY`。
-  2. macOS 钥匙串（仅 macOS）：未设置环境变量且配置了 `keychainService` 时，通过 `/usr/bin/security find-generic-password -a <keychainAccount> -s <服务名> -w` 读取（不经过 shell、5 秒超时、环境变量白名单），`keychainService` 可给多个服务名按顺序尝试，读到的值同样登记为脱敏密钥。与其他工具共享 TypeSafe Key 时统一使用中立服务名 `ai.typesafe.api-key`（导出常量 `SHARED_KEYCHAIN_SERVICE`；gitflow-cli 的迁移见 byx-darwin/gitflow-cli#407），迁移期可配置为 `[ai.typesafe.api-key, gitflow-cli-typesafe]`。非 macOS 上 `keychainService` 被忽略并记录警告。
+  2. macOS 钥匙串（仅 macOS）：未设置环境变量时，通过 `/usr/bin/security find-generic-password -a <keychainAccount> -s <服务名> -w` 读取（不经过 shell、5 秒超时、环境变量白名单）；未显式配置 `keychainService` 时默认查找共享服务名 `ai.typesafe.api-key`（导出常量 `SHARED_KEYCHAIN_SERVICE`，例如与 gitflow-cli 共享，迁移见 byx-darwin/gitflow-cli#407），显式配置时（可给多个服务名按顺序尝试，迁移期可配置为 `[ai.typesafe.api-key, gitflow-cli-typesafe]`；显式空数组表示不查钥匙串）以其为准，读到的值同样登记为脱敏密钥。非 macOS 上 `keychainService` 被忽略并记录警告。
   3. dsh 凭据文件（`$DSH_HOME/.credentials.yaml`，由 `@deepseek-ai/dsh-credentials-local` 管理）：`doctor`/`setup`/Web 设置页保存 Key 时若目标平台不支持钥匙串（或用户显式选择该目标），直接写入这份文件；该 provider 只对外暴露只读接口（`resolve`/`describe`/`readRecord` 等），写入按其自身约定的跨进程锁直接改文件，用 chokidar 监听、默认 ~100ms 防抖才把新内容并入内存快照（`admin/`、`cli/setup` 对此有专门的重试处理，见「核实结论」）。
   仅在 jev Service 启用时校验，三处都取不到则该 Service 启动失败。
 - `timeoutMs` 是一次 `judge()` 的总时长（包含 SDK 内部重试）；超出或 `signal` 中止时取消请求。SDK 默认对 408 / 429 / 5xx 与连接错误最多重试 2 次，其 `timeout` 只约束单次尝试，因此本包用自己的定时器与 `AbortSignal` 控制总时长。创建 SDK 客户端时 `logLevel: 'off'`，避免 SDK 在 debug 日志中输出请求体。
@@ -312,7 +312,7 @@ Config：
 |---|---|---|
 | `model` | `jev-latest` | SDK 支持的模型名（可用 `client.models.list()` 查询）；单次调用可用 `model` 覆盖 |
 | `timeoutMs` | 30000 | [1000, 300000] |
-| `keychainService` | 无 | macOS 钥匙串服务名或服务名列表（按顺序尝试），推荐 `ai.typesafe.api-key`；仅在未设置 `TYPESAFE_API_KEY` 时读取 |
+| `keychainService` | 未配置时默认 `SHARED_KEYCHAIN_SERVICE`（`ai.typesafe.api-key`，仅 macOS） | macOS 钥匙串服务名或服务名列表（按顺序尝试）；仅在未设置 `TYPESAFE_API_KEY` 时读取；显式空数组表示不查钥匙串 |
 | `keychainAccount` | `$USER` | 钥匙串条目的账户名 |
 
 ## 安全
@@ -352,7 +352,7 @@ dsh-agent-kit/
   docs/superpowers/specs/
 ```
 
-- `@deepseek-ai/cordis`（`4.0.2`）与 `@deepseek-ai/schemastery`（`^3.18.2`）为 `peerDependencies`，版本与目标 dsh 版本对齐（dsh `0.1.5-rc.3` 依赖 cordis `4.0.2`），不放进 `dependencies`，避免装出重复实例、破坏 Context 类型扩展。`@typesafe-ai/sdk` 为可选 peer。本包不 import `@deepseek-ai/dsh-subagent`，而是按其结构定义所需的类型，避免强制依赖并避免与其 Context 类型扩展冲突。运行时依赖只有 `ws` 与 `ajv`。
+- `@deepseek-ai/cordis`（`4.0.2`）、`@deepseek-ai/schemastery`（`^3.18.2`）与 `@deepseek-ai/dsh-typert-protocol`（精确版本 `0.1.5-rc.3`，与目标 dsh 版本对齐）均为 `peerDependencies`（同时保留在 `devDependencies` 供本仓库开发使用），不放进 `dependencies`，避免装出重复实例、破坏 Context 类型扩展或 `RemoteError`/`TypertRemoteService` 的实例判等。`@typesafe-ai/sdk` 为可选 peer。本包不 import `@deepseek-ai/dsh-subagent`，而是按其结构定义所需的类型，避免强制依赖并避免与其 Context 类型扩展冲突。
 - ESM、TypeScript `strict: true`；注册都通过 `ctx.effect()` / `ctx.on()`。
 - `@mc/dsh-agent-kit/testing` 导出（业务包可以用它们在没有 dws / Agent 登录态的环境下开发和测试）：
   - `startTestWsServer()`：本机随机端口的 WebSocket 服务端，可模拟握手拒绝（`rejectNext(401)`）、关闭自动 pong、广播帧，并记录握手头与收到的帧。

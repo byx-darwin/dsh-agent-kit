@@ -4,9 +4,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { createCheckContext, runChecks, type CheckResult } from '../checks/index.js'
 import { isKitError } from '../common/errors.js'
+import { redact } from '../common/redact.js'
 import type { ServiceHealth } from '../common/service.js'
 import { KIT_ENTRIES, locateProfile, readKitEntries, writeKitEntries, type KitId, type ProfileInfo } from '../profile/index.js'
-import { clearTypesafeKey, describeTypesafeKey, saveTypesafeKey, SHARED_KEYCHAIN_SERVICE, type KeySource, type KeyStoreOptions, type KeyTarget } from '../secrets/index.js'
+import { clearTypesafeKey, describeTypesafeKey, saveTypesafeKey, type KeySource, type KeyStoreOptions, type KeyTarget } from '../secrets/index.js'
 
 /**
  * 与 cordis `FiberState`（`@deepseek-ai/cordis` 的 `const enum`，因 `isolatedModules` 无法直接
@@ -52,6 +53,39 @@ type LoaderEntry = { id: string; disabled?: unknown; fiber?: { state: number } }
 type Loader = { entries(): Iterable<LoaderEntry> }
 type WebServer = { host?: string }
 type Credentials = KeyStoreOptions['credentials']
+type JevKeychainFields = { keychainService?: string | string[]; keychainAccount?: string }
+
+function redactError(e: unknown): string {
+  return redact(e instanceof Error ? e.message : String(e))
+}
+
+/**
+ * 从 `agent-kit-jev` 的配置里提取密钥定位选项，供 `status()`/`jev` 检查读取时使用（I1）。只在
+ * jev 配置里显式给出了字段时才覆盖 `keyStore` 的同名字段——绝不能无条件展开 `{ keychainService:
+ * config.keychainService }`，否则 jev 未配置 `keychainAccount` 时会用 `undefined` 覆盖调用方
+ * `keyStore.keychainAccount` 里已经给出的真实账户名。未配置 `keychainService` 时不覆盖，交由
+ * `secrets/typesafe-key.ts` 的平台默认值（macOS 上回退到 `SHARED_KEYCHAIN_SERVICE`）处理。
+ */
+function jevKeychainReadOptions(config: Record<string, unknown> | undefined): JevKeychainFields {
+  const c = (config ?? {}) as JevKeychainFields
+  return {
+    ...(c.keychainService !== undefined ? { keychainService: c.keychainService } : {}),
+    ...(c.keychainAccount !== undefined ? { keychainAccount: c.keychainAccount } : {}),
+  }
+}
+
+/**
+ * 同上，但供 `setSecret`/`clearSecret` 写入/清除单个钥匙串条目时使用：数组形式的
+ * `keychainService` 取第一个（约定的“首选”服务名），因为写入/清除只能针对一个具体的服务名。
+ */
+function jevKeychainWriteOptions(config: Record<string, unknown> | undefined): JevKeychainFields {
+  const c = (config ?? {}) as JevKeychainFields
+  const keychainService = Array.isArray(c.keychainService) ? c.keychainService[0] : c.keychainService
+  return {
+    ...(keychainService !== undefined ? { keychainService } : {}),
+    ...(c.keychainAccount !== undefined ? { keychainAccount: c.keychainAccount } : {}),
+  }
+}
 
 /**
  * `cordis-plugin-loader` 给 `loader.entries()` 返回的 `id` 并不是我们在 `patch.yml`/`KIT_ENTRIES`
@@ -211,7 +245,7 @@ export class AgentKitAdmin extends TypertRemoteService {
     const snapshot = await readKitEntries(profile.patchFile)
     const report = await runChecks(await createCheckContext(profile, { snapshot, keyStore: this.keyStore }))
     const reason = this.readOnlyReason(profile)
-    const jevConfig = (snapshot.entries['agent-kit-jev'].config ?? {}) as { keychainService?: string | string[]; keychainAccount?: string }
+    const jevConfig = (snapshot.entries['agent-kit-jev'].config ?? {}) as JevKeychainFields
     return {
       profile: profile.name,
       patchReload: profile.patchReload,
@@ -232,7 +266,7 @@ export class AgentKitAdmin extends TypertRemoteService {
         }
       }),
       checks: report.results,
-      typesafeKey: await describeTypesafeKey({ ...this.keyStore, keychainService: jevConfig.keychainService, keychainAccount: jevConfig.keychainAccount }),
+      typesafeKey: await describeTypesafeKey({ ...this.keyStore, ...jevKeychainReadOptions(jevConfig) }),
       keyTargets,
     }
   }
@@ -255,16 +289,37 @@ export class AgentKitAdmin extends TypertRemoteService {
     }
   }
 
+  private validateSecretInput(target: KeyTarget, value: string): void {
+    if (!this.keyTargets().includes(target)) failWith('bad_request', `unsupported key target: ${target}`)
+    if (typeof value !== 'string' || !value.trim()) failWith('bad_request', 'value must be a non-empty string')
+  }
+
   async setSecret(target: KeyTarget, value: string): Promise<{ configured: boolean; source?: KeySource }> {
-    await this.writable()
-    await saveTypesafeKey(target, value, { ...this.keyStore, keychainService: SHARED_KEYCHAIN_SERVICE })
-    return describeAfterWrite(true, { ...this.keyStore, keychainService: SHARED_KEYCHAIN_SERVICE })
+    this.validateSecretInput(target, value)
+    const profile = await this.writable()
+    const snapshot = await readKitEntries(profile.patchFile)
+    const options = { ...this.keyStore, ...jevKeychainWriteOptions(snapshot.entries['agent-kit-jev'].config) }
+    try {
+      await saveTypesafeKey(target, value, options)
+    } catch (e) {
+      if (e instanceof RemoteError) throw e
+      failWith('bad_request', `failed to save secret: ${redactError(e)}`)
+    }
+    return describeAfterWrite(true, options)
   }
 
   async clearSecret(target: KeyTarget): Promise<{ configured: boolean; source?: KeySource }> {
-    await this.writable()
-    await clearTypesafeKey(target, { ...this.keyStore, keychainService: SHARED_KEYCHAIN_SERVICE })
-    return describeAfterWrite(false, { ...this.keyStore, keychainService: SHARED_KEYCHAIN_SERVICE })
+    if (!this.keyTargets().includes(target)) failWith('bad_request', `unsupported key target: ${target}`)
+    const profile = await this.writable()
+    const snapshot = await readKitEntries(profile.patchFile)
+    const options = { ...this.keyStore, ...jevKeychainWriteOptions(snapshot.entries['agent-kit-jev'].config) }
+    try {
+      await clearTypesafeKey(target, options)
+    } catch (e) {
+      if (e instanceof RemoteError) throw e
+      failWith('bad_request', `failed to clear secret: ${redactError(e)}`)
+    }
+    return describeAfterWrite(false, options)
   }
 }
 
