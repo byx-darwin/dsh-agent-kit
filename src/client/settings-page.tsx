@@ -3,11 +3,27 @@ import type { T } from './forms.js'
 import type { AdminApi, AdminStatus, KeyTarget } from './remote.js'
 import { ServiceCard } from './service-card.js'
 
+/** 与 secrets/typesafe-key.ts 里的 SHARED_KEYCHAIN_SERVICE 保持一致：与 gitflow-cli 等工具共享的钥匙串服务名。 */
+const SHARED_KEYCHAIN_SERVICE = 'ai.typesafe.api-key'
+
+/** 把 `KeySource`（'env' | 'credentials' | `keychain:${string}`）映射成本地化展示文案，而不是直接展示原始值。 */
+function sourceLabel(source: string, t: T): string {
+  if (source === 'env') return t('source.env')
+  if (source === 'credentials') return t('source.credentials')
+  if (source.startsWith('keychain:')) return t('source.keychain', { service: source.slice('keychain:'.length) })
+  return source
+}
+
 function KeyPanel({ status, api, t, onChanged }: { status: AdminStatus; api: AdminApi; t: T; onChanged(): void }) {
   const [value, setValue] = useState('')
   const [target, setTarget] = useState<KeyTarget>(status.keyTargets[0] ?? 'credentials')
   const [error, setError] = useState<string>()
   const disabled = !status.writable
+  const source = status.typesafeKey.source
+  // 清除按钮要清的目标，必须匹配当前实际生效的来源，而不是下拉框里选的（下一次要保存到的）目标——
+  // 否则例如当前 Key 实际存在钥匙串里，但下拉框还停留在 credentials，点“清除”会去清一个本来就是空的
+  // 凭据文件，钥匙串里的 Key 纹丝不动，页面却显示“已清除”，造成误导。
+  const clearTarget: KeyTarget = source === 'credentials' ? 'credentials' : source?.startsWith('keychain:') ? 'keychain' : target
   const save = async () => {
     setError(undefined)
     try {
@@ -18,9 +34,19 @@ function KeyPanel({ status, api, t, onChanged }: { status: AdminStatus; api: Adm
       setError((e as Error).message)
     }
   }
+  const clear = async () => {
+    setError(undefined)
+    if (source === `keychain:${SHARED_KEYCHAIN_SERVICE}` && !window.confirm(t('jev.clearSharedKeychainConfirm', { service: SHARED_KEYCHAIN_SERVICE }))) return
+    try {
+      await api.clearSecret(clearTarget)
+      onChanged()
+    } catch (e) {
+      setError(t('jev.clearFailed', { message: (e as Error).message }))
+    }
+  }
   return (
     <section className="agent-kit-key" aria-label={t('jev.keySection')}>
-      <p>{status.typesafeKey.configured ? t('jev.keyConfigured', { source: status.typesafeKey.source ?? '' }) : t('jev.keyMissing')}</p>
+      <p>{status.typesafeKey.configured ? t('jev.keyConfigured', { source: sourceLabel(source ?? '', t) }) : t('jev.keyMissing')}</p>
       <label htmlFor="agent-kit-key">{t('jev.key')}</label>
       <input id="agent-kit-key" type="password" autoComplete="off" disabled={disabled} value={value} onChange={(e) => setValue(e.target.value)} />
       <label htmlFor="agent-kit-key-target">{t('jev.target')}</label>
@@ -31,7 +57,7 @@ function KeyPanel({ status, api, t, onChanged }: { status: AdminStatus; api: Adm
       </select>
       <button type="button" disabled={disabled || !value} onClick={save}>{t('jev.saveKey')}</button>
       {status.typesafeKey.configured && (
-        <button type="button" disabled={disabled} onClick={async () => (await api.clearSecret(target), onChanged())}>{t('jev.clearKey')}</button>
+        <button type="button" disabled={disabled} onClick={clear}>{t('jev.clearKey')}</button>
       )}
       {error && <p role="alert">{error}</p>}
     </section>

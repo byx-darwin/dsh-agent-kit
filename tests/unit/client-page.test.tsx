@@ -32,7 +32,7 @@ function status(over: Partial<AdminStatus> = {}): AdminStatus {
 
 function fakeApi(
   s: AdminStatus,
-): AdminApi & { status: ReturnType<typeof vi.fn>; saveService: ReturnType<typeof vi.fn>; setSecret: ReturnType<typeof vi.fn> } {
+): AdminApi & { status: ReturnType<typeof vi.fn>; saveService: ReturnType<typeof vi.fn>; setSecret: ReturnType<typeof vi.fn>; clearSecret: ReturnType<typeof vi.fn> } {
   return {
     status: vi.fn(async () => s),
     saveService: vi.fn(async () => ({ version: 'v2' })),
@@ -135,6 +135,49 @@ describe('SettingsPage', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // M1 回归测试：清除按钮曾经始终清下拉框里选中的 target，而不是当前 Key 实际所在的来源，
+  // 导致例如 Key 实际存在钥匙串里、下拉框还停留在 credentials 时，点击“清除”会去清一个本来就是空的
+  // 凭据文件，钥匙串里的 Key 纹丝不动却显示“已清除”。这里验证清除按钮改为按实际来源选择目标。
+  it('clears the target matching the actual current source, not the dropdown selection', async () => {
+    const api = fakeApi(status({ typesafeKey: { configured: true, source: 'credentials' }, keyTargets: ['keychain', 'credentials'] }))
+    render(<SettingsPage api={api} t={t} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh['jev.clearKey']! }))
+    await waitFor(() => expect(api.clearSecret).toHaveBeenCalledWith('credentials'))
+  })
+
+  it('shows a shared-keychain warning before clearing a key stored in the shared keychain service', async () => {
+    const api = fakeApi(status({ typesafeKey: { configured: true, source: 'keychain:ai.typesafe.api-key' }, keyTargets: ['keychain', 'credentials'] }))
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<SettingsPage api={api} t={t} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh['jev.clearKey']! }))
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('ai.typesafe.api-key'))
+    await waitFor(() => expect(api.clearSecret).toHaveBeenCalledWith('keychain'))
+    confirmSpy.mockRestore()
+  })
+
+  it('does not clear when the shared-keychain warning is declined', async () => {
+    const api = fakeApi(status({ typesafeKey: { configured: true, source: 'keychain:ai.typesafe.api-key' }, keyTargets: ['keychain', 'credentials'] }))
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<SettingsPage api={api} t={t} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh['jev.clearKey']! }))
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(api.clearSecret).not.toHaveBeenCalled()
+    confirmSpy.mockRestore()
+  })
+
+  it('shows a localized source label instead of the raw keychain:service value', async () => {
+    render(<SettingsPage api={fakeApi(status({ typesafeKey: { configured: true, source: 'keychain:ai.typesafe.api-key' } }))} t={t} />)
+    expect(await screen.findByText(/来源：钥匙串（ai\.typesafe\.api-key）/)).toBeTruthy()
+  })
+
+  it('shows an error like save does when clearing fails', async () => {
+    const api = fakeApi(status({ typesafeKey: { configured: true, source: 'credentials' } }))
+    api.clearSecret.mockRejectedValueOnce(new Error('boom'))
+    render(<SettingsPage api={api} t={t} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh['jev.clearKey']! }))
+    expect(await screen.findByText(/boom/)).toBeTruthy()
   })
 })
 

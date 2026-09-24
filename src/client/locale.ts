@@ -42,4 +42,9 @@ export const zh: Record<string, string> = {
   'jev.target': '保存到',
   'target.keychain': 'macOS 钥匙串（ai.typesafe.api-key）',
   'target.credentials': 'dsh 凭据文件',
+  'source.env': '环境变量',
+  'source.credentials': 'dsh 凭据文件',
+  'source.keychain': '钥匙串（{service}）',
+  'jev.clearFailed': '清除失败：{message}',
+  'jev.clearSharedKeychainConfirm': '这个 TypeSafe Key 保存在与其他工具共享的钥匙串项（{service}）里，例如 gitflow-cli 也会读取它；清除后这些工具也会读不到这个 Key，确定要继续吗？',
 }
