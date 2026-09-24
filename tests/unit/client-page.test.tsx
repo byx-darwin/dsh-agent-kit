@@ -195,3 +195,89 @@ describe('createAdminApi', () => {
     await expect(api.saveService('agent-kit-ws', true, null, 'v1')).rejects.toMatchObject({ code: 'conflict', message: '已被修改' })
   })
 })
+
+describe('registered entries (issue #1)', () => {
+  const biz = {
+    id: 'biz-row',
+    title: '业务',
+    enabled: true,
+    phase: 'failed' as const,
+    health: null,
+    config: { url: 'wss://a', extra: 1, alertTarget: { chatId: 'cid1' } },
+    registered: true as const,
+    fields: [
+      { path: 'url', label: '上游 URL' },
+      { path: 'alertTarget.chatId', label: '告警群' },
+      { path: 'batchSize', label: '批大小', kind: 'number' as const },
+      { path: 'mode', label: '模式', kind: 'select' as const, options: ['a', 'b'] },
+      { path: 'chatIds', label: '群列表', kind: 'list' as const },
+      { path: 'dryRun', label: '演练', kind: 'boolean' as const },
+    ],
+    secrets: [{ label: '上游 Token', ref: 'BIZ_TOKEN', configured: false }],
+  }
+  const withBiz = (over: Partial<AdminStatus> = {}) => {
+    const s = status(over)
+    s.services[1] = { ...s.services[1]!, enabled: true, dependents: [{ id: 'biz-row', title: '业务' }] }
+    s.services.push(biz)
+    s.checks.push({ id: 'biz-row.config', scope: 'biz-row', title: '业务 配置', status: 'fail', detail: 'url: 必须是 wss://' })
+    return s
+  }
+
+  it('renders a registered row with its fields and checks, and saves nested paths while keeping unlisted keys', async () => {
+    const api = fakeApi(withBiz())
+    render(<SettingsPage api={api} t={t} />)
+    expect(await screen.findByText(/url: 必须是 wss:\/\//)).toBeTruthy()
+    expect(screen.getByText(zh.reloadRegistered!.replace('{title}', '业务'))).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('告警群'), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText('批大小'), { target: { value: '8' } })
+    fireEvent.change(screen.getByLabelText('模式'), { target: { value: 'b' } })
+    fireEvent.change(screen.getByLabelText('群列表'), { target: { value: 'c1, c2\nc3' } })
+    fireEvent.click(screen.getByLabelText('演练'))
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} 业务` }))
+    await waitFor(() =>
+      expect(api.saveService).toHaveBeenCalledWith('biz-row', true, { url: 'wss://a', extra: 1, batchSize: 8, mode: 'b', chatIds: ['c1', 'c2', 'c3'], dryRun: true }, 'v1'),
+    )
+  })
+
+  it('stores a registered secret by ref without displaying it', async () => {
+    const api = fakeApi(withBiz())
+    render(<SettingsPage api={api} t={t} />)
+    fireEvent.change(await screen.findByLabelText('上游 Token（BIZ_TOKEN）'), { target: { value: 'biz-secret' } })
+    fireEvent.click(screen.getByRole('button', { name: `${zh['secrets.save']} 上游 Token` }))
+    await waitFor(() => expect(api.setSecret).toHaveBeenCalledWith('credentials', 'biz-secret', 'BIZ_TOKEN'))
+    expect(document.body.textContent).not.toContain('biz-secret')
+  })
+
+  it('clears a configured registered secret', async () => {
+    const s = withBiz()
+    ;(s.services.at(-1)!.secrets as { configured: boolean; source?: string }[])[0] = { ...biz.secrets[0]!, configured: true, source: 'credentials' }
+    const api = fakeApi(s)
+    render(<SettingsPage api={api} t={t} />)
+    fireEvent.click(await screen.findByRole('button', { name: `${zh['secrets.clear']} 上游 Token` }))
+    await waitFor(() => expect(api.clearSecret).toHaveBeenCalledWith('credentials', 'BIZ_TOKEN'))
+  })
+
+  it('warns before disabling a kit row that registered rows depend on', async () => {
+    const api = fakeApi(withBiz())
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    render(<SettingsPage api={api} t={t} />)
+    expect(await screen.findByText(zh.reloadDependents!.replace('{names}', '业务'))).toBeTruthy()
+    fireEvent.click(screen.getByRole('switch', { name: /钉钉/ }))
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} 钉钉` }))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('业务'))
+    expect(api.saveService).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} 钉钉` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-dingtalk', false, null, 'v1'))
+    confirm.mockRestore()
+  })
+
+  it('passes the secret ref through the remote api', async () => {
+    const calls: unknown[][] = []
+    const ctx = { get: () => ({ setSecret: async (...a: unknown[]) => (calls.push(a), { ok: true, value: { configured: true } }), clearSecret: async (...a: unknown[]) => (calls.push(a), { ok: true, value: { configured: false } }) }) }
+    const api = createAdminApi(ctx as never)
+    await api.setSecret('credentials', 'v', 'BIZ_TOKEN')
+    await api.setSecret('credentials', 'v')
+    await api.clearSecret('credentials', 'BIZ_TOKEN')
+    expect(calls).toEqual([['credentials', 'v', 'BIZ_TOKEN'], ['credentials', 'v', undefined], ['credentials', 'BIZ_TOKEN']])
+  })
+})

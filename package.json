@@ -17,6 +17,10 @@
     "./client": {
       "default": "./lib/client.js"
     },
+    "./entry": {
+      "types": "./lib/entry.d.ts",
+      "default": "./lib/entry.js"
+    },
     "./ws": {
       "types": "./lib/ws/index.d.ts",
       "default": "./lib/ws/index.js"

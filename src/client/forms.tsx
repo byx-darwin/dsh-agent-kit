@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import type { KitId } from './remote.js'
+import type { EntryField, KitId } from './remote.js'
 
 export type T = (key: string, vars?: Record<string, string | number>) => string
 type Config = Record<string, unknown>
@@ -10,12 +10,13 @@ export interface FormProps {
   t: T
 }
 
-function Field({ label, children }: { label: string; children: (id: string) => ReactNode }) {
+function Field({ label, help, children }: { label: string; help?: string; children: (id: string) => ReactNode }) {
   const [id] = useState(() => `akf-${Math.random().toString(36).slice(2)}`)
   return (
     <div className="agent-kit-field">
       <label htmlFor={id}>{label}</label>
       {children(id)}
+      {help && <small>{help}</small>}
     </div>
   )
 }
@@ -105,6 +106,70 @@ function WsForm(p: FormProps) {
 
 function JevForm(p: FormProps) {
   return <>{text(p, 'model', p.t('jev.model'))}</>
+}
+
+function getPath(config: Config, path: string): unknown {
+  let cur: unknown = config
+  for (const key of path.split('.')) cur = cur && typeof cur === 'object' ? (cur as Config)[key] : undefined
+  return cur
+}
+
+/** 按点分路径写入，返回新对象；值为 undefined 时删除该键，并去掉因此变空的中间对象。 */
+export function setPath(config: Config, path: string, value: unknown): Config {
+  const [head, ...rest] = path.split('.') as [string, ...string[]]
+  const next = { ...config }
+  const child = rest.length ? setPath((config[head] as Config | undefined) ?? {}, rest.join('.'), value) : value
+  if (child === undefined || (rest.length && Object.keys(child as Config).length === 0)) delete next[head]
+  else next[head] = child
+  return next
+}
+
+function EntryInput({ field, p, id }: { field: EntryField; p: FormProps; id: string }) {
+  const value = getPath(p.config, field.path)
+  const set = (v: unknown) => p.onChange(setPath(p.config, field.path, v))
+  switch (field.kind ?? 'text') {
+    case 'boolean':
+      return <input id={id} type="checkbox" disabled={p.disabled} checked={value === true} onChange={(e) => set(e.target.checked)} />
+    case 'number':
+      return <input id={id} type="number" disabled={p.disabled} placeholder={field.placeholder} value={(value as number | undefined) ?? ''} onChange={(e) => set(e.target.value === '' ? undefined : Number(e.target.value))} />
+    case 'select':
+      return (
+        <select id={id} disabled={p.disabled} value={(value as string | undefined) ?? ''} onChange={(e) => set(e.target.value || undefined)}>
+          <option value="">—</option>
+          {field.options?.map((o) => (
+            <option key={o} value={o}>{o}</option>
+          ))}
+        </select>
+      )
+    case 'list':
+      return (
+        <textarea
+          id={id}
+          disabled={p.disabled}
+          placeholder={field.placeholder}
+          value={Array.isArray(value) ? value.join('\n') : ''}
+          onChange={(e) => {
+            const items = e.target.value.split(/[\n,]/).map((x) => x.trim()).filter(Boolean)
+            set(items.length ? items : undefined)
+          }}
+        />
+      )
+    default:
+      return <input id={id} disabled={p.disabled} placeholder={field.placeholder} value={(value as string | undefined) ?? ''} onChange={(e) => set(e.target.value || undefined)} />
+  }
+}
+
+/** 业务包登记的行（issue #1）：按登记的 `fields` 渲染表单，未列出的配置项原样保留。 */
+export function EntryForm(p: FormProps & { fields: readonly EntryField[] }) {
+  return (
+    <>
+      {p.fields.map((field) => (
+        <Field key={field.path} label={field.label} help={field.help}>
+          {(id) => <EntryInput field={field} p={p} id={id} />}
+        </Field>
+      ))}
+    </>
+  )
 }
 
 export const FORMS: Record<KitId, (p: FormProps) => ReactNode> = {

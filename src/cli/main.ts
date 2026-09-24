@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util'
+import { collectEntries } from '../admin/registry.js'
 import { createCheckContext, runChecks, type CheckContext } from '../checks/index.js'
 import { listProfiles, locateProfile, resolveDshHome, type ProfileInfo } from '../profile/index.js'
 import type { KeyStoreOptions } from '../secrets/index.js'
@@ -50,7 +51,8 @@ export async function main(argv: string[], io: CliIO = defaultIO, deps: CliDeps 
     const home = deps.home ?? resolveDshHome(io.env)
     if (command === 'doctor') {
       const profile = await pickProfile(home, values.profile)
-      const report = await runChecks(await createCheckContext(profile, deps.checkOverrides))
+      // 业务包通过静态清单登记的行（issue #1）；doctor 不加载插件，只能从清单发现
+      const report = await runChecks(await createCheckContext(profile, deps.checkOverrides), await collectEntries(profile, []))
       io.out(values.json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report))
       return report.ok ? 0 : 1
     }
