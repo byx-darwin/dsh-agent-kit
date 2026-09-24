@@ -1,7 +1,8 @@
-import { accessSync, constants, existsSync } from 'node:fs'
-import { isAbsolute, join } from 'node:path'
+import { accessSync, constants } from 'node:fs'
+import { isAbsolute } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { ConfigError } from '../common/errors.js'
+import { resolveExecutable } from '../common/executable.js'
 import { BASE_ENV_WHITELIST, pickEnv, runProcess, type RunProcessResult } from '../common/process.js'
 import { digest, redact, registerSecret } from '../common/redact.js'
 import { KitService, type ServiceHealth } from '../common/service.js'
@@ -46,43 +47,9 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+export { resolveExecutable }
+
 const RETRYABLE_CATEGORIES = new Set(['network', 'timeout', 'rate_limit', 'server', 'unavailable'])
-
-/**
- * npm 全局安装 dingtalk-workspace-cli 后，Windows 上 PATH 目录里的是一个
- * `dws.cmd` shim（Node 用 shell:false 无法直接 spawn），真正的可执行脚本在
- * `<dir>/node_modules/dingtalk-workspace-cli/bin/dws.js`。
- */
-function resolveWindowsCmdShim(dir: string, name: string): string | undefined {
-  const script = join(dir, 'node_modules', 'dingtalk-workspace-cli', 'bin', `${name}.js`)
-  return existsSync(script) ? script : undefined
-}
-
-export function resolveExecutable(name: string, envPath = process.env.PATH ?? '', platform: NodeJS.Platform = process.platform): string | undefined {
-  // PATH 分隔符本身按 platform 参数选择（便于在非 Windows 主机上测试 Windows 分支）；
-  // 实际的路径拼接与判等仍用当前宿主 OS 的 node:path 语义（真实 Windows 上二者一致）。
-  const pathDelimiter = platform === 'win32' ? ';' : ':'
-  for (const dir of envPath.split(pathDelimiter)) {
-    if (!dir || !isAbsolute(dir)) continue
-    if (platform === 'win32') {
-      const exe = join(dir, `${name}.exe`)
-      if (existsSync(exe)) return exe
-      if (existsSync(join(dir, `${name}.cmd`))) {
-        const script = resolveWindowsCmdShim(dir, name)
-        if (script) return script
-      }
-      continue
-    }
-    const candidate = join(dir, name)
-    try {
-      accessSync(candidate, constants.X_OK)
-      return candidate
-    } catch {
-      // 继续查找
-    }
-  }
-  return undefined
-}
 
 export class DingtalkService extends KitService<DingtalkCounters> {
   static Config = DingtalkConfig

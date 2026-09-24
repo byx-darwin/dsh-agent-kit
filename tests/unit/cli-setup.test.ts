@@ -162,3 +162,144 @@ describe('setup', () => {
     expect(text).not.toMatch(/defaultTarget:\s*\n\s*chatId: cidOld/)
   })
 })
+
+describe('setup: channel CLIs, Feishu and notification channels', () => {
+  /** 按命令分派的假 exec：lark-cli 的 auth status / chat-search / 发送，其余当作 dws。 */
+  function channelExec(options: { larkUser?: boolean; larkConfigured?: boolean } = {}) {
+    const calls: string[][] = []
+    const exec = async (file: string, args: string[]) => {
+      calls.push([file, ...args])
+      if (file.endsWith('lark-cli')) {
+        if (args.includes('status')) {
+          if (options.larkConfigured === false) return { exitCode: 3, stdout: '', stderr: '{"ok":false,"error":{"type":"config","message":"not configured"}}' }
+          return { exitCode: 0, stdout: JSON.stringify({ identities: { bot: { available: true }, user: { available: options.larkUser === true } } }), stderr: '' }
+        }
+        if (args.includes('+chat-search')) return { exitCode: 0, stdout: JSON.stringify({ ok: true, data: { chats: [{ chat_id: 'oc_alert', name: '告警群' }] } }), stderr: '' }
+        return { exitCode: 0, stdout: '{"ok":true,"data":{"message_id":"om_1"}}', stderr: '' }
+      }
+      return { exitCode: 0, stdout: '{"authenticated":true,"token_valid":true,"user_id":"u1"}', stderr: '' }
+    }
+    return { exec, calls }
+  }
+
+  /** installed 为当前已安装的 CLI；runInstall 装好后把它加入 installed。 */
+  function cliDeps(answers: unknown[], installed: Set<string>, extra: Record<string, unknown> = {}) {
+    const installs: string[][] = []
+    const { exec, calls } = channelExec(extra as { larkUser?: boolean })
+    const base = deps(answers)
+    return {
+      installs,
+      calls,
+      deps: {
+        ...base,
+        runInstall: async (args: string[]) => {
+          installs.push(args)
+          installed.add(args[2]!.startsWith('@larksuite') ? 'lark-cli' : 'dws')
+          return 0
+        },
+        runLark: async () => 0,
+        checkOverrides: { ...base.checkOverrides, exec, findExecutable: (name: string) => (installed.has(name) ? `/usr/local/bin/${name}` : undefined) },
+        ...extra,
+      },
+    }
+  }
+
+  it('offers both missing CLIs and installs only the one picked, pinned to the verified version', async () => {
+    const installed = new Set<string>()
+    const answers = [
+      ['agent-kit-dingtalk', 'agent-kit-feishu'], // 启用钉钉与飞书
+      ['feishu'], // 两个都缺，只勾选飞书
+      true, // 确认安装
+      'bot', 'dingRobot1', 'none', false, // 钉钉：bot / robotCode / 不设默认目标 / dryRun
+      'bot', 'chatId', 'oc_alert', false, // 飞书：bot / 输入 chat_id / dryRun
+      true, // 写入
+      false, // 不给飞书发测试消息
+    ]
+    const { deps: d, installs } = cliDeps(answers, installed)
+    await main(['setup', '--profile', 'kit'], io(), d)
+    expect(installs).toEqual([['i', '-g', '@larksuite/cli@1.0.96']])
+    const printed = out.join('')
+    expect(printed).toContain('飞书 CLI（lark-cli） 已安装')
+    expect(printed).toContain('npm i -g dingtalk-workspace-cli@1.0.62')
+    expect(readFileSync(patchFile, 'utf8')).toMatch(/id: agent-kit-feishu\n\s+disabled: false\n\s+config:\n\s+identity: bot\n\s+defaultTarget:\n\s+chatId: oc_alert/)
+  })
+
+  it('installs both CLIs after one confirmation, or none when declined', async () => {
+    const installed = new Set<string>()
+    const pickBoth = ['agent-kit-dingtalk', 'agent-kit-feishu']
+    const tail = ['bot', 'dingRobot1', 'none', false, 'bot', 'none', false, false]
+    let r = cliDeps([pickBoth, ['dingtalk', 'feishu'], true, ...tail], installed)
+    await main(['setup', '--profile', 'kit'], io(), r.deps)
+    expect(r.installs).toEqual([
+      ['i', '-g', 'dingtalk-workspace-cli@1.0.62'],
+      ['i', '-g', '@larksuite/cli@1.0.96'],
+    ])
+
+    out = []
+    r = cliDeps([pickBoth, ['dingtalk', 'feishu'], false, ...tail], new Set())
+    await main(['setup', '--profile', 'kit'], io(), r.deps)
+    expect(r.installs).toEqual([])
+    expect(out.join('')).toMatch(/已跳过安装[\s\S]*dingtalk-workspace-cli@1\.0\.62[\s\S]*@larksuite\/cli@1\.0\.96/)
+  })
+
+  it('does not ask to install when the CLIs are already there', async () => {
+    const r = cliDeps([['agent-kit-feishu'], 'bot', 'none', false, true], new Set(['lark-cli', 'dws']))
+    expect(await main(['setup', '--profile', 'kit'], io(), r.deps)).toBe(0)
+    expect(r.installs).toEqual([])
+  })
+
+  it('runs lark-cli config init when lark-cli has no app yet, and searches Feishu groups', async () => {
+    const lark: string[][] = []
+    const answers = [['agent-kit-feishu'], 'bot', true, 'search', '告警', 'oc_alert', false, true, true]
+    const r = cliDeps(answers, new Set(['lark-cli']), {
+      larkConfigured: false,
+      runLark: async (args: string[]) => (lark.push(args), 0),
+    })
+    const { exec } = channelExec({ larkConfigured: false })
+    r.deps.checkOverrides = { ...r.deps.checkOverrides, exec }
+    await main(['setup', '--profile', 'kit'], io(), r.deps)
+    expect(lark).toEqual([['config', 'init']])
+    expect(readFileSync(patchFile, 'utf8')).toContain('chatId: oc_alert')
+  })
+
+  it('configures notification channels with failover order, and a later run switches channels in place', async () => {
+    const installed = new Set(['dws', 'lark-cli'])
+    let r = cliDeps(
+      [
+        ['agent-kit-dingtalk', 'agent-kit-feishu', 'agent-kit-notify'],
+        'bot', 'dingRobot1', 'none', false, // 钉钉
+        'bot', 'none', false, // 飞书
+        ['dingtalk', 'feishu'], 'failover', 'feishu', // 通知：两个渠道，主备，先飞书
+        true, // 写入
+      ],
+      installed,
+    )
+    await main(['setup', '--profile', 'kit'], io(), r.deps)
+    let text = readFileSync(patchFile, 'utf8')
+    expect(text).toMatch(/id: agent-kit-notify\n\s+disabled: false\n\s+config:\n\s+channels:\n\s+- feishu\n\s+- dingtalk\n\s+strategy: failover/)
+
+    // 之后只切换通知渠道：只保留钉钉；空选会被要求重选
+    out = []
+    r = cliDeps(
+      [
+        ['agent-kit-dingtalk', 'agent-kit-feishu', 'agent-kit-notify'],
+        'bot', 'dingRobot1', 'none', false,
+        'bot', 'none', false,
+        [], ['dingtalk'], // 先空选，被要求重选
+        true,
+      ],
+      installed,
+    )
+    await main(['setup', '--profile', 'kit'], io(), r.deps)
+    text = readFileSync(patchFile, 'utf8')
+    expect(out.join('')).toContain('至少选择一个渠道')
+    expect(text).toMatch(/id: agent-kit-notify\n\s+disabled: false\n\s+config:\n\s+channels:\n\s+- dingtalk\n\s+strategy: failover/)
+  })
+
+  it('warns when notify points at a channel that is not enabled', async () => {
+    const r = cliDeps([['agent-kit-notify'], ['feishu'], true], new Set())
+    await main(['setup', '--profile', 'kit'], io(), r.deps)
+    expect(out.join('')).toContain('注意：飞书 没有启用')
+    expect(out.join('')).toContain('agent-kit-feishu 未启用')
+  })
+})

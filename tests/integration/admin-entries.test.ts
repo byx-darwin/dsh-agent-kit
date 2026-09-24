@@ -83,7 +83,7 @@ describe('AgentKitAdmin registered entries (issue #1)', () => {
   it('shows a registered row in status() with config, health, checks and secrets; status is unchanged without it', async () => {
     const admin = await setup()
     const before = await admin.status()
-    expect(before.services.map((s) => s.id)).toEqual(['agent-kit-ws', 'agent-kit-dingtalk', 'agent-kit-agent-tasks', 'agent-kit-jev'])
+    expect(before.services.map((s) => s.id)).toEqual(['agent-kit-ws', 'agent-kit-dingtalk', 'agent-kit-feishu', 'agent-kit-notify', 'agent-kit-agent-tasks', 'agent-kit-jev'])
     expect(before.checks.some((c) => c.scope === 'biz-row')).toBe(false)
 
     const fiber = root.plugin(businessPlugin(bizEntry()) as never, {} as never)

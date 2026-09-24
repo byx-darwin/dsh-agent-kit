@@ -6,6 +6,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { boot, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import { createFakeDws } from '../../src/testing/fake-dws.js'
+import { createFakeLark } from '../../src/testing/fake-lark.js'
 import { FakeSubagentProvider } from '../../src/testing/fake-subagent.js'
 import { createJevMock } from '../../src/testing/jev-mock.js'
 import { startTestWsServer, type TestWsServer } from '../../src/testing/ws-server.js'
@@ -57,14 +58,16 @@ async function start(profilePatches: Patch[]) {
 const enable = (id: string, config: Record<string, unknown>, extra: Patch = {}): Patch => ({ id: `agent-kit-${id}`, disabled: false, config, ...extra })
 
 describe('bundle patch.yml in a real dsh loader', () => {
-  it('registers all four services disabled by default', async () => {
+  it('registers every service disabled by default', async () => {
     const c = await start([])
-    for (const name of ['agentWs', 'dingtalk', 'agentTasks', 'jev']) expect(c.get(name)).toBeUndefined()
+    for (const name of ['agentWs', 'dingtalk', 'feishu', 'notify', 'agentTasks', 'jev']) expect(c.get(name)).toBeUndefined()
     const ids = BUNDLE_PATCHES.flatMap((p: any) => p.insert ?? []).map((e: any) => [e.id, e.name, e.disabled])
     expect(ids).toEqual([
       ['agent-kit', '@mc/dsh-agent-kit', undefined],
       ['agent-kit-ws', '@mc/dsh-agent-kit/ws', true],
       ['agent-kit-dingtalk', '@mc/dsh-agent-kit/dingtalk', true],
+      ['agent-kit-feishu', '@mc/dsh-agent-kit/feishu', true],
+      ['agent-kit-notify', '@mc/dsh-agent-kit/notify', true],
       ['agent-kit-agent-tasks', '@mc/dsh-agent-kit/agent-tasks', true],
       ['agent-kit-jev', '@mc/dsh-agent-kit/jev', true],
     ])
@@ -92,6 +95,33 @@ describe('bundle patch.yml in a real dsh loader', () => {
     delete process.env.TYPESAFE_API_KEY
     await expect(start([enable('jev', {})])).rejects.toThrow(/TYPESAFE_API_KEY|failed to load|did not activate/)
     ctx = undefined
+  })
+
+  it('notify routes to DingTalk and Feishu for a business plugin that injects only notify', async () => {
+    const lark = createFakeLark()
+    process.env.LARKSUITE_CLI_CONFIG_DIR = lark.dir
+    try {
+      const c = await start([
+        enable('dingtalk', { identity: 'bot', robotCode: 'ding1', dwsPath: dws.path, defaultTarget: { chatId: 'cidA' } }),
+        enable('feishu', { identity: 'bot', larkPath: lark.path, defaultTarget: { chatId: 'oc_a' } }),
+        enable('notify', { channels: ['feishu', 'dingtalk'] }),
+      ])
+      let sent: any
+      await c.plugin({
+        name: 'business',
+        inject: ['notify'],
+        async apply(bctx: Context) {
+          sent = await bctx.notify.send({ title: 'T', markdown: 'alert', idempotencyKey: 'evt_1' })
+        },
+      })
+      expect(sent.results.map((r: any) => [r.channel, r.ok])).toEqual([
+        ['feishu', true],
+        ['dingtalk', true],
+      ])
+      expect(lark.calls().some((call) => call.args.includes('--chat-id=oc_a'))).toBe(true)
+    } finally {
+      lark.cleanup()
+    }
   })
 
   it('all four services can be injected, work together, and release resources on unload', async () => {

@@ -2,17 +2,23 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { KIT_ENTRIES, readKitEntries, type ProfileInfo } from '../profile/index.js'
 import { BASE_ENV_WHITELIST, pickEnv, runProcess } from '../common/process.js'
-import { DWS_ENV_WHITELIST, resolveExecutable } from '../dingtalk/service.js'
+import { resolveExecutable } from '../common/executable.js'
+import { DWS_ENV_WHITELIST } from '../dingtalk/service.js'
+import { LARK_ENV_WHITELIST } from '../feishu/service.js'
 import type { RegisteredEntry } from '../admin/entry.js'
 import { agentTasksChecks } from './agent-tasks.js'
 import { commonChecks } from './common.js'
 import { dingtalkChecks } from './dingtalk.js'
 import { entryChecks } from './entries.js'
+import { feishuChecks } from './feishu.js'
+import { notifyChecks } from './notify.js'
 import { jevChecks } from './jev.js'
 import type { Check, CheckContext, CheckReport, CheckResult } from './types.js'
 
 const SERVICE_CHECKS: Record<string, Check> = {
   'agent-kit-dingtalk': dingtalkChecks,
+  'agent-kit-feishu': feishuChecks,
+  'agent-kit-notify': notifyChecks,
   'agent-kit-agent-tasks': agentTasksChecks,
   'agent-kit-jev': jevChecks,
 }
@@ -35,7 +41,7 @@ export async function createCheckContext(profile: ProfileInfo, over: Partial<Che
       }
     },
     exec: async (file, args) => {
-      const r = await runProcess(file, args, { env: pickEnv([...BASE_ENV_WHITELIST, ...DWS_ENV_WHITELIST]), timeoutMs: 15_000, killGraceMs: 1000 })
+      const r = await runProcess(file, args, { env: { ...pickEnv([...BASE_ENV_WHITELIST, ...DWS_ENV_WHITELIST, ...LARK_ENV_WHITELIST]), LARKSUITE_CLI_NO_UPDATE_NOTIFIER: '1', LARKSUITE_CLI_NO_SKILLS_NOTIFIER: '1' }, timeoutMs: 15_000, killGraceMs: 1000 })
       return { exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr }
     },
     keyStore: {},

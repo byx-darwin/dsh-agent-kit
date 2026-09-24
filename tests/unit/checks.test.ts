@@ -6,7 +6,7 @@ function snapshot(entries: Partial<KitSnapshot['entries']>): KitSnapshot {
   const off = { enabled: false, config: undefined }
   return {
     version: 'v',
-    entries: { 'agent-kit-ws': off, 'agent-kit-dingtalk': off, 'agent-kit-agent-tasks': off, 'agent-kit-jev': off, ...entries },
+    entries: { 'agent-kit-ws': off, 'agent-kit-dingtalk': off, 'agent-kit-feishu': off, 'agent-kit-notify': off, 'agent-kit-agent-tasks': off, 'agent-kit-jev': off, ...entries },
   }
 }
 
@@ -139,5 +139,47 @@ describe('every fail/warn result carries a fix', () => {
     const enabledJev = snapshot({ 'agent-kit-jev': { enabled: true, config: {} } })
     assertFixes(await runChecks(ctx({ snapshot: enabledJev })))
     assertFixes(await runChecks(ctx({ snapshot: enabledJev, resolveModule: (m) => m !== '@typesafe-ai/sdk' })))
+  })
+})
+
+describe('feishu and notify checks', () => {
+  const larkStatus = (user: boolean) => JSON.stringify({ identities: { bot: { available: true, message: 'Bot identity: ready' }, user: { available: user, message: user ? 'ok' : 'User identity: missing' } } })
+  const feishu = (config: object) => snapshot({ 'agent-kit-feishu': { enabled: true, config: { identity: 'bot', ...config } } })
+
+  it('reports a missing lark-cli with the pinned install command', async () => {
+    const r = await runChecks(ctx({ snapshot: feishu({}), findExecutable: () => undefined }))
+    expect(byId(r, 'agent-kit-feishu.lark-cli')).toMatchObject({ status: 'fail', fix: expect.stringContaining('npm i -g @larksuite/cli@1.0.96') })
+    expect(byId(r, 'agent-kit-feishu.identity')).toMatchObject({ status: 'skip' })
+  })
+
+  it('checks the configured identity through lark-cli auth status, with the profile', async () => {
+    const calls: string[][] = []
+    const exec = async (_f: string, args: string[]) => (calls.push(args), { exitCode: 0, stdout: larkStatus(false), stderr: '' })
+    let r = await runChecks(ctx({ snapshot: feishu({ profile: 'prod' }), exec }))
+    expect(byId(r, 'agent-kit-feishu.identity')).toMatchObject({ status: 'pass', title: '飞书 bot 身份可用' })
+    expect(calls.at(-1)).toEqual(['--profile=prod', 'auth', 'status', '--json'])
+    r = await runChecks(ctx({ snapshot: feishu({ identity: 'user' }), exec }))
+    expect(byId(r, 'agent-kit-feishu.identity')).toMatchObject({ status: 'fail', detail: 'User identity: missing', fix: expect.stringContaining('lark-cli auth login') })
+  })
+
+  it('reports an unconfigured lark-cli and skips the identity check in dryRun', async () => {
+    const exec = async () => ({ exitCode: 3, stdout: '', stderr: '{"ok":false,"error":{"type":"config","message":"not configured"}}' })
+    let r = await runChecks(ctx({ snapshot: feishu({}), exec }))
+    expect(byId(r, 'agent-kit-feishu.identity')).toMatchObject({ status: 'fail', detail: 'not configured', fix: expect.stringContaining('lark-cli config init') })
+    r = await runChecks(ctx({ snapshot: feishu({ dryRun: true }), exec }))
+    expect(byId(r, 'agent-kit-feishu.identity')).toMatchObject({ status: 'skip', detail: 'dryRun 模式不检查' })
+  })
+
+  it('fails notify channels whose rows are not enabled', async () => {
+    const r = await runChecks(
+      ctx({
+        snapshot: snapshot({
+          'agent-kit-dingtalk': { enabled: true, config: { identity: 'user', dryRun: true } },
+          'agent-kit-notify': { enabled: true, config: { channels: ['dingtalk', 'feishu'] } },
+        }),
+      }),
+    )
+    expect(byId(r, 'agent-kit-notify.channel-dingtalk')).toMatchObject({ status: 'pass' })
+    expect(byId(r, 'agent-kit-notify.channel-feishu')).toMatchObject({ status: 'fail', fix: expect.stringContaining('启用 飞书') })
   })
 })

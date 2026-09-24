@@ -135,8 +135,10 @@ describe('patch file', () => {
     expect(readFileSync(patchFile, 'utf8')).toBe(ORIGINAL)
   })
 
-  it('exposes metadata for all four services', () => {
-    expect(KIT_ENTRIES.map((e) => e.id)).toEqual(['agent-kit-ws', 'agent-kit-dingtalk', 'agent-kit-agent-tasks', 'agent-kit-jev'])
+  it('exposes metadata for every kit service', () => {
+    expect(KIT_ENTRIES.map((e) => e.id)).toEqual(['agent-kit-ws', 'agent-kit-dingtalk', 'agent-kit-feishu', 'agent-kit-notify', 'agent-kit-agent-tasks', 'agent-kit-jev'])
+    expect(KIT_ENTRIES.find((e) => e.id === 'agent-kit-notify')!.validate({ channels: [] })).toMatchObject({ ok: false, errors: [{ path: 'channels' }] })
+    expect(KIT_ENTRIES.find((e) => e.id === 'agent-kit-feishu')!.validate({ identity: 'bot' }).ok).toBe(true)
     expect(KIT_ENTRIES.find((e) => e.id === 'agent-kit-agent-tasks')!.validate({}).ok).toBe(false)
   })
 })
