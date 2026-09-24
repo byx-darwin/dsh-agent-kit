@@ -3,9 +3,10 @@ import Base from '../layouts/Base.astro'
 import CopyCommand from '../components/CopyCommand.astro'
 import faq from '../data/faq.json'
 import { SITE } from '../lib/site'
+import { faqJsonLd } from '../lib/jsonld'
 ---
 
-<Base title="支持" description="如何提交问题，以及 dsh-agent-kit 的常见问题。">
+<Base title="支持" description="如何提交问题，以及 dsh-agent-kit 的常见问题。" jsonLd={[faqJsonLd()]}>
   <p class="eyebrow">支持</p>
   <h1>遇到问题</h1>
   <p class="lead">先运行一次 doctor，它会指出缺什么、怎么修。仍然解决不了时，欢迎在 GitHub 上提 issue。</p>

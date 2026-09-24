@@ -6,6 +6,7 @@ import { SITE } from '../lib/site'
 import { SERVICES } from '../data/services'
 import { RELEASE } from '../data/release'
 import { withBasePath } from '../lib/paths'
+import { softwareJsonLd } from '../lib/jsonld'
 
 const base = import.meta.env.BASE_URL
 
@@ -49,7 +50,7 @@ export function apply(ctx: Context, config: Config) {
 }`
 ---
 
-<Base title="dsh-agent-kit" description={SITE.positioning} wide>
+<Base title="dsh-agent-kit" description={SITE.positioning} wide jsonLd={[softwareJsonLd()]}>
   <section class="hero">
     <p class="eyebrow">DEEPSEEK HARNESS 插件工具包</p>
     <h1>{SITE.tagline}</h1>
