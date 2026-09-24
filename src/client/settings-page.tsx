@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { T } from './forms.js'
 import type { AdminApi, AdminStatus, KeyTarget } from './remote.js'
 import { ServiceCard } from './service-card.js'
@@ -52,10 +52,23 @@ export function SettingsPage({ api, t }: { api: AdminApi; t: T }) {
     }
   }, [api])
   useEffect(() => void load(), [load])
-  // 保存后 dsh 重新加载 Service 需要时间，短暂轮询刷新状态
-  const refreshSoon = useCallback(() => {
-    for (const ms of [500, 1500, 3000]) setTimeout(() => void api.status().then(setStatus).catch(() => {}), ms)
-  }, [api])
+  // 保存后 dsh 重新加载 Service 需要时间，短暂轮询刷新状态；用 ref 记录定时器 id，
+  // 便于在下一次保存前、以及组件卸载时清理，避免残留定时器在卸载后仍触发 setState。
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([])
+  const clearTimers = useCallback(() => {
+    for (const id of timers.current) clearTimeout(id)
+    timers.current = []
+  }, [])
+  useEffect(() => clearTimers, [clearTimers])
+  const refreshSoon = useCallback(
+    (version: string) => {
+      // 立刻用保存返回的版本号更新本地状态，避免下一次保存（在轮询落地前）用到过期的 expectedVersion。
+      setStatus((prev) => (prev ? { ...prev, version } : prev))
+      clearTimers()
+      timers.current = [500, 1500, 3000].map((ms) => setTimeout(() => void api.status().then(setStatus).catch(() => {}), ms))
+    },
+    [api, clearTimers],
+  )
 
   if (error) return <p role="alert">{t('loadFailed', { message: error })}</p>
   if (!status) return <p>{t('loading')}</p>

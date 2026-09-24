@@ -11,6 +11,8 @@ export const zh: Record<string, string> = {
   saved: '已保存，dsh 正在加载新配置。',
   conflict: '配置文件已被其他人修改，已重新加载，请确认后再保存。',
   enabled: '启用',
+  'switch.on': '已启用',
+  'switch.off': '已停用',
   'phase.active': '运行中',
   'phase.failed': '启动失败',
   'phase.pending': '等待依赖',

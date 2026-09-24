@@ -5,7 +5,7 @@ import { AdminError } from './remote.js'
 
 type Service = AdminStatus['services'][number]
 
-export function ServiceCard(props: { service: Service; checks: CheckResult[]; status: AdminStatus; api: AdminApi; t: T; onSaved(): void; onConflict(): void }) {
+export function ServiceCard(props: { service: Service; checks: CheckResult[]; status: AdminStatus; api: AdminApi; t: T; onSaved(version: string): void; onConflict(): void }) {
   const { service, t } = props
   const [enabled, setEnabled] = useState(service.enabled)
   const [config, setConfig] = useState<Record<string, unknown>>(service.config ?? {})
@@ -18,9 +18,9 @@ export function ServiceCard(props: { service: Service; checks: CheckResult[]; st
     setSaving(true)
     setMessage(undefined)
     try {
-      await props.api.saveService(service.id, enabled, enabled ? config : null, props.status.version)
+      const { version } = await props.api.saveService(service.id, enabled, enabled ? config : null, props.status.version)
       setMessage(t('saved'))
-      props.onSaved()
+      props.onSaved(version)
     } catch (e) {
       const err = e as AdminError
       if (err.code === 'conflict') {
@@ -38,7 +38,7 @@ export function ServiceCard(props: { service: Service; checks: CheckResult[]; st
       <header>
         <h3>{service.title}</h3>
         <button type="button" role="switch" aria-checked={enabled} aria-label={`${t('enabled')} ${service.title}`} disabled={disabled} onClick={() => setEnabled(!enabled)}>
-          {enabled ? 'ON' : 'OFF'}
+          {enabled ? t('switch.on') : t('switch.off')}
         </button>
       </header>
       <p className="agent-kit-phase">

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsPage } from '../../src/client/settings-page.js'
 import { createAdminApi, type AdminApi, type AdminStatus } from '../../src/client/remote.js'
@@ -88,6 +88,41 @@ describe('SettingsPage', () => {
     render(<SettingsPage api={fakeApi(status({ writable: false, readOnlyReason: 'dsh Web 未绑定 127.0.0.1' }))} t={t} />)
     expect(await screen.findByText(/未绑定 127\.0\.0\.1/)).toBeTruthy()
     expect((screen.getByRole('switch', { name: /WebSocket/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('uses the version returned by a completed save for the next save on the same card', async () => {
+    const api = fakeApi(status())
+    api.saveService.mockResolvedValueOnce({ version: 'v2' }).mockResolvedValueOnce({ version: 'v3' })
+    render(<SettingsPage api={api} t={t} />)
+    const saveButton = await screen.findByRole('button', { name: `${zh.save} WebSocket` })
+    fireEvent.click(saveButton)
+    await waitFor(() => expect(api.saveService).toHaveBeenNthCalledWith(1, 'agent-kit-ws', true, {}, 'v1'))
+    await waitFor(() => expect((saveButton as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(saveButton)
+    await waitFor(() => expect(api.saveService).toHaveBeenNthCalledWith(2, 'agent-kit-ws', true, {}, 'v2'))
+  })
+
+  it('does not poll for status after unmount', async () => {
+    vi.useFakeTimers()
+    try {
+      const api = fakeApi(status())
+      const view = render(<SettingsPage api={api} t={t} />)
+      await act(async () => {})
+      expect(api.status).toHaveBeenCalledTimes(1)
+      const saveButton = screen.getByRole('button', { name: `${zh.save} WebSocket` })
+      await act(async () => {
+        fireEvent.click(saveButton)
+      })
+      expect(api.saveService).toHaveBeenCalledTimes(1)
+      view.unmount()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+      // 卸载前已清理三个刷新定时器，unmount 之后走完全部延时也不应再调用 api.status
+      expect(api.status).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
