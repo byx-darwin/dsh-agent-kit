@@ -1,0 +1,26 @@
+# @mc/dsh-agent-kit bundle 默认 patch 层。
+# 四个 Service 均以禁用状态注册；禁用的行不会被 import，也不会校验配置。
+# 在 Profile 的 cordis.patch.yml 中按 id 启用并给出配置，例如：
+#
+#   - id: agent-kit-dingtalk
+#     disabled: false
+#     config:
+#       identity: bot
+#       robotCode: dingxxxx
+#       defaultTarget: { chatId: cidxxxx }
+#
+# 注意：按 id 修改 config 时整段替换，不与这里的默认值合并；未给出的字段使用 Config 的默认值。
+
+- insert:
+    - id: agent-kit-ws
+      name: '@mc/dsh-agent-kit/ws'
+      disabled: true
+    - id: agent-kit-dingtalk
+      name: '@mc/dsh-agent-kit/dingtalk'
+      disabled: true
+    - id: agent-kit-agent-tasks
+      name: '@mc/dsh-agent-kit/agent-tasks'
+      disabled: true
+    - id: agent-kit-jev
+      name: '@mc/dsh-agent-kit/jev'
+      disabled: true
