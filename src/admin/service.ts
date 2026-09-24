@@ -6,8 +6,28 @@ import { createCheckContext, runChecks, type CheckResult } from '../checks/index
 import { isKitError } from '../common/errors.js'
 import { redact } from '../common/redact.js'
 import type { ServiceHealth } from '../common/service.js'
-import { KIT_ENTRIES, locateProfile, readKitEntries, writeKitEntries, type KitId, type ProfileInfo } from '../profile/index.js'
-import { clearTypesafeKey, describeTypesafeKey, saveTypesafeKey, type KeySource, type KeyStoreOptions, type KeyTarget } from '../secrets/index.js'
+import { KIT_ENTRIES, locateProfile, readKitEntries, writeKitEntries, writePatchEntries, type KitId, type ProfileInfo } from '../profile/index.js'
+import {
+  clearSecretRef,
+  clearTypesafeKey,
+  describeSecretRef,
+  describeTypesafeKey,
+  saveSecretRef,
+  saveTypesafeKey,
+  TYPESAFE_KEY_REF,
+  type KeySource,
+  type KeyStoreOptions,
+  type KeyTarget,
+  type SecretRefSource,
+} from '../secrets/index.js'
+import { assertEntry, entrySecretRefs, validateEntryConfig, type AgentKitEntry, type EntryField, type RegisteredEntry } from './entry.js'
+import { collectEntries } from './registry.js'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    agentKitAdmin: AgentKitAdmin
+  }
+}
 
 /**
  * 与 cordis `FiberState`（`@deepseek-ai/cordis` 的 `const enum`，因 `isolatedModules` 无法直接
@@ -30,20 +50,31 @@ export interface AdminConfig {
   keyStore?: KeyStoreOptions
 }
 
+type Phase = 'pending' | 'loading' | 'active' | 'failed' | 'unloading' | null
+
+export interface AdminServiceStatus {
+  /** 本包的行 id，或业务包登记的行 id。 */
+  id: KitId | (string & {})
+  title: string
+  enabled: boolean
+  phase: Phase
+  health: Pick<ServiceHealth, 'status' | 'detail'> | null
+  config: Record<string, unknown> | undefined
+  /** 本包的行：登记了 `dependsOn` 这一行的业务行，停用或重载本行会连带卸载它们。没有时省略。 */
+  dependents?: Array<{ id: string; title: string }>
+  /** 以下只出现在业务包登记的行上（issue #1）。 */
+  registered?: true
+  fields?: EntryField[]
+  secrets?: Array<{ label: string; ref: string | null; configured: boolean; source?: SecretRefSource }>
+}
+
 export interface AdminStatus {
   profile: string
   patchReload: 'live' | 'startup'
   version: string
   writable: boolean
   readOnlyReason?: string
-  services: Array<{
-    id: KitId
-    title: string
-    enabled: boolean
-    phase: 'pending' | 'loading' | 'active' | 'failed' | 'unloading' | null
-    health: Pick<ServiceHealth, 'status' | 'detail'> | null
-    config: Record<string, unknown> | undefined
-  }>
+  services: AdminServiceStatus[]
   checks: CheckResult[]
   typesafeKey: { configured: boolean; source?: KeySource }
   keyTargets: KeyTarget[]
@@ -124,13 +155,17 @@ function indexLoaderEntries(entries: Iterable<LoaderEntry>): Map<string, LoaderE
  * 里——因为调用方（`KeyPanel.save()`）在 `await api.setSecret(...)` 之后才会去做后续的 `status()`
  * 刷新，只要这次调用不提前返回，后续刷新时防抖窗口早已过去，能读到真实的最新状态。
  */
-async function describeAfterWrite(expectConfigured: boolean, options: KeyStoreOptions): Promise<{ configured: boolean; source?: KeySource }> {
-  let last = await describeTypesafeKey(options)
+async function describeAfterWrite<R extends { configured: boolean }>(expectConfigured: boolean, describe: () => Promise<R>): Promise<R> {
+  let last = await describe()
   for (let attempt = 0; attempt < 6 && last.configured !== expectConfigured; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, 50))
-    last = await describeTypesafeKey(options)
+    last = await describe()
   }
   return last
+}
+
+function phaseOf(entry: LoaderEntry | undefined): Phase {
+  return entry?.fiber ? (PHASE_BY_STATE[entry.fiber.state] ?? null) : null
 }
 
 /**
@@ -174,6 +209,8 @@ function markRemote(prototype: object, method: string): void {
 export class AgentKitAdmin extends TypertRemoteService {
   static inject = ['loader']
   private profile?: ProfileInfo
+  /** 运行时登记的业务行（issue #1），键为行 id。 */
+  private readonly registry = new Map<string, AgentKitEntry>()
 
   constructor(
     ctx: Context,
@@ -211,6 +248,63 @@ export class AgentKitAdmin extends TypertRemoteService {
     return (this.keyStore.platform ?? process.platform) === 'darwin' ? ['keychain', 'credentials'] : ['credentials']
   }
 
+  /**
+   * 把业务包的一行 loader 配置登记到设置页、`status()`、`saveService` 与密钥管理（issue #1）。
+   * 登记随调用方插件的生命周期注销（经 cordis 的调用方追踪，`this.ctx` 是调用方的上下文）；
+   * 也可以调用返回的函数提前注销。业务插件启动失败时登记不会发生，所以同时建议在 `package.json`
+   * 的 `dsh.agentKit.entries` 里声明静态清单，见 `loadManifestEntries`。
+   */
+  registerEntry(entry: AgentKitEntry): () => void {
+    assertEntry(entry)
+    const registry = this.registry
+    if (registry.has(entry.id)) throw new Error(`agent-kit entry ${entry.id} is already registered`)
+    const dispose = this.ctx.effect(() => {
+      registry.set(entry.id, entry)
+      return () => {
+        if (registry.get(entry.id) === entry) registry.delete(entry.id)
+      }
+    }, `agent-kit: entry ${entry.id}`)
+    return () => void dispose()
+  }
+
+  private registeredHealth(entry: AgentKitEntry, loaderEntry: LoaderEntry | undefined): AdminServiceStatus['health'] {
+    if (loaderEntry?.fiber?.state !== 2) return null
+    try {
+      const svc = entry.service ? (this.ctx as unknown as { get(name: string): { health?(): ServiceHealth } | undefined }).get(entry.service) : undefined
+      const health = entry.health ? entry.health() : svc?.health?.()
+      return health ? { status: health.status, detail: redact(health.detail) } : null
+    } catch (e) {
+      return { status: 'failed', detail: `health() 执行失败：${redactError(e)}` }
+    }
+  }
+
+  private async registeredStatus(items: readonly RegisteredEntry[], loaderEntries: Map<string, LoaderEntry>): Promise<AdminServiceStatus[]> {
+    return Promise.all(
+      items.map(async ({ entry, state }) => ({
+        id: entry.id,
+        title: entry.label,
+        enabled: state.enabled,
+        phase: phaseOf(loaderEntries.get(entry.id)),
+        health: this.registeredHealth(entry, loaderEntries.get(entry.id)),
+        config: state.config,
+        registered: true as const,
+        fields: [...(entry.fields ?? [])],
+        secrets: await Promise.all(
+          entrySecretRefs(entry, state.config).map(async ({ label, ref }) => ({
+            label,
+            ref: ref ?? null,
+            ...(ref ? await describeSecretRef(ref, this.keyStore) : { configured: false }),
+          })),
+        ),
+      })),
+    )
+  }
+
+  private dependents(items: readonly RegisteredEntry[], id: KitId): Pick<AdminServiceStatus, 'dependents'> {
+    const dependents = items.filter(({ entry }) => entry.dependsOn?.includes(id)).map(({ entry }) => ({ id: entry.id, title: entry.label }))
+    return dependents.length > 0 ? { dependents } : {}
+  }
+
   async status(): Promise<AdminStatus> {
     const profile = await this.locate()
     const loader = (this.ctx as unknown as { get(name: 'loader'): Loader }).get('loader')
@@ -219,23 +313,25 @@ export class AgentKitAdmin extends TypertRemoteService {
 
     if (!profile) {
       // 无法定位 Profile 目录：不再抛错，返回只读的降级状态，供设置页展示原因。
+      const registered = await collectEntries(undefined, this.registry.values())
       return {
         profile: '',
         patchReload: 'startup',
         version: '',
         writable: false,
         readOnlyReason: '无法定位 Profile 目录',
-        services: KIT_ENTRIES.map((meta) => {
-          const entry = entries.get(meta.id)
-          return {
+        services: [
+          ...KIT_ENTRIES.map((meta) => ({
             id: meta.id,
             title: meta.title,
             enabled: false,
-            phase: entry?.fiber ? (PHASE_BY_STATE[entry.fiber.state] ?? null) : null,
+            phase: phaseOf(entries.get(meta.id)),
             health: null,
             config: undefined,
-          }
-        }),
+            ...this.dependents(registered.entries, meta.id),
+          })),
+          ...(await this.registeredStatus(registered.entries, entries)),
+        ],
         checks: [],
         typesafeKey: await describeTypesafeKey(this.keyStore),
         keyTargets,
@@ -243,7 +339,8 @@ export class AgentKitAdmin extends TypertRemoteService {
     }
 
     const snapshot = await readKitEntries(profile.patchFile)
-    const report = await runChecks(await createCheckContext(profile, { snapshot, keyStore: this.keyStore }))
+    const registered = await collectEntries(profile, this.registry.values())
+    const report = await runChecks(await createCheckContext(profile, { snapshot, keyStore: this.keyStore }), registered)
     const reason = this.readOnlyReason(profile)
     const jevConfig = (snapshot.entries['agent-kit-jev'].config ?? {}) as JevKeychainFields
     return {
@@ -252,19 +349,23 @@ export class AgentKitAdmin extends TypertRemoteService {
       version: snapshot.version,
       writable: reason === undefined,
       ...(reason ? { readOnlyReason: reason } : {}),
-      services: KIT_ENTRIES.map((meta) => {
-        const entry = entries.get(meta.id)
-        const svc = (this.ctx as unknown as { get(name: string): { health?(): ServiceHealth } | undefined }).get(meta.service)
-        const health = entry?.fiber?.state === 2 && svc?.health ? svc.health() : null
-        return {
-          id: meta.id,
-          title: meta.title,
-          enabled: snapshot.entries[meta.id].enabled,
-          phase: entry?.fiber ? (PHASE_BY_STATE[entry.fiber.state] ?? null) : null,
-          health: health ? { status: health.status, detail: health.detail } : null,
-          config: snapshot.entries[meta.id].config,
-        }
-      }),
+      services: [
+        ...KIT_ENTRIES.map((meta) => {
+          const entry = entries.get(meta.id)
+          const svc = (this.ctx as unknown as { get(name: string): { health?(): ServiceHealth } | undefined }).get(meta.service)
+          const health = entry?.fiber?.state === 2 && svc?.health ? svc.health() : null
+          return {
+            id: meta.id,
+            title: meta.title,
+            enabled: snapshot.entries[meta.id].enabled,
+            phase: phaseOf(entry),
+            health: health ? { status: health.status, detail: health.detail } : null,
+            config: snapshot.entries[meta.id].config,
+            ...this.dependents(registered.entries, meta.id),
+          }
+        }),
+        ...(await this.registeredStatus(registered.entries, entries)),
+      ],
       checks: report.results,
       typesafeKey: await describeTypesafeKey({ ...this.keyStore, ...jevKeychainReadOptions(jevConfig) }),
       keyTargets,
@@ -278,12 +379,17 @@ export class AgentKitAdmin extends TypertRemoteService {
     return profile!
   }
 
-  async saveService(id: KitId, enabled: boolean, config: Record<string, unknown> | null, expectedVersion: string): Promise<{ version: string }> {
+  async saveService(id: string, enabled: boolean, config: Record<string, unknown> | null, expectedVersion: string): Promise<{ version: string }> {
     const profile = await this.writable()
-    if (!KIT_ENTRIES.some((e) => e.id === id)) failWith('bad_request', `unknown service ${id}`)
+    const change = { enabled, ...(config ? { config } : {}) }
     try {
-      return await writeKitEntries(profile.patchFile, { [id]: { enabled, ...(config ? { config } : {}) } }, expectedVersion)
+      if (KIT_ENTRIES.some((e) => e.id === id)) return await writeKitEntries(profile.patchFile, { [id as KitId]: change }, expectedVersion)
+      const { entries } = await collectEntries(profile, this.registry.values())
+      const registered = entries.find((e) => e.entry.id === id)?.entry
+      if (!registered) failWith('bad_request', `unknown service ${id}`)
+      return await writePatchEntries(profile.patchFile, { [id]: change }, expectedVersion, (_id, c) => validateEntryConfig(registered!, c))
     } catch (e) {
+      if (e instanceof RemoteError) throw e
       if (isKitError(e)) failWith(e.code, e.message, (e.details as { errors?: readonly object[] } | undefined)?.errors)
       throw e
     }
@@ -294,8 +400,32 @@ export class AgentKitAdmin extends TypertRemoteService {
     if (typeof value !== 'string' || !value.trim()) failWith('bad_request', 'value must be a non-empty string')
   }
 
-  async setSecret(target: KeyTarget, value: string): Promise<{ configured: boolean; source?: KeySource }> {
+  /**
+   * 确认 `ref` 是某个登记行按当前配置解析出的密钥，且目标是凭据文件（业务插件运行时只从
+   * `ctx.credentials` / 环境变量读取，不读钥匙串）。
+   */
+  private async registeredRef(target: KeyTarget, ref: string): Promise<void> {
+    if (target !== 'credentials') failWith('bad_request', `secret ${ref} can only be stored in the credentials file`)
+    const profile = await this.writable()
+    const { entries } = await collectEntries(profile, this.registry.values())
+    if (!entries.some(({ entry, state }) => entrySecretRefs(entry, state.config).some((s) => s.ref === ref))) failWith('bad_request', `unknown secret ref ${ref}`)
+  }
+
+  /**
+   * `ref` 缺省（或为 `TYPESAFE_API_KEY`）时存取 TypeSafe Key；否则存取业务行登记的密钥（issue #1）。
+   * 注意：dsh 网关从方法源码解析参数名，参数不能带默认值。
+   */
+  async setSecret(target: KeyTarget, value: string, ref?: string | null): Promise<{ configured: boolean; source?: KeySource }> {
     this.validateSecretInput(target, value)
+    if (ref != null && ref !== TYPESAFE_KEY_REF) {
+      await this.registeredRef(target, ref)
+      try {
+        await saveSecretRef(ref, value, this.keyStore)
+      } catch (e) {
+        failWith('bad_request', `failed to save secret: ${redactError(e)}`)
+      }
+      return describeAfterWrite(true, () => describeSecretRef(ref, this.keyStore))
+    }
     const profile = await this.writable()
     const snapshot = await readKitEntries(profile.patchFile)
     const options = { ...this.keyStore, ...jevKeychainWriteOptions(snapshot.entries['agent-kit-jev'].config) }
@@ -305,11 +435,20 @@ export class AgentKitAdmin extends TypertRemoteService {
       if (e instanceof RemoteError) throw e
       failWith('bad_request', `failed to save secret: ${redactError(e)}`)
     }
-    return describeAfterWrite(true, options)
+    return describeAfterWrite(true, () => describeTypesafeKey(options))
   }
 
-  async clearSecret(target: KeyTarget): Promise<{ configured: boolean; source?: KeySource }> {
+  async clearSecret(target: KeyTarget, ref?: string | null): Promise<{ configured: boolean; source?: KeySource }> {
     if (!this.keyTargets().includes(target)) failWith('bad_request', `unsupported key target: ${target}`)
+    if (ref != null && ref !== TYPESAFE_KEY_REF) {
+      await this.registeredRef(target, ref)
+      try {
+        await clearSecretRef(ref, this.keyStore)
+      } catch (e) {
+        failWith('bad_request', `failed to clear secret: ${redactError(e)}`)
+      }
+      return describeAfterWrite(false, () => describeSecretRef(ref, this.keyStore))
+    }
     const profile = await this.writable()
     const snapshot = await readKitEntries(profile.patchFile)
     const options = { ...this.keyStore, ...jevKeychainWriteOptions(snapshot.entries['agent-kit-jev'].config) }
@@ -319,7 +458,7 @@ export class AgentKitAdmin extends TypertRemoteService {
       if (e instanceof RemoteError) throw e
       failWith('bad_request', `failed to clear secret: ${redactError(e)}`)
     }
-    return describeAfterWrite(false, options)
+    return describeAfterWrite(false, () => describeTypesafeKey(options))
   }
 }
 

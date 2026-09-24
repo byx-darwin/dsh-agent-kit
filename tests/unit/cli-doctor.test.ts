@@ -60,3 +60,22 @@ describe('doctor', () => {
     expect(await main(['--help'], io(), { home })).toBe(0)
   })
 })
+
+describe('doctor with registered entries (issue #1)', () => {
+  it('lists checks from a business package manifest with scope equal to the entry id', async () => {
+    profile('kit', true, '- id: biz-row\n  config:\n    url: wss://x\n')
+    const dir = join(home, 'profiles', 'kit')
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@mc/dsh-agent-kit', '@acme/biz'], patchReload: 'live' } } }))
+    const pkg = join(dir, 'node_modules', '@acme', 'biz')
+    mkdirSync(pkg, { recursive: true })
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@acme/biz', dsh: { agentKit: { entries: ['./entry.mjs'] } } }))
+    writeFileSync(join(pkg, 'entry.mjs'), "export default { id: 'biz-row', label: '业务', checks: () => [{ id: 'upstream', title: '上游', status: 'pass', detail: 'ok' }] }")
+    const code = await main(['doctor', '--json'], io(), { home, checkOverrides: { nodeVersion: '24.0.0' } })
+    const report = JSON.parse(out.join(''))
+    expect(code).toBe(0)
+    expect(report.results.filter((r: { scope: string }) => r.scope === 'biz-row').map((r: { id: string }) => r.id)).toEqual(['biz-row.config', 'biz-row.upstream'])
+    out = []
+    await main(['doctor'], io(), { home, checkOverrides: { nodeVersion: '24.0.0' } })
+    expect(out.join('')).toContain('[biz-row]')
+  })
+})

@@ -188,3 +188,38 @@ describe('typesafe key', () => {
     expect(await macosKeychain.read(service, account)).toBeUndefined()
   })
 })
+
+describe('secret refs', () => {
+  it('resolves a ref from env first, then the credentials file', async () => {
+    const { describeSecretRef, resolveSecretRef } = await import('../../src/secrets/index.js')
+    await writeCredential('MY_TOKEN', 'from-file', file)
+    expect(await resolveSecretRef('MY_TOKEN', { env: {}, credentialsFile: file })).toEqual({ value: 'from-file', source: 'credentials' })
+    expect(await resolveSecretRef('MY_TOKEN', { env: { MY_TOKEN: 'from-env' }, credentialsFile: file })).toEqual({ value: 'from-env', source: 'env' })
+    expect(await describeSecretRef('OTHER', { env: {}, credentialsFile: file })).toEqual({ configured: false })
+  })
+
+  it('prefers a running credentials service over the file', async () => {
+    const { resolveSecretRef } = await import('../../src/secrets/index.js')
+    const credentials = { resolve: async (ref: string) => (ref === 'MY_TOKEN' ? { value: 'live' } : undefined) }
+    expect(await resolveSecretRef('MY_TOKEN', { env: {}, credentials, credentialsFile: file })).toEqual({ value: 'live', source: 'credentials' })
+  })
+
+  it('stores and clears only the given ref', async () => {
+    const { clearSecretRef, saveSecretRef } = await import('../../src/secrets/index.js')
+    await writeCredential('TYPESAFE_API_KEY', 'ts', file)
+    await saveSecretRef('MY_TOKEN', 'secret', { credentialsFile: file })
+    expect(await readCredential('MY_TOKEN', file)).toBe('secret')
+    await clearSecretRef('MY_TOKEN', { credentialsFile: file })
+    expect(await readCredential('MY_TOKEN', file)).toBeUndefined()
+    expect(await readCredential('TYPESAFE_API_KEY', file)).toBe('ts')
+  })
+
+  it('rejects empty values and malformed refs', async () => {
+    const { isSecretRef, saveSecretRef } = await import('../../src/secrets/index.js')
+    await expect(saveSecretRef('MY_TOKEN', '  ', { credentialsFile: file })).rejects.toThrow()
+    await expect(saveSecretRef('bad ref', 'v', { credentialsFile: file })).rejects.toThrow()
+    expect(isSecretRef('IPROOST_AGENT_TOKEN')).toBe(true)
+    expect(isSecretRef('a.b')).toBe(false)
+    expect(isSecretRef('')).toBe(false)
+  })
+})

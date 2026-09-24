@@ -3,9 +3,11 @@ import { join } from 'node:path'
 import { KIT_ENTRIES, readKitEntries, type ProfileInfo } from '../profile/index.js'
 import { BASE_ENV_WHITELIST, pickEnv, runProcess } from '../common/process.js'
 import { DWS_ENV_WHITELIST, resolveExecutable } from '../dingtalk/service.js'
+import type { RegisteredEntry } from '../admin/entry.js'
 import { agentTasksChecks } from './agent-tasks.js'
 import { commonChecks } from './common.js'
 import { dingtalkChecks } from './dingtalk.js'
+import { entryChecks } from './entries.js'
 import { jevChecks } from './jev.js'
 import type { Check, CheckContext, CheckReport, CheckResult } from './types.js'
 
@@ -43,7 +45,13 @@ export async function createCheckContext(profile: ProfileInfo, over: Partial<Che
   }
 }
 
-export async function runChecks(ctx: CheckContext): Promise<CheckReport> {
+/** 业务包登记的行及发现清单时的错误（issue #1）；不传时只跑本包自己的检查。 */
+export interface RegisteredChecks {
+  entries: readonly RegisteredEntry[]
+  errors?: readonly CheckResult[]
+}
+
+export async function runChecks(ctx: CheckContext, registered?: RegisteredChecks): Promise<CheckReport> {
   const results: CheckResult[] = [...(await commonChecks(ctx))]
   for (const meta of KIT_ENTRIES) {
     const state = ctx.snapshot.entries[meta.id]
@@ -60,5 +68,7 @@ export async function runChecks(ctx: CheckContext): Promise<CheckReport> {
     const extra = SERVICE_CHECKS[meta.id]
     if (extra) results.push(...(await extra(ctx)))
   }
+  results.push(...(registered?.errors ?? []))
+  for (const item of registered?.entries ?? []) results.push(...(await entryChecks(ctx, item)))
   return { profile: ctx.profile.name, ok: results.every((r) => r.status !== 'fail'), results }
 }

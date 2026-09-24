@@ -54,3 +54,16 @@ export {
 } from './jev/index.js'
 
 export { name, inject, apply } from './admin/plugin.js'
+export type { AgentKitAdmin, AdminStatus, AdminServiceStatus } from './admin/service.js'
+export {
+  defineEntry,
+  type AgentKitEntry,
+  type EntryCheckContext,
+  type EntryCheckResult,
+  type EntryField,
+  type EntryFieldKind,
+  type EntrySecret,
+} from './admin/entry.js'
+export type { CheckResult, CheckStatus } from './checks/types.js'
+export type { FieldError, KitId } from './profile/kit-entries.js'
+export { describeSecretRef, isSecretRef, readCredential, resolveSecretRef, type SecretRefSource } from './secrets/index.js'

@@ -1,20 +1,69 @@
 import { useState } from 'react'
-import { FORMS, type T } from './forms.js'
-import type { AdminApi, AdminStatus, CheckResult } from './remote.js'
+import { EntryForm, FORMS, type T } from './forms.js'
+import type { AdminApi, AdminStatus, CheckResult, KitId, ServiceStatus } from './remote.js'
 import { AdminError } from './remote.js'
 
-type Service = AdminStatus['services'][number]
+type Service = ServiceStatus
 
-export function ServiceCard(props: { service: Service; checks: CheckResult[]; status: AdminStatus; api: AdminApi; t: T; onSaved(version: string): void; onConflict(): void }) {
+/** 业务行登记的密钥（issue #1）：只写不读，存入 dsh 凭据文件。 */
+function EntrySecrets({ service, status, api, t, onChanged }: { service: Service; status: AdminStatus; api: AdminApi; t: T; onChanged(): void }) {
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [error, setError] = useState<string>()
+  const disabled = !status.writable
+  const run = async (action: () => Promise<unknown>, failKey: string) => {
+    setError(undefined)
+    try {
+      await action()
+      onChanged()
+    } catch (e) {
+      setError(t(failKey, { message: (e as Error).message }))
+    }
+  }
+  return (
+    <section className="agent-kit-secrets" aria-label={t('secrets.section', { title: service.title })}>
+      {service.secrets!.map((s, i) => {
+        const id = `agent-kit-secret-${service.id}-${i}`
+        if (!s.ref) return <p key={i}>{t('secrets.invalidRef', { label: s.label })}</p>
+        const ref = s.ref
+        return (
+          <div key={ref} className="agent-kit-field">
+            <label htmlFor={id}>{t('secrets.label', { label: s.label, ref })}</label>
+            <p>{s.configured ? t('secrets.configured', { source: t(`source.${s.source ?? 'credentials'}`) }) : t('secrets.missing')}</p>
+            <input id={id} type="password" autoComplete="off" disabled={disabled} value={values[ref] ?? ''} onChange={(e) => setValues({ ...values, [ref]: e.target.value })} />
+            <button
+              type="button"
+              aria-label={`${t('secrets.save')} ${s.label}`}
+              disabled={disabled || !values[ref]}
+              onClick={() => run(async () => (await api.setSecret('credentials', values[ref]!, ref), setValues({ ...values, [ref]: '' })), 'secrets.saveFailed')}
+            >
+              {t('secrets.save')}
+            </button>
+            {s.configured && s.source === 'credentials' && (
+              <button type="button" aria-label={`${t('secrets.clear')} ${s.label}`} disabled={disabled} onClick={() => run(() => api.clearSecret('credentials', ref), 'secrets.clearFailed')}>
+                {t('secrets.clear')}
+              </button>
+            )}
+          </div>
+        )
+      })}
+      {error && <p role="alert">{error}</p>}
+    </section>
+  )
+}
+
+export function ServiceCard(props: { service: Service; checks: CheckResult[]; status: AdminStatus; api: AdminApi; t: T; onSaved(version: string): void; onConflict(): void; onSecretChanged?(): void }) {
   const { service, t } = props
   const [enabled, setEnabled] = useState(service.enabled)
   const [config, setConfig] = useState<Record<string, unknown>>(service.config ?? {})
   const [message, setMessage] = useState<string>()
   const [saving, setSaving] = useState(false)
   const disabled = !props.status.writable || saving
-  const Form = FORMS[service.id]
+  const Form = FORMS[service.id as KitId]
+  const dependents = service.dependents?.map((d) => d.title).join('、')
 
   const save = async () => {
+    // patchReload: live 下停用一行会连带卸载所有 inject 它的插件，进程仍在，外部守护进程察觉不到（issue #1）
+    if (service.enabled && !enabled && dependents && !window.confirm(t('confirmDisableDependents', { title: service.title, names: dependents }))) return
     setSaving(true)
     setMessage(undefined)
     try {
@@ -32,6 +81,9 @@ export function ServiceCard(props: { service: Service; checks: CheckResult[]; st
       setSaving(false)
     }
   }
+
+  const reloadHint =
+    props.status.patchReload !== 'live' ? undefined : service.registered ? t('reloadRegistered', { title: service.title }) : dependents ? t('reloadDependents', { names: dependents }) : undefined
 
   return (
     <section className="agent-kit-card" aria-label={service.title}>
@@ -60,11 +112,13 @@ export function ServiceCard(props: { service: Service; checks: CheckResult[]; st
             </li>
           ))}
       </ul>
-      {enabled && <Form config={config} onChange={setConfig} disabled={disabled} t={t} />}
+      {enabled && (Form ? <Form config={config} onChange={setConfig} disabled={disabled} t={t} /> : <EntryForm fields={service.fields ?? []} config={config} onChange={setConfig} disabled={disabled} t={t} />)}
+      {reloadHint && <p className="agent-kit-hint">{reloadHint}</p>}
       <button type="button" aria-label={`${t('save')} ${service.title}`} disabled={disabled} onClick={save}>
         {saving ? t('saving') : t('save')}
       </button>
       {message && <p role="status" style={{ whiteSpace: 'pre-line' }}>{message}</p>}
+      {service.secrets?.length ? <EntrySecrets service={service} status={props.status} api={props.api} t={t} onChanged={props.onSecretChanged ?? (() => {})} /> : null}
     </section>
   )
 }

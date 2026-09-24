@@ -127,7 +127,16 @@ export function SettingsPage({ api, t }: { api: AdminApi; t: T }) {
       {!status.writable && <p role="note">{t('readOnly', { reason: status.readOnlyReason ?? '' })}</p>}
       {status.services.map((s) => (
         <div key={`${s.id}-${generation}`}>
-          <ServiceCard service={s} checks={status.checks.filter((c) => c.scope === s.id)} status={status} api={api} t={t} onSaved={refreshSoon} onConflict={refreshAfterConflict} />
+          <ServiceCard
+            service={s}
+            checks={status.checks.filter((c) => c.scope === s.id)}
+            status={status}
+            api={api}
+            t={t}
+            onSaved={refreshSoon}
+            onConflict={refreshAfterConflict}
+            onSecretChanged={refreshAfterConflict}
+          />
           {s.id === 'agent-kit-jev' && <KeyPanel status={status} api={api} t={t} onChanged={load} />}
         </div>
       ))}

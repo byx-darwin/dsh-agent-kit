@@ -4,7 +4,8 @@ import type { KitId, KitSnapshot, ProfileInfo } from '../profile/index.js'
 export type CheckStatus = 'pass' | 'warn' | 'fail' | 'skip'
 export interface CheckResult {
   id: string
-  scope: 'common' | KitId
+  /** `common`、本包的行 id，或业务包登记的行 id（issue #1）。 */
+  scope: 'common' | KitId | (string & {})
   title: string
   status: CheckStatus
   detail: string

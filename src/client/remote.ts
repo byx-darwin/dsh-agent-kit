@@ -10,29 +10,44 @@ export interface CheckResult {
   detail: string
   fix?: string
 }
+export interface EntryField {
+  path: string
+  label: string
+  kind?: 'text' | 'number' | 'boolean' | 'select' | 'list'
+  options?: string[]
+  placeholder?: string
+  help?: string
+}
+export interface ServiceStatus {
+  /** 本包的行（KitId）或业务包登记的行 id。 */
+  id: string
+  title: string
+  enabled: boolean
+  phase: 'pending' | 'loading' | 'active' | 'failed' | 'unloading' | null
+  health: { status: 'ok' | 'degraded' | 'failed'; detail: string } | null
+  config: Record<string, unknown> | undefined
+  dependents?: Array<{ id: string; title: string }>
+  registered?: true
+  fields?: EntryField[]
+  secrets?: Array<{ label: string; ref: string | null; configured: boolean; source?: string }>
+}
 export interface AdminStatus {
   profile: string
   patchReload: 'live' | 'startup'
   version: string
   writable: boolean
   readOnlyReason?: string
-  services: Array<{
-    id: KitId
-    title: string
-    enabled: boolean
-    phase: 'pending' | 'loading' | 'active' | 'failed' | 'unloading' | null
-    health: { status: 'ok' | 'degraded' | 'failed'; detail: string } | null
-    config: Record<string, unknown> | undefined
-  }>
+  services: ServiceStatus[]
   checks: CheckResult[]
   typesafeKey: { configured: boolean; source?: string }
   keyTargets: KeyTarget[]
 }
 export interface AdminApi {
   status(): Promise<AdminStatus>
-  saveService(id: KitId, enabled: boolean, config: Record<string, unknown> | null, expectedVersion: string): Promise<{ version: string }>
-  setSecret(target: KeyTarget, value: string): Promise<{ configured: boolean; source?: string }>
-  clearSecret(target: KeyTarget): Promise<{ configured: boolean; source?: string }>
+  saveService(id: string, enabled: boolean, config: Record<string, unknown> | null, expectedVersion: string): Promise<{ version: string }>
+  /** `ref` 缺省时为 TypeSafe Key；否则为业务行登记的密钥（只能存入凭据文件）。 */
+  setSecret(target: KeyTarget, value: string, ref?: string): Promise<{ configured: boolean; source?: string }>
+  clearSecret(target: KeyTarget, ref?: string): Promise<{ configured: boolean; source?: string }>
 }
 export class AdminError extends Error {
   constructor(
@@ -62,8 +77,8 @@ export const AGENT_KIT_REMOTE = {
   descriptors: [
     method('status', []),
     method('saveService', ['id', 'enabled', 'config', 'expectedVersion']),
-    method('setSecret', ['target', 'value']),
-    method('clearSecret', ['target']),
+    method('setSecret', ['target', 'value', 'ref']),
+    method('clearSecret', ['target', 'ref']),
   ],
 }
 
@@ -101,7 +116,8 @@ export function createAdminApi(ctx: ClientContext): AdminApi {
   return {
     status: () => unwrap(svc().status!()),
     saveService: (id, enabled, config, expectedVersion) => unwrap(svc().saveService!(id, enabled, config, expectedVersion)),
-    setSecret: (target, value) => unwrap(svc().setSecret!(target, value)),
-    clearSecret: (target) => unwrap(svc().clearSecret!(target)),
+    // 网关客户端要求实参个数与描述一致；值为 undefined 的参数不会上线，服务端按缺省处理
+    setSecret: (target, value, ref) => unwrap(svc().setSecret!(target, value, ref)),
+    clearSecret: (target, ref) => unwrap(svc().clearSecret!(target, ref)),
   }
 }
