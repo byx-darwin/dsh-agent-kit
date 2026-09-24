@@ -32,6 +32,7 @@ const fullTitle = title === SITE.name ? SITE.name : `${title} · ${SITE.name}`
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href={withBasePath(base, '/favicon.svg')} />
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />

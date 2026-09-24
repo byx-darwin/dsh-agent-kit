@@ -1,5 +1,7 @@
 # dsh-agent-kit
 
+官网：https://byx-darwin.github.io/dsh-agent-kit/
+
 构建常驻 Agent Worker 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件工具包：WebSocket 接入、钉钉推送、Claude Code / Codex 任务委托、TypeSafe Jev 校验。
 
 > **状态：已实现，待发布 `0.1.0`。** 接口以 [设计文档](docs/superpowers/specs/2026-09-23-dsh-agent-kit-design.md) 为准，首个版本发布前可能调整。

@@ -1,0 +1,77 @@
+name: Website
+
+# 官网：website/ 或本包的配置 schema、版本号变化时构建；推送到 main 时部署到 GitHub Pages。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - 'src/**/config.ts'
+      - 'src/jev/service.ts'
+      - 'package.json'
+      - '.github/workflows/website.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - 'src/**/config.ts'
+      - 'src/jev/service.ts'
+      - 'package.json'
+      - '.github/workflows/website.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            website/package-lock.json
+      - name: Install root dependencies (config schemas)
+        run: npm ci
+      - name: Install website dependencies
+        working-directory: website
+        run: npm ci
+      - name: Unit tests
+        working-directory: website
+        run: npx vitest run --exclude tests/links.test.ts
+      - name: Build
+        working-directory: website
+        run: npm run build
+      - name: Link check
+        working-directory: website
+        run: npx vitest run tests/links.test.ts
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  deploy:
+    name: Deploy
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
