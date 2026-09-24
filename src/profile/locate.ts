@@ -36,7 +36,7 @@ export async function locateProfile(name: string, home = resolveDshHome()): Prom
   try {
     manifest = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'))
   } catch {
-    throw new ProfileError('profile_not_found', `profile ${name} not found under ${home}`)
+    throw new ProfileError('profile_not_found', `未找到 Profile ${name}（${home}）`)
   }
   const bundles = manifest.dsh?.profile?.bundles ?? []
   return {

@@ -82,19 +82,19 @@ dsh --profile my-agent --no-open
 
 ```sh
 # 交互式生成/修改 cordis.patch.yml（带 diff 预览，需确认后才写入）
-npx dsh-agent-kit setup --profile my-agent
+npx @mc/dsh-agent-kit setup --profile my-agent
 
 # 体检：Node 版本、dws 登录态、Agent provider、TypeSafe Key 等是否满足已启用 Service 的要求
-npx dsh-agent-kit doctor --profile my-agent
+npx @mc/dsh-agent-kit doctor --profile my-agent
 ```
 
-`setup` 只会修改 Profile 目录下的 `cordis.patch.yml`；`doctor` 只读，不修改任何文件，`--json` 输出机器可读的体检报告，可接入 CI。两者都会自动定位当前目录下唯一带有本包的 Profile，多个候选时需要 `--profile` 指定。
+`setup` 只会修改 Profile 目录下的 `cordis.patch.yml`；`doctor` 只读，不修改任何文件，`--json` 输出机器可读的体检报告，可接入 CI。两者都会在 `$DSH_HOME/profiles` 下扫描带有本包（bundles 里含 `@mc/dsh-agent-kit`）的 Profile；只有一个候选时自动选中，有多个时需要 `--profile` 指定。
 
 启动 Profile 后，dsh Web 界面的「设置」页会出现一张「Agent Kit」入口，四个 Service 各一张卡片，可以直接启用/关闭、编辑配置、查看健康状态和体检结果，效果与 CLI 等价（两者读写同一份 `cordis.patch.yml`）：
 
 - 保存时按乐观并发（`version`）比较，若与他人（包括另开终端手改 `cordis.patch.yml`）冲突会提示「已被修改」并自动刷新为最新内容，需要重新确认后再保存。
 - **只读闸门默认关闭（fail closed）**：只有 dsh Web 确认自己绑定在 `webServer.host === '127.0.0.1'` 时设置页才可写；未绑定回环地址（例如以 `--host 0.0.0.0` 之类的方式对外暴露）或压根没加载 `webServer` 服务时，设置页一律降级为只读，避免把配置写入接口暴露给公网。dsh CLI 自身也拒绝 `--host 0.0.0.0`（"it would expose remote code execution to the network"），二者是两道独立的防线。
-- TypeSafe Key 只能写入、不能在页面或接口响应中读出；页面只显示「已配置（来源：环境变量/钥匙串/凭据文件）」或「未配置」。
+- TypeSafe Key 只能写入、不能在页面或接口响应中读出；页面只显示「已配置（来源：环境变量/钥匙串（服务名）/dsh 凭据文件，均为本地化文案，非原始值）」或「未配置」。
 
 TypeSafe Key（`TYPESAFE_API_KEY`）按以下优先级解析，三个平台的落盘位置不同：
 
@@ -240,6 +240,7 @@ await ctx.plugin(FakeSubagentRuntime, { providers: [provider] }) // 或注册到
 
 - `agentTasks.declaredPermissions`：claude-code、codex 不支持按任务过滤工具，权限由 provider 实例自己的配置决定。运维在这里声明其实际权限上限（`read-only` / `workspace-write`）；未声明或上限高于任务请求的档位时，任务以 `unsupported_permissions` 失败。
 - `dingtalk` 的 `webhook` 身份只能把 token 作为命令行参数传给 dws（会出现在 `ps` 中），不推荐使用。
+- `dingtalk.dwsPath` 必须指向可直接执行的文件（可执行二进制、`.exe` 或 `.js`）；不支持 Windows 的 `.cmd`/`.bat` 包装脚本，因为本包用 `spawn(..., { shell: false })` 不经过 shell 启动子进程，无法解释批处理语法。
 
 ## 安全
 
