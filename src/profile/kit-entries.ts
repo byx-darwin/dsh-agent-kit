@@ -1,10 +1,12 @@
 import { AgentTasksConfig } from '../agent-tasks/config.js'
 import { DingtalkConfig } from '../dingtalk/config.js'
+import { FeishuConfig } from '../feishu/config.js'
+import { NotifyConfig, assertNotifyConfig } from '../notify/config.js'
 import type { ServiceName } from '../common/errors.js'
 import { JevConfig } from '../jev/service.js'
 import { WsConfig, assertWsConfig } from '../ws/config.js'
 
-export type KitId = 'agent-kit-ws' | 'agent-kit-dingtalk' | 'agent-kit-agent-tasks' | 'agent-kit-jev'
+export type KitId = 'agent-kit-ws' | 'agent-kit-dingtalk' | 'agent-kit-feishu' | 'agent-kit-notify' | 'agent-kit-agent-tasks' | 'agent-kit-jev'
 export interface FieldError {
   path: string
   message: string
@@ -55,6 +57,8 @@ function validateDingtalk(config: { identity: string; robotCode?: string; webhoo
 export const KIT_ENTRIES: readonly KitEntryMeta[] = [
   { id: 'agent-kit-ws', service: 'agentWs', module: '@mc/dsh-agent-kit/ws', title: 'WebSocket', validate: validator(WsConfig as unknown as Schema, assertWsConfig) },
   { id: 'agent-kit-dingtalk', service: 'dingtalk', module: '@mc/dsh-agent-kit/dingtalk', title: '钉钉', validate: validator(DingtalkConfig as unknown as Schema, validateDingtalk) },
+  { id: 'agent-kit-feishu', service: 'feishu', module: '@mc/dsh-agent-kit/feishu', title: '飞书', validate: validator(FeishuConfig as unknown as Schema) },
+  { id: 'agent-kit-notify', service: 'notify', module: '@mc/dsh-agent-kit/notify', title: '通知渠道', validate: validator(NotifyConfig as unknown as Schema, assertNotifyConfig) },
   { id: 'agent-kit-agent-tasks', service: 'agentTasks', module: '@mc/dsh-agent-kit/agent-tasks', title: 'Agent 任务', validate: validator(AgentTasksConfig as unknown as Schema) },
   { id: 'agent-kit-jev', service: 'jev', module: '@mc/dsh-agent-kit/jev', title: 'Jev 判断', validate: validator(JevConfig as unknown as Schema) },
 ]

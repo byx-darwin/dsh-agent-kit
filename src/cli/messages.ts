@@ -46,6 +46,8 @@ export const SELECT_SERVICES_MESSAGE = '要启用哪些 Service？'
 export const KIT_TITLES: Record<string, string> = {
   'agent-kit-ws': 'WebSocket 客户端',
   'agent-kit-dingtalk': '钉钉推送',
+  'agent-kit-feishu': '飞书推送',
+  'agent-kit-notify': '通知渠道（业务包通过 ctx.notify 发送，渠道可随时切换）',
   'agent-kit-agent-tasks': 'Agent 任务',
   'agent-kit-jev': 'Jev 判断',
 }
@@ -55,6 +57,28 @@ export const WRITE_CANCELLED = '已取消，未修改任何文件。\n'
 export const WRITE_DONE_LIVE = '已写入，dsh 会自动加载新配置。\n'
 export const WRITE_DONE_RESTART = '已写入，重启 dsh 后生效。\n'
 export const SEND_TEST_MESSAGE_CONFIRM = '给当前 dws 登录用户发送一条测试消息？'
+
+// ---- 渠道 CLI 安装 ----
+
+export const INSTALL_CLIS_MESSAGE = '以下 CLI 尚未安装，选择要现在安装的（可以都装，也可以只装一个）'
+export function installCliChoice(title: string, pkg: string, version: string): string {
+  return `${title}：${pkg}@${version}`
+}
+export function installConfirmMessage(commands: string[]): string {
+  return `将运行：\n${commands.map((c) => `  ${c}`).join('\n')}\n确认安装？`
+}
+export function installSkipped(commands: string[]): string {
+  return `已跳过安装，稍后可手动运行：\n${commands.map((c) => `  ${c}`).join('\n')}\n`
+}
+export function installDone(title: string, next: string): string {
+  return `${title} 已安装。下一步：${next}\n`
+}
+export function installFailed(title: string, command: string): string {
+  return `${title} 安装失败，请手动运行：${command}\n`
+}
+export function installedButNotFound(title: string): string {
+  return `${title} 已安装，但在 PATH 中仍找不到；请确认 npm 全局 bin 目录在 PATH 中，或在配置里填写可执行文件路径。\n`
+}
 
 // ---- dingtalk ----
 
@@ -91,6 +115,52 @@ export function dingtalkTestMessageFailed(detail: string): string {
 }
 export function dingtalkTestMarkdown(now = new Date()): string {
   return `dsh-agent-kit setup 测试消息 ${now.toISOString()}`
+}
+
+// ---- feishu ----
+
+export const FEISHU_IDENTITY_MESSAGE = '飞书发送身份'
+export const FEISHU_IDENTITY_CHOICES = [
+  { value: 'bot' as const, name: 'bot（应用机器人，服务器环境推荐；只需 lark-cli config init）' },
+  { value: 'user' as const, name: 'user（以登录用户身份发送；需要 lark-cli auth login）' },
+]
+export const FEISHU_CONFIG_INIT_CONFIRM = 'lark-cli 还没有可用的应用配置，现在运行 lark-cli config init？'
+export const FEISHU_LOGIN_CONFIRM = '飞书 user 身份尚未登录，现在运行 lark-cli auth login？'
+export const FEISHU_SETUP_FAILED = 'lark-cli 配置 / 登录未成功，稍后可手动运行。\n'
+export const FEISHU_DEFAULT_TARGET_MESSAGE = '默认发送目标（省略 target 时使用）'
+export const FEISHU_DEFAULT_TARGET_CHOICES = [
+  { value: 'search' as const, name: '按群名搜索群' },
+  { value: 'chatId' as const, name: '直接输入群 chat_id（oc_ 开头）' },
+  { value: 'userId' as const, name: '单聊（用户 open_id，ou_ 开头）' },
+  { value: 'none' as const, name: '不设置，每次调用时指定' },
+]
+export const FEISHU_GROUP_QUERY_MESSAGE = '群名关键词'
+export const FEISHU_NO_GROUP_FOUND = '没有搜索到群，请直接输入 chat_id。\n'
+export const FEISHU_CHAT_ID_MESSAGE = '群 chat_id（oc_ 开头）'
+export const FEISHU_USER_ID_MESSAGE = '接收者 open_id（ou_ 开头）'
+export const FEISHU_SELECT_GROUP_MESSAGE = '选择群'
+export const FEISHU_DRY_RUN_MESSAGE = '只演练不真实发送（dryRun）？'
+export const FEISHU_TEST_MESSAGE_CONFIRM = '给飞书默认目标发送一条测试消息？（群里其他人也会看到）'
+export const FEISHU_TEST_MESSAGE_SENT = '飞书测试消息已发送'
+export function feishuTestMessageFailed(detail: string): string {
+  return `飞书测试消息发送失败：${detail}`
+}
+export const CHAT_ID_PATTERN_HINT = '应以 oc_ 开头'
+export const OPEN_ID_PATTERN_HINT = '应以 ou_ 开头'
+
+// ---- notify ----
+
+export const NOTIFY_CHANNELS_MESSAGE = '通知发往哪些渠道？（之后可在设置页或重新运行 setup 修改）'
+export const NOTIFY_CHANNEL_TITLES: Record<string, string> = { dingtalk: '钉钉', feishu: '飞书' }
+export const NOTIFY_STRATEGY_MESSAGE = '多个渠道时怎么发？'
+export const NOTIFY_STRATEGY_CHOICES = [
+  { value: 'all' as const, name: '每个渠道都发' },
+  { value: 'failover' as const, name: '按顺序发，第一个成功即停止（主备）' },
+]
+export const NOTIFY_NEEDS_CHANNEL = '至少选择一个渠道'
+export const NOTIFY_FAILOVER_FIRST_MESSAGE = '先发哪个渠道？（失败时再发另一个）'
+export function notifyChannelNotEnabled(channel: string): string {
+  return `注意：${channel} 没有启用，发往它的通知会失败；可以稍后在设置页启用。\n`
 }
 
 // ---- agent-tasks ----

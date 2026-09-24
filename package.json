@@ -1,7 +1,7 @@
 {
   "name": "@mc/dsh-agent-kit",
   "version": "0.1.0",
-  "description": "DeepSeek Harness plugin services for resident agent workers: WebSocket, DingTalk, agent tasks, TypeSafe Jev",
+  "description": "DeepSeek Harness plugin services for resident agent workers: WebSocket, DingTalk, Feishu, notifications, agent tasks, TypeSafe Jev",
   "license": "MIT",
   "type": "module",
   "main": "./lib/index.js",
@@ -29,6 +29,14 @@
       "types": "./lib/dingtalk/index.d.ts",
       "default": "./lib/dingtalk/index.js"
     },
+    "./feishu": {
+      "types": "./lib/feishu/index.d.ts",
+      "default": "./lib/feishu/index.js"
+    },
+    "./notify": {
+      "types": "./lib/notify/index.d.ts",
+      "default": "./lib/notify/index.js"
+    },
     "./agent-tasks": {
       "types": "./lib/agent-tasks/index.d.ts",
       "default": "./lib/agent-tasks/index.js"
@@ -48,6 +56,7 @@
     "bin",
     "patch.yml",
     "fixtures/fake-dws.mjs",
+    "fixtures/fake-lark-cli.mjs",
     "README.md",
     "LICENSE"
   ],

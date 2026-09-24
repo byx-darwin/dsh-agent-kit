@@ -65,6 +65,94 @@ function DingtalkForm(p: FormProps) {
   )
 }
 
+function FeishuForm(p: FormProps) {
+  const target = p.config.defaultTarget as { chatId?: string; userId?: string } | undefined
+  const kind = target?.userId !== undefined ? 'userId' : 'chatId'
+  return (
+    <>
+      <Field label={p.t('feishu.identity')}>
+        {(id) => (
+          <select id={id} disabled={p.disabled} value={(p.config.identity as string) ?? ''} onChange={(e) => p.onChange({ ...p.config, identity: e.target.value })}>
+            <option value="" disabled>—</option>
+            <option value="bot">bot</option>
+            <option value="user">user</option>
+          </select>
+        )}
+      </Field>
+      <Field label={p.t('feishu.targetKind')}>
+        {(id) => (
+          <select
+            id={id}
+            disabled={p.disabled}
+            value={kind}
+            onChange={(e) => {
+              const value = target?.chatId ?? target?.userId
+              p.onChange({ ...p.config, defaultTarget: value ? { [e.target.value]: value } : undefined })
+            }}
+          >
+            <option value="chatId">{p.t('feishu.targetChat')}</option>
+            <option value="userId">{p.t('feishu.targetUser')}</option>
+          </select>
+        )}
+      </Field>
+      <Field label={p.t(kind === 'userId' ? 'feishu.targetUserId' : 'feishu.targetChatId')}>
+        {(id) => (
+          <input
+            id={id}
+            disabled={p.disabled}
+            value={target?.[kind] ?? ''}
+            onChange={(e) => p.onChange({ ...p.config, defaultTarget: e.target.value ? { [kind]: e.target.value } : undefined })}
+          />
+        )}
+      </Field>
+      {text(p, 'profile', p.t('feishu.profile'))}
+      <Field label={p.t('feishu.dryRun')}>
+        {(id) => <input id={id} type="checkbox" disabled={p.disabled} checked={p.config.dryRun === true} onChange={(e) => p.onChange({ ...p.config, dryRun: e.target.checked })} />}
+      </Field>
+    </>
+  )
+}
+
+const CHANNELS = ['dingtalk', 'feishu'] as const
+
+/** 通知渠道：勾选发往哪些渠道、选择发送策略。保存后业务包的 ctx.notify 立即改发新渠道，业务插件不重新加载。 */
+function NotifyForm(p: FormProps) {
+  const channels = (p.config.channels as string[] | undefined) ?? []
+  const toggle = (channel: string, on: boolean) => {
+    const next = on ? [...channels, channel] : channels.filter((c) => c !== channel)
+    p.onChange({ ...p.config, channels: next })
+  }
+  const move = (channel: string) => p.onChange({ ...p.config, channels: [channel, ...channels.filter((c) => c !== channel)] })
+  return (
+    <>
+      {CHANNELS.map((channel) => (
+        <Field key={channel} label={p.t(`notify.channel.${channel}`)}>
+          {(id) => <input id={id} type="checkbox" disabled={p.disabled} checked={channels.includes(channel)} onChange={(e) => toggle(channel, e.target.checked)} />}
+        </Field>
+      ))}
+      <Field label={p.t('notify.strategy')}>
+        {(id) => (
+          <select id={id} disabled={p.disabled} value={(p.config.strategy as string) ?? 'all'} onChange={(e) => p.onChange({ ...p.config, strategy: e.target.value })}>
+            <option value="all">{p.t('notify.strategy.all')}</option>
+            <option value="failover">{p.t('notify.strategy.failover')}</option>
+          </select>
+        )}
+      </Field>
+      {p.config.strategy === 'failover' && channels.length > 1 && (
+        <Field label={p.t('notify.first')}>
+          {(id) => (
+            <select id={id} disabled={p.disabled} value={channels[0]} onChange={(e) => move(e.target.value)}>
+              {channels.map((c) => (
+                <option key={c} value={c}>{p.t(`notify.channel.${c}`)}</option>
+              ))}
+            </select>
+          )}
+        </Field>
+      )}
+    </>
+  )
+}
+
 function AgentTasksForm(p: FormProps) {
   const declared = (p.config.declaredPermissions as Record<string, string> | undefined) ?? {}
   return (
@@ -175,6 +263,8 @@ export function EntryForm(p: FormProps & { fields: readonly EntryField[] }) {
 export const FORMS: Record<KitId, (p: FormProps) => ReactNode> = {
   'agent-kit-ws': WsForm,
   'agent-kit-dingtalk': DingtalkForm,
+  'agent-kit-feishu': FeishuForm,
+  'agent-kit-notify': NotifyForm,
   'agent-kit-agent-tasks': AgentTasksForm,
   'agent-kit-jev': JevForm,
 }

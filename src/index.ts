@@ -17,6 +17,31 @@ export {
   type TargetResult,
 } from './dingtalk/index.js'
 export {
+  FeishuService,
+  FeishuConfig,
+  FeishuSendError,
+  type FeishuAt,
+  type FeishuCounters,
+  type FeishuErrorCode,
+  type FeishuIdentity,
+  type FeishuSendOptions,
+  type FeishuSendResult,
+  type FeishuTarget,
+  type FeishuTargetResult,
+} from './feishu/index.js'
+export {
+  NotifyService,
+  NotifyConfig,
+  NotifyError,
+  NOTIFY_CHANNELS,
+  type NotifyChannel,
+  type NotifyChannelResult,
+  type NotifyCounters,
+  type NotifyErrorCode,
+  type NotifySendOptions,
+  type NotifySendResult,
+} from './notify/index.js'
+export {
   AgentTasksService,
   AgentTasksConfig,
   AgentTaskError,

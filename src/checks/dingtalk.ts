@@ -1,3 +1,4 @@
+import { CHANNEL_CLIS, installCommand } from '../common/clis.js'
 import type { Check, CheckResult } from './types.js'
 
 export const dingtalkChecks: Check = async (ctx) => {
@@ -11,7 +12,7 @@ export const dingtalkChecks: Check = async (ctx) => {
       title: 'dws 已安装',
       status: dws ? ('pass' as const) : ('fail' as const),
       detail: dws ?? '在 PATH 中找不到 dws',
-      ...(dws ? {} : { fix: 'npm i -g dingtalk-workspace-cli' }),
+      ...(dws ? {} : { fix: `${installCommand(CHANNEL_CLIS.dingtalk)}，或重新运行 setup 选择安装` }),
     },
   ]
   if (config.identity === 'webhook') {

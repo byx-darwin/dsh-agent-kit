@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsPage } from '../../src/client/settings-page.js'
 import { AGENT_KIT_REMOTE, createAdminApi, type AdminApi, type AdminStatus } from '../../src/client/remote.js'
@@ -322,5 +322,38 @@ describe('English UI (issue #4)', () => {
     expect(screen.getByText(/^TypeSafe Key: 没有找到/)).toBeTruthy()
     const text = document.body.textContent!.replace(/没有找到|设置 Key/g, '')
     expect(text).not.toMatch(/[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]/)
+  })
+})
+
+describe('Feishu and notification channel cards', () => {
+  const withChannels = () => {
+    const s = status()
+    s.services.splice(2, 0,
+      { id: 'agent-kit-feishu', title: '飞书', enabled: true, phase: 'active', health: { status: 'ok', detail: 'ready' }, config: { identity: 'bot', defaultTarget: { chatId: 'oc_a' } } },
+      { id: 'agent-kit-notify', title: '通知渠道', enabled: true, phase: 'active', health: { status: 'ok', detail: 'channels: dingtalk (all)' }, config: { channels: ['dingtalk'], strategy: 'all' } },
+    )
+    return s
+  }
+
+  it('switches notification channels to Feishu-first failover and saves', async () => {
+    const api = fakeApi(withChannels())
+    render(<SettingsPage api={api} t={t} />)
+    const card = await screen.findByRole('region', { name: '通知渠道' })
+    fireEvent.click(within(card).getByLabelText(zh['notify.channel.feishu']!))
+    fireEvent.change(within(card).getByLabelText(zh['notify.strategy']!), { target: { value: 'failover' } })
+    fireEvent.change(within(card).getByLabelText(zh['notify.first']!), { target: { value: 'feishu' } })
+    fireEvent.click(within(card).getByRole('button', { name: `${zh.save} 通知渠道` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-notify', true, { channels: ['feishu', 'dingtalk'], strategy: 'failover' }, 'v1'))
+  })
+
+  it('edits the Feishu default target and keeps the kind when the id changes', async () => {
+    const api = fakeApi(withChannels())
+    render(<SettingsPage api={api} t={t} />)
+    const card = await screen.findByRole('region', { name: '飞书' })
+    fireEvent.change(within(card).getByLabelText(zh['feishu.targetKind']!), { target: { value: 'userId' } })
+    fireEvent.change(within(card).getByLabelText(zh['feishu.targetUserId']!), { target: { value: 'ou_me' } })
+    fireEvent.change(within(card).getByLabelText(zh['feishu.profile']!), { target: { value: 'prod' } })
+    fireEvent.click(within(card).getByRole('button', { name: `${zh.save} 飞书` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-feishu', true, { identity: 'bot', defaultTarget: { userId: 'ou_me' }, profile: 'prod' }, 'v1'))
   })
 })

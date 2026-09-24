@@ -1,6 +1,6 @@
 import type { ClientContext, RemoteResult } from './host-types.js'
 
-export type KitId = 'agent-kit-ws' | 'agent-kit-dingtalk' | 'agent-kit-agent-tasks' | 'agent-kit-jev'
+export type KitId = 'agent-kit-ws' | 'agent-kit-dingtalk' | 'agent-kit-feishu' | 'agent-kit-notify' | 'agent-kit-agent-tasks' | 'agent-kit-jev'
 export type KeyTarget = 'keychain' | 'credentials'
 export interface CheckResult {
   id: string
