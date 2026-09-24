@@ -1,8 +1,14 @@
 ---
 import Base from '../layouts/Base.astro'
+import CopyCommand from '../components/CopyCommand.astro'
+import ServiceCard from '../components/ServiceCard.astro'
+import Notice from '../components/Notice.astro'
 import { SITE } from '../lib/site'
 ---
 
 <Base title="dsh-agent-kit" description={SITE.positioning}>
   <h1>{SITE.tagline}</h1>
+  <CopyCommand command="npx @mc/dsh-agent-kit setup" npm />
+  <ServiceCard numeral="贰" verb="推送" name="钉钉推送" summary="示例" href="/docs/dingtalk" />
+  <Notice title="提示">示例</Notice>
 </Base>

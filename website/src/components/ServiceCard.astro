@@ -1,0 +1,51 @@
+---
+import { withBasePath } from '../lib/paths'
+
+interface Props {
+  numeral: '壹' | '贰' | '叁' | '肆'
+  verb: string
+  name: string
+  summary: string
+  href: string
+}
+const { numeral, verb, name, summary, href } = Astro.props
+---
+
+<a class="service-card" href={withBasePath(import.meta.env.BASE_URL, href)}>
+  <span class="kicker">{numeral} · {verb}</span>
+  <span class="name">{name}</span>
+  <span class="summary">{summary}</span>
+</a>
+
+<style>
+  .service-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: var(--card);
+    border-radius: 6px;
+    padding: 16px;
+    color: var(--ink);
+    text-decoration: none;
+    outline: 1px solid transparent;
+    transition: outline-color 0.15s;
+  }
+  .service-card:hover {
+    outline-color: var(--accent);
+  }
+  .kicker {
+    font-family: var(--serif);
+    font-size: 13px;
+    color: var(--accent);
+  }
+  .name {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 18px;
+  }
+  .summary {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--quote);
+  }
+</style>

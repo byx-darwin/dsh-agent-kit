@@ -1,0 +1,76 @@
+---
+import Notice from './Notice.astro'
+import { RELEASE } from '../data/release'
+
+interface Props {
+  command: string
+  /** 命令依赖 npm 上的本包；未发布时附「尚未发布」提示。 */
+  npm?: boolean
+}
+const { command, npm = false } = Astro.props
+---
+
+<div class="copy-command">
+  <code><span class="prompt">$</span>{command}</code>
+  <button type="button" data-copy={command} aria-label={`复制命令：${command}`}>复制</button>
+</div>
+{
+  npm && !RELEASE.published && (
+    <Notice title="尚未发布" tone="warn">
+      @mc/dsh-agent-kit 还未发布到 npm，安装命令暂不可用；可先从 GitHub 克隆后以本地路径安装。
+    </Notice>
+  )
+}
+
+<script>
+  for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-copy]')) {
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy ?? '')
+        button.textContent = '已复制'
+      } catch {
+        button.textContent = '复制失败'
+      }
+      setTimeout(() => (button.textContent = '复制'), 1500)
+    })
+  }
+</script>
+
+<style>
+  .copy-command {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--code-bg);
+    color: var(--code-fg);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 1em 0;
+  }
+  code {
+    background: none;
+    color: inherit;
+    padding: 0;
+    white-space: pre;
+    overflow-x: auto;
+    min-width: 0;
+    flex: 1;
+  }
+  .prompt {
+    color: #8a7f70;
+    margin-right: 8px;
+  }
+  button {
+    font: 12px var(--sans);
+    color: #c9bca8;
+    background: none;
+    border: 1px solid #4d463e;
+    border-radius: 4px;
+    padding: 2px 8px;
+    cursor: pointer;
+    flex: none;
+  }
+  button:hover {
+    color: var(--code-fg);
+  }
+</style>

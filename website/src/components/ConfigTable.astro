@@ -1,0 +1,42 @@
+---
+import type { ConfigRow } from '../data/config-tables'
+
+interface Props {
+  rows: ConfigRow[]
+}
+const { rows } = Astro.props
+---
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>字段</th><th>默认值</th><th>取值范围</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      {
+        rows.map((r) => (
+          <tr>
+            <td>
+              <code>{r.path}</code>
+              {r.required && <span class="req">必填</span>}
+            </td>
+            <td>
+              <code>{r.default}</code>
+            </td>
+            <td>{r.range}</td>
+            <td>{r.description}</td>
+          </tr>
+        ))
+      }
+    </tbody>
+  </table>
+</div>
+
+<style>
+  .req {
+    margin-left: 6px;
+    font-size: 12px;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+</style>
