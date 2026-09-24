@@ -3,6 +3,8 @@ import Base from '../layouts/Base.astro'
 import CopyCommand from '../components/CopyCommand.astro'
 import ServiceCard from '../components/ServiceCard.astro'
 import Notice from '../components/Notice.astro'
+import ConfigTable from '../components/ConfigTable.astro'
+import { configRows } from '../data/config-tables'
 import { SITE } from '../lib/site'
 ---
 
@@ -11,4 +13,6 @@ import { SITE } from '../lib/site'
   <CopyCommand command="npx @mc/dsh-agent-kit setup" npm />
   <ServiceCard numeral="贰" verb="推送" name="钉钉推送" summary="示例" href="/docs/dingtalk" />
   <Notice title="提示">示例</Notice>
+  <ConfigTable rows={configRows('dingtalk')} />
+  <ConfigTable rows={configRows('jev')} />
 </Base>
