@@ -11,6 +11,9 @@
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./ws": {
       "types": "./lib/ws/index.d.ts",
       "default": "./lib/ws/index.js"
@@ -44,7 +47,7 @@
     "node": "^22.19 || >=24"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/build-client.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -52,6 +55,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
     "ajv": "^8.17.1",
     "ws": "^8.18.0"
   },
@@ -73,16 +77,26 @@
     "@deepseek-ai/dsh-subagent-claude-code": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-subprocess-local": "^0.1.5-rc.3",
     "@deepseek-ai/schemastery": "^3.18.2",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^22.10.0",
+    "@types/react": "^18.3.31",
     "@types/ws": "^8.5.13",
     "@typesafe-ai/sdk": "^0.6.0",
     "@vitest/coverage-v8": "^4.0.0",
+    "esbuild": "^0.25.12",
+    "jsdom": "^26.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "typescript": "^5.9.0",
     "vitest": "^4.0.0"
   },
   "dsh": {
     "bundle": {
       "patch": "./patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": ["@deepseek-ai/dsh-client-ui-settings", "@deepseek-ai/dsh-client-locale"]
     }
   }
 }

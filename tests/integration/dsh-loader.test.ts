@@ -61,6 +61,7 @@ describe('bundle patch.yml in a real dsh loader', () => {
     for (const name of ['agentWs', 'dingtalk', 'agentTasks', 'jev']) expect(c.get(name)).toBeUndefined()
     const ids = BUNDLE_PATCHES.flatMap((p: any) => p.insert ?? []).map((e: any) => [e.id, e.name, e.disabled])
     expect(ids).toEqual([
+      ['agent-kit', '@mc/dsh-agent-kit', undefined],
       ['agent-kit-ws', '@mc/dsh-agent-kit/ws', true],
       ['agent-kit-dingtalk', '@mc/dsh-agent-kit/dingtalk', true],
       ['agent-kit-agent-tasks', '@mc/dsh-agent-kit/agent-tasks', true],

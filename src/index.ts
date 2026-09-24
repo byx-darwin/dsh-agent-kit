@@ -52,3 +52,5 @@ export {
   type ScoreQuestion,
   type ScoreResponse,
 } from './jev/index.js'
+
+export { name, inject, apply } from './admin/plugin.js'
