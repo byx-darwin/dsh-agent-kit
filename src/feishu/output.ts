@@ -53,12 +53,18 @@ export function parseFeishuError(stderr: string): { type?: string; subtype?: str
 }
 
 /** `lark-cli auth status --json` 中指定身份是否可用。 */
-export function identityAvailable(stdout: string, identity: 'bot' | 'user'): { ok: boolean; detail: string; userName?: string; openId?: string } {
+export function identityAvailable(stdout: string, identity: 'bot' | 'user'): { ok: boolean; detail: string; userName?: string; openId?: string; appId?: string } {
   try {
-    const data = JSON.parse(stdout) as { identities?: Record<string, { available?: boolean; message?: string; userName?: string; openId?: string }> }
+    const data = JSON.parse(stdout) as { appId?: string; identities?: Record<string, { available?: boolean; message?: string; userName?: string; openId?: string }> }
     const entry = data.identities?.[identity]
     if (entry?.available === true) {
-      return { ok: true, detail: entry.message ?? `${identity} identity ready`, ...(entry.userName ? { userName: entry.userName } : {}), ...(entry.openId ? { openId: entry.openId } : {}) }
+      return {
+        ok: true,
+        detail: entry.message ?? `${identity} identity ready`,
+        ...(entry.userName ? { userName: entry.userName } : {}),
+        ...(entry.openId ? { openId: entry.openId } : {}),
+        ...(data.appId ? { appId: data.appId } : {}),
+      }
     }
     return { ok: false, detail: entry?.message ?? `${identity} identity is not available` }
   } catch {

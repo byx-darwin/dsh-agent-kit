@@ -37,12 +37,17 @@ export {
   NotifyConfig,
   NotifyError,
   NOTIFY_CHANNELS,
+  DEFAULT_LOGIN_TTL_MS,
+  type ChannelName,
+  type ChannelNotRunning,
+  type ChannelStatus,
+  type LoginSession,
   type NotifyChannel,
-  type NotifyChannelResult,
   type NotifyCounters,
   type NotifyErrorCode,
   type NotifySendOptions,
   type NotifySendResult,
+  type NotifyStatus,
 } from './notify/index.js'
 export {
   AgentTasksService,

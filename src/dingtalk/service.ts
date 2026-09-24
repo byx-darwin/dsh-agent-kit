@@ -1,6 +1,7 @@
 import { accessSync, constants } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
+import { DEFAULT_LOGIN_TTL_MS, type ChannelStatus, type LoginSession } from '../common/channel.js'
 import { ConfigError } from '../common/errors.js'
 import { resolveExecutable } from '../common/executable.js'
 import { BASE_ENV_WHITELIST, pickEnv, runProcess, type RunProcessResult } from '../common/process.js'
@@ -51,6 +52,21 @@ export { resolveExecutable }
 
 const RETRYABLE_CATEGORIES = new Set(['network', 'timeout', 'rate_limit', 'server', 'unavailable'])
 
+interface DwsDeviceLogin {
+  url: string
+  userCode?: string
+  ttlMs: number
+}
+
+/** 从 `dws auth login --device` 的输出（写在 stderr 的纯文本）中取授权链接、验证码与有效期。 */
+export function parseDwsDeviceLogin(text: string): DwsDeviceLogin | undefined {
+  const url = /(https:\/\/\S*user_code=\S+)/.exec(text)?.[1] ?? /(https:\/\/\S+)/.exec(text)?.[1]
+  if (!url) return undefined
+  const userCode = /authorization code:\s*([A-Za-z0-9-]+)/i.exec(text)?.[1]
+  const seconds = Number(/expire in (\d+) seconds/i.exec(text)?.[1])
+  return { url, ...(userCode ? { userCode } : {}), ttlMs: seconds > 0 ? seconds * 1000 : DEFAULT_LOGIN_TTL_MS }
+}
+
 export class DingtalkService extends KitService<DingtalkCounters> {
   static Config = DingtalkConfig
   readonly config: DingtalkConfig
@@ -59,6 +75,7 @@ export class DingtalkService extends KitService<DingtalkCounters> {
   private readonly env: NodeJS.ProcessEnv
   private readonly controller = new AbortController()
   private warnedIdempotency = false
+  private loginSession?: LoginSession
   private lastSuccessAt: number | null = null
   private readonly counters: DingtalkCounters = {
     success: 0,
@@ -122,25 +139,91 @@ export class DingtalkService extends KitService<DingtalkCounters> {
 
   /** 检查 dws 登录态（`dws auth status`），失效时 health() 返回 failed。 */
   async preflight(): Promise<boolean> {
-    let ok = false
-    let detail = ''
+    const r = await this.checkLogin()
+    this.recordLogin(r)
+    return r.ok
+  }
+
+  private async checkLogin(): Promise<{ ok: boolean; detail: string; account?: string }> {
     try {
       const r = await this.exec(['auth', 'status', '--format=json'], this.controller.signal)
-      if (r.exitCode === 0) {
-        const data = JSON.parse(r.stdout) as { authenticated?: boolean; token_valid?: boolean; refresh_token_valid?: boolean }
-        ok = data.authenticated === true && (data.token_valid === true || data.refresh_token_valid === true)
-        detail = ok ? '' : 'dws is not logged in'
-      } else {
-        detail = `dws auth status exited with ${r.exitCode}: ${parseErrorOutput(r.stderr).message}`
-      }
+      if (r.exitCode !== 0) return { ok: false, detail: `dws auth status exited with ${r.exitCode}: ${parseErrorOutput(r.stderr).message}` }
+      const data = JSON.parse(r.stdout) as { authenticated?: boolean; token_valid?: boolean; refresh_token_valid?: boolean; user_name?: string; corp_name?: string }
+      const ok = data.authenticated === true && (data.token_valid === true || data.refresh_token_valid === true)
+      const account = [data.user_name, data.corp_name].filter(Boolean).join(' @ ')
+      return { ok, detail: ok ? `logged in${account ? ` as ${account}` : ''}` : 'dws is not logged in', ...(account ? { account } : {}) }
     } catch (e) {
-      detail = `dws auth status failed: ${(e as Error).message}`
+      return { ok: false, detail: `dws auth status failed: ${(e as Error).message}` }
     }
-    this.counters.loginOk = ok
+  }
+
+  private recordLogin(r: { ok: boolean; detail: string }): void {
+    this.counters.loginOk = r.ok
     this.counters.lastPreflightAt = Date.now()
-    if (ok) this.clearFailed()
-    else this.markFailed(detail)
-    return ok
+    if (r.ok) this.clearFailed()
+    else this.markFailed(r.detail)
+  }
+
+  /** 实时检查登录状态。dryRun 下只报告，不改变 health()。 */
+  async status(): Promise<ChannelStatus> {
+    const base = { channel: 'dingtalk' as const, identity: this.config.identity }
+    if (this.config.identity === 'webhook') return { ...base, online: true, detail: 'webhook identity needs no login', checkedAt: Date.now() }
+    const r = await this.checkLogin()
+    if (!this.config.dryRun) this.recordLogin(r)
+    return { ...base, online: r.ok, ...(r.account ? { account: r.account } : {}), detail: r.detail, checkedAt: Date.now() }
+  }
+
+  /**
+   * 设备流登录（`dws auth login --device`）：拿到授权链接即返回，由调用方把链接交给要登录的人；dws 在后台
+   * 轮询，对方授权后 `completed` 以新的状态 resolve。同一时间只进行一次登录，重复调用返回同一个会话。
+   * 注意：dws 的登录态是本机共享的，这会替换本机当前的钉钉登录。
+   */
+  async login(options: { signal?: AbortSignal } = {}): Promise<LoginSession> {
+    if (this.config.identity === 'webhook') throw new DingtalkSendError('unsupported', 'webhook identity has no login')
+    if (this.loginSession) return this.loginSession
+    const cancel = new AbortController()
+    const signal = AbortSignal.any([cancel.signal, this.controller.signal, ...(options.signal ? [options.signal] : [])])
+    let output = ''
+    let found!: (info: DwsDeviceLogin) => void
+    let failed!: (err: Error) => void
+    const info = new Promise<DwsDeviceLogin>((resolve, reject) => ((found = resolve), (failed = reject)))
+    const run = runProcess(this.dwsPath, ['auth', 'login', '--device', '--no-browser', '--format=json'], {
+      env: this.env,
+      timeoutMs: DEFAULT_LOGIN_TTL_MS + 60_000,
+      killGraceMs: this.config.killGraceMs,
+      signal,
+      onOutput: (text) => {
+        output += text
+        const parsed = parseDwsDeviceLogin(output)
+        if (parsed) found(parsed)
+      },
+    })
+    run.then(
+      (r) => failed(new DingtalkSendError('login_failed', `dws auth login ended before showing a link: ${parseErrorOutput(r.stderr).message}`)),
+      (e) => failed(new DingtalkSendError('spawn_failed', `failed to start dws: ${(e as Error).message}`, { cause: e })),
+    )
+    const completed = run
+      .catch(() => undefined)
+      .then(async () => {
+        this.loginSession = undefined
+        const status = await this.status()
+        this.logger.info('dingtalk login finished', { online: status.online })
+        return status
+      })
+    const { url, userCode, ttlMs } = await info
+    const session: LoginSession = { channel: 'dingtalk', verificationUrl: url, ...(userCode ? { userCode } : {}), expiresAt: Date.now() + ttlMs, completed, cancel: () => cancel.abort() }
+    this.loginSession = session
+    this.logger.info('dingtalk login started', { expiresAt: session.expiresAt })
+    return session
+  }
+
+  /** 退出 dws 登录（`dws auth logout`，退出本机全部钉钉账号），返回退出后的状态。 */
+  async logout(): Promise<ChannelStatus> {
+    if (this.config.identity === 'webhook') throw new DingtalkSendError('unsupported', 'webhook identity has no login')
+    const r = await this.exec(['auth', 'logout', '--format=json'], this.controller.signal)
+    if (r.exitCode !== 0) throw new DingtalkSendError('exit_nonzero', `dws auth logout exited with ${r.exitCode}: ${parseErrorOutput(r.stderr).message}`)
+    this.logger.info('dingtalk logged out')
+    return this.status()
   }
 
   async send(options: DingtalkSendOptions): Promise<DingtalkSendResult> {

@@ -1,6 +1,6 @@
 import { KitError, type KitErrorOptions } from '../common/errors.js'
 
-export type DingtalkErrorCode = 'timeout' | 'exit_nonzero' | 'bad_output' | 'invalid_target' | 'send_failed' | 'aborted' | 'spawn_failed'
+export type DingtalkErrorCode = 'timeout' | 'exit_nonzero' | 'bad_output' | 'invalid_target' | 'send_failed' | 'aborted' | 'spawn_failed' | 'unsupported' | 'login_failed'
 
 export class DingtalkSendError extends KitError {
   declare readonly code: DingtalkErrorCode

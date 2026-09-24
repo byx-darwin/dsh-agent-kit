@@ -228,24 +228,12 @@ async function configureFeishu(p: Prompter, current: Config, deps: SetupDeps, io
   return config
 }
 
-/** 通知渠道：多选（至少一个），多于一个时选发送策略，failover 时再选先发哪个。 */
+/** 通知渠道：单选；默认沿用现有配置，否则取第一个启用的渠道。 */
 async function configureNotify(p: Prompter, current: Config, io: CliIO, enabledChannels: NotifyChannel[]): Promise<Config> {
-  const existing = (current.channels as NotifyChannel[] | undefined) ?? enabledChannels
-  let channels: NotifyChannel[] = []
-  while (channels.length === 0) {
-    channels = await p.checkbox(msg.NOTIFY_CHANNELS_MESSAGE, NOTIFY_CHANNELS.map((c) => ({ value: c, name: msg.NOTIFY_CHANNEL_TITLES[c]!, checked: existing.includes(c) })))
-    if (channels.length === 0) io.out(`${msg.NOTIFY_NEEDS_CHANNEL}\n`)
-  }
-  const config: Config = { ...current, channels }
-  if (channels.length > 1) {
-    config.strategy = await p.select(msg.NOTIFY_STRATEGY_MESSAGE, msg.NOTIFY_STRATEGY_CHOICES, (current.strategy as 'all' | 'failover') ?? 'all')
-    if (config.strategy === 'failover') {
-      const first = await p.select(msg.NOTIFY_FAILOVER_FIRST_MESSAGE, channels.map((c) => ({ value: c, name: msg.NOTIFY_CHANNEL_TITLES[c]! })), existing[0] ?? channels[0])
-      config.channels = [first, ...channels.filter((c) => c !== first)]
-    }
-  }
-  for (const c of channels) if (!enabledChannels.includes(c)) io.out(msg.notifyChannelNotEnabled(msg.NOTIFY_CHANNEL_TITLES[c]!))
-  return config
+  const existing = (current.channel as NotifyChannel | undefined) ?? enabledChannels[0] ?? 'dingtalk'
+  const channel = await p.select(msg.NOTIFY_CHANNEL_MESSAGE, NOTIFY_CHANNELS.map((c) => ({ value: c, name: msg.NOTIFY_CHANNEL_TITLES[c]! })), existing)
+  if (!enabledChannels.includes(channel)) io.out(msg.notifyChannelNotEnabled(msg.NOTIFY_CHANNEL_TITLES[channel]!))
+  return { channel }
 }
 
 async function configureAgentTasks(p: Prompter, current: Config): Promise<Config> {

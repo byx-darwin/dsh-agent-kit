@@ -6,6 +6,8 @@
 // fake-dws.json:
 // {
 //   "auth": "ok" | "expired" | "error",
+//   "login": "approve" | "deny" | "hang" | "no_link",   // dws auth login --device；approve 后 auth 变为 ok
+//   "loginDelayMs": 300,
 //   "send": [ { "mode": "success" | "fail" | "hang" | "bad_output" | "partial", ... }, ... ]  // 按调用次序取，超出时重复最后一个
 // }
 import { spawn } from 'node:child_process'
@@ -29,11 +31,35 @@ const flag = (name) => {
   return hit.includes('=') ? hit.slice(hit.indexOf('=') + 1) : true
 }
 
+// 登录 / 退出改变的状态写在 auth-state.json，覆盖场景里的 auth
+const statePath = dir ? join(dir, 'auth-state.json') : undefined
+const state = statePath && existsSync(statePath) ? JSON.parse(readFileSync(statePath, 'utf8')) : {}
+const setAuth = (auth) => statePath && writeFileSync(statePath, JSON.stringify({ auth }))
+
 if (args[0] === 'auth' && args[1] === 'status') {
-  const auth = scenario.auth ?? 'ok'
+  const auth = state.auth ?? scenario.auth ?? 'ok'
   if (auth === 'error') err({ error: { category: 'auth', code: 2, message: 'not logged in' } }, 2)
   const ok = auth === 'ok'
-  out({ success: true, authenticated: ok, token_valid: ok, refresh_token_valid: ok })
+  out({ success: true, authenticated: ok, token_valid: ok, refresh_token_valid: ok, ...(ok ? { user_name: '测试用户', corp_name: '测试组织', user_id: 'u1' } : { message: '未登录' }) })
+  process.exit(0)
+}
+
+if (args[0] === 'auth' && args[1] === 'login') {
+  // 真实 dws 的设备流把验证码与链接以纯文本写在 stderr，然后同一进程每 5 秒轮询一次
+  const mode = scenario.login ?? 'approve'
+  if (mode === 'no_link') err({ error: { category: 'network', code: 1, message: 'request device code failed' } }, 1)
+  process.stderr.write('● Step 1: Requesting device authorization code...\n\n  authorization code: FAKE-CODE\n  Authorization code will expire in 900 seconds.\n\n  Authorization link (code included):\nhttps://login.dingtalk.com/oauth2/device/verify.htm?caller=dws&user_code=FAKE-CODE\n\n● Step 2: Waiting for user authorization...\n')
+  if (mode === 'hang') await new Promise(() => setInterval(() => {}, 1000))
+  await new Promise((r) => setTimeout(r, scenario.loginDelayMs ?? 300))
+  if (mode === 'deny') err({ error: { category: 'auth', code: 1, message: 'authorization denied' } }, 1)
+  setAuth('ok')
+  out({ success: true, authenticated: true })
+  process.exit(0)
+}
+
+if (args[0] === 'auth' && args[1] === 'logout') {
+  setAuth('expired')
+  out({ success: true, message: '已退出' })
   process.exit(0)
 }
 

@@ -1,6 +1,6 @@
 import { KitError, type KitErrorOptions } from '../common/errors.js'
 
-export type FeishuErrorCode = 'timeout' | 'exit_nonzero' | 'bad_output' | 'invalid_target' | 'send_failed' | 'aborted' | 'spawn_failed'
+export type FeishuErrorCode = 'timeout' | 'exit_nonzero' | 'bad_output' | 'invalid_target' | 'send_failed' | 'aborted' | 'spawn_failed' | 'unsupported' | 'login_failed'
 
 export class FeishuSendError extends KitError {
   declare readonly code: FeishuErrorCode

@@ -231,3 +231,54 @@ describe('FeishuService', () => {
     expect(svc().health()).toMatchObject({ status: 'ok', detail: 'dry-run', counters: { failure: 1, success: 1 } })
   })
 })
+
+describe('FeishuService login state', () => {
+  const savedEnv = { ...process.env }
+  let t: TestRoot
+  let lark: ReturnType<typeof createFakeLark>
+  beforeEach(() => {
+    t = createRoot()
+    lark = createFakeLark()
+    process.env.LARKSUITE_CLI_CONFIG_DIR = lark.dir
+  })
+  afterEach(async () => {
+    await t.dispose()
+    lark.cleanup()
+    process.env = { ...savedEnv }
+  })
+  const start = async (config: Partial<FeishuConfig> = {}) => {
+    await t.root.plugin(FeishuService, { larkPath: lark.path, identity: 'user', ...config } as never)
+    return t.root.get('feishu') as unknown as FeishuService
+  }
+
+  it('logs a user in with the two-step device flow and out again', async () => {
+    const svc = await start({ profile: 'prod' })
+    expect(await svc.status()).toMatchObject({ channel: 'feishu', identity: 'user', online: false })
+    const session = await svc.login()
+    expect(session).toMatchObject({ verificationUrl: expect.stringContaining('ABCD-EFGH'), userCode: 'ABCD-EFGH' })
+    expect(session.expiresAt).toBeGreaterThan(Date.now() + 500_000)
+    expect(await svc.login()).toBe(session)
+    expect(await session.completed).toMatchObject({ online: true, account: 'Tester' })
+    const logins = lark.calls().filter((c) => c.args.includes('login')).map((c) => c.args)
+    expect(logins).toEqual([
+      ['--profile=prod', 'auth', 'login', '--scope=im:message.send_as_user im:message', '--no-wait', '--json'],
+      ['--profile=prod', 'auth', 'login', '--device-code=dc_fake', '--json'],
+    ])
+    expect(await svc.logout()).toMatchObject({ online: false })
+  })
+
+  it('resolves completed offline when denied, and fails when the device code cannot be requested', async () => {
+    lark.setScenario({ login: 'deny' })
+    const svc = await start()
+    expect(await (await svc.login()).completed).toMatchObject({ online: false })
+    lark.setScenario({ login: 'start_fail' })
+    await expect(svc.login()).rejects.toMatchObject({ code: 'login_failed', message: expect.stringMatching(/request device code failed/) })
+  })
+
+  it('reports the app for bot identity and rejects user login / logout there', async () => {
+    const svc = await start({ identity: 'bot' })
+    expect(await svc.status()).toMatchObject({ identity: 'bot', online: true, account: 'cli_fake' })
+    await expect(svc.login()).rejects.toMatchObject({ code: 'unsupported', message: expect.stringMatching(/config init/) })
+    await expect(svc.logout()).rejects.toMatchObject({ code: 'unsupported' })
+  })
+})

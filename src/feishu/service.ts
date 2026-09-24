@@ -1,6 +1,7 @@
 import { accessSync, constants } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
+import { DEFAULT_LOGIN_TTL_MS, pick, type ChannelStatus, type LoginSession } from '../common/channel.js'
 import { ConfigError } from '../common/errors.js'
 import { resolveExecutable } from '../common/executable.js'
 import { BASE_ENV_WHITELIST, pickEnv, runProcess, type RunProcessResult } from '../common/process.js'
@@ -74,6 +75,7 @@ export class FeishuService extends KitService<FeishuCounters> {
   private readonly env: NodeJS.ProcessEnv
   private readonly controller = new AbortController()
   private lastSuccessAt: number | null = null
+  private loginSession?: LoginSession
   private readonly counters: FeishuCounters = {
     success: 0,
     failure: 0,
@@ -119,25 +121,101 @@ export class FeishuService extends KitService<FeishuCounters> {
 
   /** 检查所配身份在 lark-cli 中是否可用（`lark-cli auth status --json`），不可用时 health() 返回 failed。 */
   async preflight(): Promise<boolean> {
-    let ok = false
-    let detail = ''
+    const r = await this.checkIdentity()
+    this.recordIdentity(r)
+    return r.ok
+  }
+
+  private async checkIdentity(): Promise<{ ok: boolean; detail: string; account?: string }> {
+    const identity = this.config.identity
     try {
       const r = await this.exec([...this.profileArgs(), 'auth', 'status', '--json'], this.controller.signal)
-      if (r.exitCode === 0) {
-        const status = identityAvailable(r.stdout, this.config.identity)
-        ok = status.ok
-        detail = ok ? '' : `lark-cli ${this.config.identity} identity unavailable: ${status.detail}`
-      } else {
-        detail = `lark-cli auth status exited with ${r.exitCode}: ${parseFeishuError(r.stderr).message}`
-      }
+      if (r.exitCode !== 0) return { ok: false, detail: `lark-cli auth status exited with ${r.exitCode}: ${parseFeishuError(r.stderr).message}` }
+      const s = identityAvailable(r.stdout, identity)
+      const account = identity === 'user' ? s.userName ?? s.openId : s.appId
+      return { ok: s.ok, detail: s.ok ? s.detail : `lark-cli ${identity} identity unavailable: ${s.detail}`, ...(account ? { account } : {}) }
     } catch (e) {
-      detail = `lark-cli auth status failed: ${(e as Error).message}`
+      return { ok: false, detail: `lark-cli auth status failed: ${(e as Error).message}` }
     }
-    this.counters.identityOk = ok
+  }
+
+  private recordIdentity(r: { ok: boolean; detail: string }): void {
+    this.counters.identityOk = r.ok
     this.counters.lastPreflightAt = Date.now()
-    if (ok) this.clearFailed()
-    else this.markFailed(detail)
-    return ok
+    if (r.ok) this.clearFailed()
+    else this.markFailed(r.detail)
+  }
+
+  /** 实时检查所配身份是否可用。dryRun 下只报告，不改变 health()。 */
+  async status(): Promise<ChannelStatus> {
+    const r = await this.checkIdentity()
+    if (!this.config.dryRun) this.recordIdentity(r)
+    return { channel: 'feishu', identity: this.config.identity, online: r.ok, ...(r.account ? { account: r.account } : {}), detail: r.detail, checkedAt: Date.now() }
+  }
+
+  private assertUserIdentity(action: string): void {
+    if (this.config.identity !== 'user') {
+      throw new FeishuSendError('unsupported', `bot identity has no ${action}: it uses the app credentials configured with lark-cli config init`)
+    }
+  }
+
+  /**
+   * user 身份的设备流登录：`lark-cli auth login --no-wait --json` 立即给出授权链接，随后在后台运行
+   * `lark-cli auth login --device-code` 等待授权完成，`completed` 以新的状态 resolve。同一时间只进行
+   * 一次登录，重复调用返回同一个会话。bot 身份没有用户登录（由应用凭据决定），调用会报 `unsupported`。
+   */
+  async login(options: { signal?: AbortSignal } = {}): Promise<LoginSession> {
+    this.assertUserIdentity('login')
+    if (this.loginSession) return this.loginSession
+    const start = await this.exec([...this.profileArgs(), 'auth', 'login', '--scope=im:message.send_as_user im:message', '--no-wait', '--json'], this.controller.signal)
+    if (start.exitCode !== 0) throw new FeishuSendError('login_failed', `lark-cli auth login failed: ${parseFeishuError(start.stderr).message}`)
+    let data: unknown
+    try {
+      data = JSON.parse(start.stdout)
+    } catch {
+      throw new FeishuSendError('bad_output', 'lark-cli auth login output is not valid JSON')
+    }
+    const url = pick(data, 'verification_url', 'verification_uri_complete', 'verification_uri')
+    const deviceCode = pick(data, 'device_code')
+    if (typeof url !== 'string' || typeof deviceCode !== 'string') throw new FeishuSendError('bad_output', 'lark-cli auth login did not return verification_url and device_code')
+    const userCode = pick(data, 'user_code')
+    const expiresIn = Number(pick(data, 'expires_in'))
+    const ttlMs = expiresIn > 0 ? expiresIn * 1000 : DEFAULT_LOGIN_TTL_MS
+    const cancel = new AbortController()
+    const signal = AbortSignal.any([cancel.signal, this.controller.signal, ...(options.signal ? [options.signal] : [])])
+    const completed = runProcess(this.larkPath, [...this.profileArgs(), 'auth', 'login', `--device-code=${deviceCode}`, '--json'], {
+      env: this.env,
+      timeoutMs: ttlMs + 60_000,
+      killGraceMs: this.config.killGraceMs,
+      signal,
+    })
+      .catch(() => undefined)
+      .then(async () => {
+        this.loginSession = undefined
+        const status = await this.status()
+        this.logger.info('feishu login finished', { online: status.online })
+        return status
+      })
+    const session: LoginSession = {
+      channel: 'feishu',
+      verificationUrl: url,
+      ...(typeof userCode === 'string' ? { userCode } : {}),
+      expiresAt: Date.now() + ttlMs,
+      completed,
+      cancel: () => cancel.abort(),
+    }
+    this.loginSession = session
+    this.logger.info('feishu login started', { expiresAt: session.expiresAt })
+    return session
+  }
+
+  /** 退出 user 身份的登录（`lark-cli auth logout`），返回退出后的状态。bot 身份报 `unsupported`。 */
+  async logout(): Promise<ChannelStatus> {
+    this.assertUserIdentity('logout')
+    const r = await this.exec([...this.profileArgs(), 'auth', 'logout', '--json'], this.controller.signal)
+    if (r.exitCode !== 0) throw new FeishuSendError('exit_nonzero', `lark-cli auth logout exited with ${r.exitCode}: ${parseFeishuError(r.stderr).message}`)
+    this.logger.info('feishu logged out')
+    return this.status()
   }
 
   async send(options: FeishuSendOptions): Promise<FeishuSendResult> {

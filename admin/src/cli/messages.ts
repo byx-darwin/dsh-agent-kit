@@ -150,15 +150,8 @@ export const OPEN_ID_PATTERN_HINT = '应以 ou_ 开头'
 
 // ---- notify ----
 
-export const NOTIFY_CHANNELS_MESSAGE = '通知发往哪些渠道？（之后可在设置页或重新运行 setup 修改）'
+export const NOTIFY_CHANNEL_MESSAGE = '通知发往哪个渠道？（同一时间只用一个；之后可在设置页、重新运行 setup，或在业务代码里用 ctx.notify.use() 切换）'
 export const NOTIFY_CHANNEL_TITLES: Record<string, string> = { dingtalk: '钉钉', feishu: '飞书' }
-export const NOTIFY_STRATEGY_MESSAGE = '多个渠道时怎么发？'
-export const NOTIFY_STRATEGY_CHOICES = [
-  { value: 'all' as const, name: '每个渠道都发' },
-  { value: 'failover' as const, name: '按顺序发，第一个成功即停止（主备）' },
-]
-export const NOTIFY_NEEDS_CHANNEL = '至少选择一个渠道'
-export const NOTIFY_FAILOVER_FIRST_MESSAGE = '先发哪个渠道？（失败时再发另一个）'
 export function notifyChannelNotEnabled(channel: string): string {
   return `注意：${channel} 没有启用，发往它的通知会失败；可以稍后在设置页启用。\n`
 }

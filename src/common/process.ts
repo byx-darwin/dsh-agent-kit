@@ -20,6 +20,8 @@ export interface RunProcessOptions {
   signal?: AbortSignal
   /** stdout / stderr 各自保留的最大字节数。 */
   maxOutputBytes?: number
+  /** 逐块收到输出时调用（用于长时间运行的命令，例如设备流登录时尽早取到授权链接）。 */
+  onOutput?: (text: string, stream: 'stdout' | 'stderr') => void
 }
 
 export interface RunProcessResult {
@@ -61,10 +63,12 @@ export function runProcess(file: string, args: readonly string[], options: RunPr
     child.stdout.on('data', (chunk: Buffer) => {
       if (stdoutSize < maxOutput) stdout.push(chunk)
       stdoutSize += chunk.length
+      options.onOutput?.(chunk.toString('utf8'), 'stdout')
     })
     child.stderr.on('data', (chunk: Buffer) => {
       if (stderrSize < maxOutput) stderr.push(chunk)
       stderrSize += chunk.length
+      options.onOutput?.(chunk.toString('utf8'), 'stderr')
     })
 
     let timedOut = false

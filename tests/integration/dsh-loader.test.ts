@@ -87,28 +87,33 @@ describe('bundle patch.yml in a real dsh loader', () => {
     ctx = undefined
   })
 
-  it('notify routes to DingTalk and Feishu for a business plugin that injects only notify', async () => {
+  it('notify sends through the configured channel and switches at runtime for a plugin that injects only notify', async () => {
     const lark = createFakeLark()
     process.env.LARKSUITE_CLI_CONFIG_DIR = lark.dir
     try {
       const c = await start([
         enable('dingtalk', { identity: 'bot', robotCode: 'ding1', dwsPath: dws.path, defaultTarget: { chatId: 'cidA' } }),
         enable('feishu', { identity: 'bot', larkPath: lark.path, defaultTarget: { chatId: 'oc_a' } }),
-        enable('notify', { channels: ['feishu', 'dingtalk'] }),
+        enable('notify', { channel: 'feishu' }),
       ])
-      let sent: any
+      const sent: any[] = []
+      let status: any
       await c.plugin({
         name: 'business',
         inject: ['notify'],
         async apply(bctx: Context) {
-          sent = await bctx.notify.send({ title: 'T', markdown: 'alert', idempotencyKey: 'evt_1' })
+          sent.push(await bctx.notify.send({ title: 'T', markdown: 'alert', idempotencyKey: 'evt_1' }))
+          bctx.notify.use('dingtalk')
+          sent.push(await bctx.notify.send({ text: 'again' }))
+          status = await bctx.notify.status()
         },
       })
-      expect(sent.results.map((r: any) => [r.channel, r.ok])).toEqual([
+      expect(sent.map((r) => [r.channel, r.results[0].ok])).toEqual([
         ['feishu', true],
         ['dingtalk', true],
       ])
       expect(lark.calls().some((call) => call.args.includes('--chat-id=oc_a'))).toBe(true)
+      expect(status).toMatchObject({ channel: 'dingtalk', source: 'runtime', channels: { dingtalk: { online: true }, feishu: { online: true, account: 'cli_fake' } } })
     } finally {
       lark.cleanup()
     }

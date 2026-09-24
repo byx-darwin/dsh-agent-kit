@@ -402,3 +402,70 @@ describe('DingtalkService', () => {
     expect(sendCalls()).toHaveLength(1)
   })
 })
+
+describe('DingtalkService login state', () => {
+  const savedEnv = { ...process.env }
+  let t: TestRoot
+  let dws: ReturnType<typeof createFakeDws>
+  beforeEach(() => {
+    t = createRoot()
+    dws = createFakeDws()
+    process.env.DWS_CONFIG_DIR = dws.dir
+  })
+  afterEach(async () => {
+    await t.dispose()
+    dws.cleanup()
+    process.env = { ...savedEnv }
+  })
+  const start = async (config: Partial<DingtalkConfig> = {}) => {
+    await t.root.plugin(DingtalkService, { dwsPath: dws.path, identity: 'user', ...config } as never)
+    return t.root.get('dingtalk') as unknown as DingtalkService
+  }
+
+  it('parses the device-flow link, code and expiry from dws output', async () => {
+    const { parseDwsDeviceLogin } = await import('../../src/dingtalk/service.js')
+    const text = '  authorization code: WJBB-BLPN\n  Authorization code will expire in 900 seconds.\n\n  Authorization link (code included):\nhttps://login.dingtalk.com/oauth2/device/verify.htm?caller=dws&user_code=WJBB-BLPN\n\n  Link for entering the code manually:\nhttps://login.dingtalk.com/oauth2/device/verify.htm?caller=dws\n'
+    expect(parseDwsDeviceLogin(text)).toEqual({ url: 'https://login.dingtalk.com/oauth2/device/verify.htm?caller=dws&user_code=WJBB-BLPN', userCode: 'WJBB-BLPN', ttlMs: 900_000 })
+    expect(parseDwsDeviceLogin('● Step 1: Requesting...')).toBeUndefined()
+    expect(parseDwsDeviceLogin('https://x.example/y')).toEqual({ url: 'https://x.example/y', ttlMs: 15 * 60_000 })
+  })
+
+  it('reports status, logs out and logs back in with the device flow', async () => {
+    const svc = await start()
+    expect(await svc.status()).toMatchObject({ channel: 'dingtalk', identity: 'user', online: true, account: '测试用户 @ 测试组织' })
+    expect(await svc.logout()).toMatchObject({ online: false, detail: 'dws is not logged in' })
+    expect(svc.health().status).toBe('failed')
+    const session = await svc.login()
+    expect(session).toMatchObject({ channel: 'dingtalk', userCode: 'FAKE-CODE', verificationUrl: expect.stringContaining('user_code=FAKE-CODE') })
+    expect(session.expiresAt).toBeGreaterThan(Date.now() + 800_000)
+    expect(await svc.login()).toBe(session)
+    expect(await session.completed).toMatchObject({ online: true })
+    expect(svc.health().status).toBe('ok')
+    expect(dws.calls().some((c) => c.args.join(' ') === 'auth login --device --no-browser --format=json')).toBe(true)
+  })
+
+  it('resolves completed offline when the login is denied or cancelled', async () => {
+    dws.setScenario({ auth: 'expired', login: 'deny' })
+    const svc = await start({ dryRun: true })
+    expect(await (await svc.login()).completed).toMatchObject({ online: false })
+    dws.setScenario({ auth: 'expired', login: 'hang' })
+    const session = await svc.login()
+    session.cancel()
+    expect(await session.completed).toMatchObject({ online: false })
+    // dryRun 下只报告，不改变 health()
+    expect(svc.health().status).toBe('ok')
+  })
+
+  it('fails login when dws exits before showing a link, and rejects login for webhook identity', async () => {
+    dws.setScenario({ login: 'no_link' })
+    const svc = await start()
+    await expect(svc.login()).rejects.toMatchObject({ code: 'login_failed', message: expect.stringMatching(/request device code failed/) })
+    await t.dispose()
+    t = createRoot()
+    process.env.AGENT_KIT_TEST_TOKEN = 'tok-1234'
+    const hook = await start({ identity: 'webhook', webhookTokenEnv: 'AGENT_KIT_TEST_TOKEN' })
+    expect(await hook.status()).toMatchObject({ online: true, detail: 'webhook identity needs no login' })
+    await expect(hook.login()).rejects.toMatchObject({ code: 'unsupported' })
+    await expect(hook.logout()).rejects.toMatchObject({ code: 'unsupported' })
+  })
+})
