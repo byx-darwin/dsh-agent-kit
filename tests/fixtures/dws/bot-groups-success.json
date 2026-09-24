@@ -1,0 +1,29 @@
+{
+  "contractVersion": "im.batch-write.v1",
+  "failedCount": 0,
+  "failures": [],
+  "ok": true,
+  "partial": false,
+  "requestedCount": 2,
+  "succeeded": [
+    {
+      "result": {
+        "_mock": true,
+        "_tool": "send_robot_group_message",
+        "result": [],
+        "success": true
+      },
+      "target": "cidA"
+    },
+    {
+      "result": {
+        "_mock": true,
+        "_tool": "send_robot_group_message",
+        "result": [],
+        "success": true
+      },
+      "target": "cidB"
+    }
+  ],
+  "succeededCount": 2
+}

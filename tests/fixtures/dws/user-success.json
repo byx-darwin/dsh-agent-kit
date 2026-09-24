@@ -1,0 +1,18 @@
+{
+  "identity": "user",
+  "ok": true,
+  "result": {
+    "_mock": true,
+    "_tool": "send_personal_message",
+    "result": [],
+    "success": true
+  },
+  "sendReceipt": {
+    "capabilityGap": "下层发送响应未返回 openTaskId 或完整 messageRef，CLI 无法生成后续状态查询",
+    "contractVersion": "im.message-send-receipt.v1",
+    "nextActions": [],
+    "openTaskId": "",
+    "readyForMessageActions": false
+  },
+  "tool": "send_personal_message"
+}

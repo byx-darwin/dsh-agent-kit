@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "authenticated": true,
+  "token_valid": true,
+  "refresh_token_valid": true,
+  "expires_at": "2026-09-23T20:09:58.75655+08:00",
+  "refresh_expires_at": "2026-10-23T18:09:58.75655+08:00",
+  "corp_id": "REDACTED",
+  "corp_name": "REDACTED",
+  "user_id": "REDACTED",
+  "user_name": "REDACTED"
+}

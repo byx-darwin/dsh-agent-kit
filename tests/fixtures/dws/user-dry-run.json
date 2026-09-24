@@ -1,0 +1,21 @@
+{
+  "actionCount": 1,
+  "actions": [
+    {
+      "arguments": {
+        "clawType": "openClaw",
+        "content": "{\"text\":\"hi\",\"title\":\"t\"}",
+        "msgType": "markdown",
+        "openConversationId": "cidTEST123",
+        "uuid": "k1"
+      },
+      "identity": "user",
+      "tool": "send_personal_message"
+    }
+  ],
+  "dry_run": true,
+  "executed": false,
+  "failedCount": 0,
+  "preview_kind": "plan",
+  "tool": "send_personal_message"
+}

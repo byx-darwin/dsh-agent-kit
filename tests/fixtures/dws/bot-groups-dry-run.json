@@ -1,0 +1,32 @@
+{
+  "actionCount": 2,
+  "actions": [
+    {
+      "arguments": {
+        "markdown": "hi",
+        "openConversationId": "cidA",
+        "robotCode": "RC1",
+        "title": "hi"
+      },
+      "target": "cidA",
+      "tool": "send_robot_group_message"
+    },
+    {
+      "arguments": {
+        "markdown": "hi",
+        "openConversationId": "cidB",
+        "robotCode": "RC1",
+        "title": "hi"
+      },
+      "target": "cidB",
+      "tool": "send_robot_group_message"
+    }
+  ],
+  "contractVersion": "im.batch-write.v1",
+  "dry_run": true,
+  "executed": false,
+  "failedCount": 0,
+  "preview_kind": "plan",
+  "requestedCount": 2,
+  "tool": "send_robot_group_message"
+}

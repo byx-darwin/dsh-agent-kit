@@ -1,0 +1,7 @@
+{
+  "error": {
+    "category": "validation",
+    "code": 3,
+    "message": "--identity bot 必须指定 --robot-code"
+  }
+}

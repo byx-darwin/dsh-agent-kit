@@ -1,0 +1,19 @@
+{
+  "actionCount": 1,
+  "actions": [
+    {
+      "arguments": {
+        "robotToken": "TOKEN_PLACEHOLDER",
+        "text": "hi",
+        "title": "hi"
+      },
+      "identity": "webhook",
+      "tool": "send_message_by_custom_robot"
+    }
+  ],
+  "dry_run": true,
+  "executed": false,
+  "failedCount": 0,
+  "preview_kind": "plan",
+  "tool": "send_message_by_custom_robot"
+}
