@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { boot, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
+import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import { createFakeDws } from '../../src/testing/fake-dws.js'
 import { FakeSubagentProvider } from '../../src/testing/fake-subagent.js'
 import { createJevMock } from '../../src/testing/jev-mock.js'
@@ -67,6 +68,14 @@ describe('bundle patch.yml in a real dsh loader', () => {
       ['agent-kit-agent-tasks', '@mc/dsh-agent-kit/agent-tasks', true],
       ['agent-kit-jev', '@mc/dsh-agent-kit/jev', true],
     ])
+  })
+
+  it('exposes AgentKitAdmin as a Remote service', async () => {
+    const c = await start([])
+    const admin = c.get('agentKitAdmin')
+    expect(admin).toBeDefined()
+    const names = remoteMethods(admin as object).map((m) => m.exportName ?? m.method).sort()
+    expect(names).toEqual(['clearSecret', 'saveService', 'setSecret', 'status'])
   })
 
   it('enabling one service does not require config for the others', async () => {
