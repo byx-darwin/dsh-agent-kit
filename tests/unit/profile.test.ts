@@ -107,6 +107,14 @@ describe('patch file', () => {
     expect(readFileSync(patchFile, 'utf8')).toBe(ORIGINAL)
   })
 
+  it('validates supplied config even when the row stays disabled', async () => {
+    const { version } = await readKitEntries(patchFile)
+    const bad = await writeKitEntries(patchFile, { 'agent-kit-ws': { enabled: false, config: { pingIntervalMs: 30000, readTimeoutMs: 1000 } } }, version).catch((e: unknown) => e)
+    expect(isKitError(bad) && bad.code).toBe('invalid_config')
+    expect((bad as { details: { errors: { path: string }[] } }).details.errors[0]!.path).toMatch(/readTimeoutMs/)
+    expect(readFileSync(patchFile, 'utf8')).toBe(ORIGINAL)
+  })
+
   it('refuses to edit kit rows containing !!js', async () => {
     writeFileSync(patchFile, `- id: agent-kit-jev\n  disabled: !!js process.env.X === '1'\n`)
     const { version } = await readKitEntries(patchFile)

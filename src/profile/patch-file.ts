@@ -97,7 +97,9 @@ function apply(text: string, changes: KitChanges): string {
       throw new ProfileError('unsupported_yaml', `${id} 含有 !!js 表达式，请手动编辑`, { line: lineOf(text, row) })
     }
     const config = change.config ?? (row ? stateOf(row).config : undefined)
-    if (change.enabled) {
+    // 启用时校验生效配置（可能来自已有行）；即使保持禁用，只要本次显式提供了 config 也要校验，
+    // 避免写入一个禁用但内容非法的配置，为下次启用埋雷。禁用且未提供 config 时不校验（不动原有内容）。
+    if (change.enabled || change.config !== undefined) {
       const result = kitEntry(id).validate(config)
       if (!result.ok) errors.push(...result.errors.map((e) => ({ ...e, path: `${id}.${e.path}` })))
     }
