@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { ConfigError, KitError, isKitError } from '../../src/common/errors.js'
-import { BASE_ENV_WHITELIST, pickEnv, runProcess } from '../../src/common/process.js'
+import { BASE_ENV_WHITELIST, killTree, pickEnv, runProcess } from '../../src/common/process.js'
 import { clearSecretsForTesting, digest, redact, redactValue, registerSecret } from '../../src/common/redact.js'
 import { until } from '../helpers.js'
 
@@ -139,5 +139,19 @@ describe('runProcess', () => {
   it('does not interpret arguments through a shell', async () => {
     const r = await runProcess(process.execPath, ['-e', 'console.log(process.argv[1])', '$(echo pwned); rm -rf /'], { env: pickEnv(['PATH']), timeoutMs: 5000, killGraceMs: 100 })
     expect(r.stdout.trim()).toBe('$(echo pwned); rm -rf /')
+  })
+})
+
+describe('killTree', () => {
+  it('uses taskkill /T /F on Windows', () => {
+    const calls: Array<[string, string[]]> = []
+    killTree(1234, 'SIGTERM', 'win32', (cmd, args) => void calls.push([cmd, args]))
+    expect(calls).toEqual([['taskkill', ['/PID', '1234', '/T', '/F']]])
+  })
+
+  it('does nothing without a pid', () => {
+    const calls: unknown[] = []
+    killTree(undefined, 'SIGKILL', 'win32', () => void calls.push(1))
+    expect(calls).toEqual([])
   })
 })

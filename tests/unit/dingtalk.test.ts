@@ -191,7 +191,7 @@ describe('DingtalkService', () => {
     await expect(t.root.plugin(DingtalkService, { dwsPath: dws.path, ...config } as never)).rejects.toThrow(pattern)
   })
 
-  it('resolves dws from PATH when dwsPath is omitted', () => {
+  it.skipIf(process.platform === 'win32')('resolves dws from PATH when dwsPath is omitted', () => {
     expect(resolveExecutable('node', `relative:${process.execPath.replace(/\/node$/, '')}`)).toBe(process.execPath)
     expect(resolveExecutable('definitely-not-a-binary-xyz')).toBeUndefined()
   })

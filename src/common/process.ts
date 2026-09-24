@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 
 /** 本包启动的子进程只继承这些环境变量。 */
 export const BASE_ENV_WHITELIST = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'TMPDIR', 'USER', 'LOGNAME'] as const
@@ -49,6 +49,7 @@ export function runProcess(file: string, args: readonly string[], options: RunPr
       // 独立进程组，便于连同孙进程一起终止
       detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     })
     const stdout: Buffer[] = []
     const stderr: Buffer[] = []
@@ -68,8 +69,8 @@ export function runProcess(file: string, args: readonly string[], options: RunPr
     let killTimer: NodeJS.Timeout | undefined
     const terminate = () => {
       if (killTimer || child.exitCode !== null || child.signalCode !== null) return
-      killGroup(child.pid, 'SIGTERM')
-      killTimer = setTimeout(() => killGroup(child.pid, 'SIGKILL'), options.killGraceMs)
+      killTree(child.pid, 'SIGTERM')
+      killTimer = setTimeout(() => killTree(child.pid, 'SIGKILL'), options.killGraceMs)
     }
     const timeout = setTimeout(() => {
       timedOut = true
@@ -92,7 +93,7 @@ export function runProcess(file: string, args: readonly string[], options: RunPr
       clearTimeout(killTimer)
       options.signal?.removeEventListener('abort', onAbort)
       // 父进程已退出，确保进程组中残留的孙进程也被回收
-      if (timedOut || aborted) killGroup(child.pid, 'SIGKILL')
+      if (timedOut || aborted) killTree(child.pid, 'SIGKILL')
       resolve({
         exitCode,
         signal,
@@ -105,10 +106,21 @@ export function runProcess(file: string, args: readonly string[], options: RunPr
   })
 }
 
-function killGroup(pid: number | undefined, signal: NodeJS.Signals): void {
+export function killTree(
+  pid: number | undefined,
+  signal: NodeJS.Signals,
+  platform: NodeJS.Platform = process.platform,
+  run: (cmd: string, args: string[]) => void = (cmd, args) => void spawnSync(cmd, args, { stdio: 'ignore', windowsHide: true }),
+): void {
   if (pid === undefined) return
+  if (platform === 'win32') {
+    // Windows 没有进程组信号；/T 结束整个进程树，/F 强制。
+    // 进程已退出时 taskkill 会以非零码退出，spawnSync 不会抛出，重复调用是安全的。
+    run('taskkill', ['/PID', String(pid), '/T', '/F'])
+    return
+  }
   try {
-    process.kill(process.platform === 'win32' ? pid : -pid, signal)
+    process.kill(-pid, signal)
   } catch {
     // 进程已退出
   }
