@@ -1,0 +1,69 @@
+---
+import ConfigTable from './ConfigTable.astro'
+import { configRows } from '../data/config-tables'
+import { service, type ServiceId } from '../data/services'
+
+interface Props {
+  id: ServiceId
+}
+
+const s = service(Astro.props.id)
+const rows = configRows(s.id)
+const enableExample = `- id: ${s.kitId}
+  disabled: false
+  config:
+    # 只写需要改的字段，其余使用下表的默认值`
+---
+
+<p class="eyebrow">{s.numeral} · {s.verb}</p>
+<h1>{s.name}</h1>
+<p class="context"><code>{s.context}</code></p>
+<p class="lead">{s.summary}</p>
+
+<slot />
+
+<h2 id="config">配置</h2>
+<p>
+  在 Profile 的 <code>cordis.patch.yml</code> 中按 id <code>{s.kitId}</code> 启用并给出配置。按 id 修改 <code>config</code> 时整段替换，未给出的字段使用默认值。下表由本包源码中的配置 schema 生成。
+</p>
+<pre><code>{enableExample}</code></pre>
+<ConfigTable rows={rows} />
+{
+  s.notes.length > 0 && (
+    <>
+      <h3>约束与说明</h3>
+      <ul>
+        {s.notes.map((n) => (
+          <li>{n}</li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
+<h2 id="errors">错误码</h2>
+<p>所有错误都是 <code>KitError</code>：用 <code>isKitError(e)</code> 判断，按 <code>code</code> 与 <code>retryable</code> 决定是否重试。</p>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>code</th><th>可重试</th><th>含义</th></tr></thead>
+    <tbody>
+      {
+        s.errors.map((e) => (
+          <tr>
+            <td>
+              <code>{e.code}</code>
+            </td>
+            <td>{e.retryable}</td>
+            <td>{e.meaning}</td>
+          </tr>
+        ))
+      }
+    </tbody>
+  </table>
+</div>
+
+<style>
+  .context {
+    margin-top: -0.4em;
+  }
+</style>

@@ -1,0 +1,55 @@
+---
+title: 安全
+---
+import Base from '../../layouts/Base.astro'
+import Notice from '../../components/Notice.astro'
+
+<Base title="安全" description="dsh-agent-kit 如何处理密钥、子进程环境变量、不可信数据、Agent 权限、传输安全、日志脱敏与 Web 写入限制。">
+
+<p class="eyebrow">安全</p>
+
+# 默认安全
+
+本包处理四类敏感面：密钥、子进程、外部数据与 Agent 输出、配置写入。下面是每一类的默认做法。
+
+## 密钥
+
+- 密钥只从环境变量、macOS 钥匙串或 dsh 凭据文件读取；钉钉凭据由 dws 自己的登录态管理，本包不保存。
+- 读到的密钥只在本进程内存中使用，并登记为脱敏密钥：日志与错误中出现时会被替换。
+- 写入钥匙串时，密钥通过标准输入传给 `security` 命令，不出现在进程参数中。
+- dsh 凭据文件写入时持有与 dsh 相同的跨进程锁并原子替换；POSIX 上权限为 0600，Windows 上收紧为仅当前用户可访问。
+- Web 设置页与服务端接口只返回「是否已配置」与来源，永不返回密钥本身。
+
+## 子进程
+
+- 本包启动的子进程（dws）不经过 shell，只继承环境变量白名单：`PATH`、`HOME`、`LANG`、`LC_ALL`、`LC_CTYPE`、`TZ`、`TMPDIR`、`USER`、`LOGNAME`，以及 dws 所需的 `DWS_CONFIG_DIR`、`DWS_KEYCHAIN_DIR`、`DWS_DISABLE_KEYCHAIN`、`XDG_CONFIG_HOME`。`TYPESAFE_API_KEY`、WebSocket 令牌等不会传入。
+- dws 参数统一写成 `--key=value`，目标 ID 先做格式校验，`dwsPath` 必须是绝对路径。
+- 超时或卸载时连同孙进程一起回收。
+- Agent 子进程由 subagent provider 启动，provider 会剔除名字含 KEY、PASSWORD、SECRET、TOKEN 的环境变量；Agent 需要的凭据由 provider 自己的配置显式给出。
+
+## 不可信数据与提示注入
+
+- 来自 WebSocket 的数据一律视为不可信。传给 Agent 时用 `untrusted()` 包裹：每次生成随机的分隔标记，并声明其中内容是数据而不是指令。
+- Agent 默认 `read-only`，在每个任务独立的空目录中运行。不支持工具过滤的 provider 必须如实声明权限上限，否则拒绝运行。
+- Agent 的输出同样不可信：只有经过 Schema 校验与业务白名单校验后，才应触发推送等副作用。
+
+<Notice title="数据最小化" tone="warn">
+发送给 Claude Code、Codex、TypeSafe 的内容由业务包决定，请在业务包中做数据最小化。
+</Notice>
+
+## 传输
+
+- WebSocket 只允许 `wss://`（本机测试除外），不允许关闭证书校验，不跟随重定向，避免鉴权头随重定向泄露。
+- 帧大小、待处理消息数、任务排队长度都有上限，防止超大帧、消息洪泛和无上限排队。
+
+## 日志与错误
+
+所有日志与错误对象都经过同一个脱敏函数：按已登记的密钥值精确替换；名字形如 authorization、token、secret、api key、password、cookie 的字段整体替换；长文本截断。消息正文、WebSocket 帧、prompt 与 Agent 原始输出只记录长度与哈希。
+
+## 配置写入
+
+- `setup` 只修改 Profile 目录下 `cordis.patch.yml` 中本包的几行，保留注释与其他内容；遇到含 `!!js` 表达式的行拒绝修改。
+- Web 设置页的写入接口只在 dsh Web 绑定 `127.0.0.1` 时开放；绑定其他地址或没有加载 Web 服务时一律只读。
+- dsh Web 界面中保存了完整的会话内容，只应绑定 `127.0.0.1` 或放在鉴权代理之后。
+
+</Base>

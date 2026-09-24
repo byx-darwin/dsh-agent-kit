@@ -1,0 +1,63 @@
+---
+title: WebSocket 客户端
+---
+import Base from '../../layouts/Base.astro'
+import ServiceDoc from '../../components/ServiceDoc.astro'
+
+<Base title="WebSocket 客户端" description="ctx.agentWs：只允许 wss:// 的 WebSocket 客户端，可刷新的鉴权请求头、心跳、指数退避重连、并发与背压控制。">
+<ServiceDoc id="agentWs">
+
+## 接口
+
+```ts
+const conn = ctx.agentWs.connect<Frame>({
+  url: 'wss://example.com/stream',
+  headers: async () => ({ 'X-Token': await getToken() }), // 也接受静态对象
+  parse: (value) => parseFrame(value),                    // 可选，把 JsonValue 转成业务类型；抛错则丢弃该帧
+  onMessage: async (frame, { signal }) => {},
+  onError: (err, frame) => {},                            // 可选，默认只记日志
+  onStateChange: (state) => {},                           // connecting / open / reconnecting / failed / closed
+  fatalCloseCodes: [4001],
+  concurrency: 1,
+})
+
+conn.state                       // 当前状态
+await conn.whenOpen({ signal })  // 等待连接打开
+await conn.send(frame)           // 写入 socket 缓冲区后 resolve
+await conn.close()
+```
+
+`connect()` 返回的连接随调用方插件一起管理：插件卸载时连接以 1001 关闭，正在执行的 `onMessage` 收到的 `signal` 被中止，状态变为 `closed`。
+
+### 传输与鉴权
+
+- 只允许 `wss://`；`ws://` 仅在主机为 `localhost` 或 `127.0.0.1` 时允许，用于测试。
+- 不允许关闭证书校验，不跟随重定向，避免鉴权头随重定向泄露。
+- `headers` 为函数时，每次连接和重连前都会调用，用于刷新会过期的令牌。请求头的值会登记为脱敏密钥，不会出现在日志和错误中。
+
+### 帧处理
+
+- 只收发 JSON 文本帧。无法解析为 JSON、二进制帧、`parse` 抛错的帧会被丢弃，日志只记录长度与哈希，连接不受影响。
+- 超过 `maxPayloadBytes` 的帧会导致断开，并按普通断线重连。
+
+### 并发与背压
+
+- 同时最多 `concurrency` 个 `onMessage` 在执行，默认 1，也就是按到达顺序串行。
+- 待处理消息超过 `maxPendingMessages` 时暂停读取 socket，回落到阈值以下后恢复。已进入接收缓冲区的帧仍会被处理，所以暂停时待处理数可能略高于阈值。
+- `onMessage` 抛错交给 `onError`；没有提供 `onError` 时只记日志，不断开连接。
+
+### 发送
+
+`send()` 在连接不处于 `open` 时立即以 `not_open` 失败（可重试），本包不做内部排队；是否重发由业务包决定。
+
+### 重连、心跳与失败
+
+- 断线后按指数退避加抖动自动重连：第 n 次等待 `min(maxDelayMs, initialDelayMs × 2^n) × (1 − jitter × random)`。抖动只向下，保证不超过 `maxDelayMs`。
+- 连接稳定保持 `stableResetMs` 后，退避时间重置为初始值。
+- 客户端定时发送 ping；超过 `readTimeoutMs` 没有收到任何帧（包括 pong）就主动断开并重连。背压暂停期间读超时暂停计时。
+- 握手返回 401 / 403，或连接以 `fatalCloseCodes` 中的关闭码断开时，视为鉴权或配置错误：状态变为 `failed`，`health()` 返回 `failed`，并触发 `agent-kit/service-failed` 事件。
+- `fatalRetryDelayMs` 大于 0 时按该间隔慢速重试（重试前重新获取 `headers`）；为 0 时不再重试，由进程托管或人工恢复。
+- `onStateChange` 在 `connect()` 时先收到 `connecting`，之后例如 `open → reconnecting → open → closed`；fatal 后慢速重试为 `failed → connecting → open`。
+
+</ServiceDoc>
+</Base>

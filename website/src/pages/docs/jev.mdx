@@ -1,0 +1,57 @@
+---
+title: Jev 判断
+---
+import Base from '../../layouts/Base.astro'
+import ServiceDoc from '../../components/ServiceDoc.astro'
+
+<Base title="Jev 判断" description="ctx.jev：调用 TypeSafe Jev 对状态做 Choice / Noul / Score 类型化判断，返回概率；一次调用有严格的总时长。">
+<ServiceDoc id="jev">
+
+## 接口
+
+```ts
+import { choice, noul, score } from '@mc/dsh-agent-kit'
+
+const { answers } = await ctx.jev.judge({
+  state: { input, candidate },
+  questions: {
+    wrong: noul('候选结果与输入证据不符', { true: '不符', false: '相符' }),
+    pick: choice('输入最符合哪个类别', { bug: '缺陷', feature: '需求', question: '咨询' }),
+    severity: score('严重程度', ['无影响', '轻微', '严重', '致命']),
+  },
+  signal,
+  traceId,
+})
+
+if (answers.wrong.noul >= 0.7) escalate()
+if (answers.pick.confidence < 0.6) askHuman()
+```
+
+`judge()` 返回 `{ model, answers, usage? }`。`answers` 的类型按问题推断：
+
+| 问题 | 答案 | 说明 |
+|---|---|---|
+| `noul(instructions, { true, false })` | `{ type: 'noul', noul }` | `noul` 是回答"是"的概率，范围 [0, 1] |
+| `choice(instructions, { A: 描述, B: 描述 })` | `{ type: 'choice', choice, confidence, probabilities }` | `choice` 是选中的标签，`probabilities` 按标签给出 |
+| `score(instructions, [档位0, 档位1, …])` | `{ type: 'score', score, confidence, legend, probabilities }` | `score` 是期望分数，可能介于整数档位之间 |
+
+问题构造函数由本包导出，与 SDK 的线上格式一致；没有启用 jev 的项目不需要安装 SDK。
+
+### 依赖与 Key
+
+- 需要安装可选依赖 `@typesafe-ai/sdk`，只有启用 jev 时才需要。
+- TypeSafe API Key 按以下顺序读取，三处都取不到时 Service 启动失败：
+  1. 环境变量 `TYPESAFE_API_KEY`。
+  2. macOS 钥匙串（仅 macOS）：未配置 `keychainService` 时默认读取共享服务名 `ai.typesafe.api-key`，可与 gitflow-cli 共用；配置时按列表顺序尝试，空列表表示不读钥匙串。
+  3. dsh 凭据文件 `$DSH_HOME/.credentials.yaml`，Linux 与 Windows 上保存 Key 的默认位置。
+- 读到的 Key 只在本进程内存中使用，登记为脱敏密钥，不会传给任何子进程。
+
+### 超时与重试
+
+- `timeoutMs` 是一次 `judge()` 的总时长，包含 SDK 内部的重试；超时或 `signal` 中止时取消请求。
+- SDK 默认对 408、429、5xx 与连接错误最多重试 2 次，但它的超时只约束单次尝试，所以本包用自己的定时器保证总时长。
+- 创建 SDK 客户端时关闭其日志，避免在调试日志中输出请求体。
+- 返回 401 / 403 时 `health()` 置为 `failed` 并触发 `agent-kit/service-failed`，之后请求成功会自动恢复。
+
+</ServiceDoc>
+</Base>

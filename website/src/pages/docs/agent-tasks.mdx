@@ -1,0 +1,76 @@
+---
+title: Agent 任务
+---
+import Base from '../../layouts/Base.astro'
+import ServiceDoc from '../../components/ServiceDoc.astro'
+import Notice from '../../components/Notice.astro'
+
+<Base title="Agent 任务" description="ctx.agentTasks：通过 dsh 的 subagent provider 执行一次性 Agent 任务，默认只读、独立目录、类型化 JSON Schema 输出、并发与排队上限。">
+<ServiceDoc id="agentTasks">
+
+## 接口
+
+```ts
+import { untrusted } from '@mc/dsh-agent-kit'
+
+const r = await ctx.agentTasks.run<Verdict>({
+  provider: 'claude-code',
+  title: 'classify evt_123',
+  prompt: [
+    '请判断下面的事件是否异常。',
+    untrusted('event', eventJson),   // 用随机分隔标记包裹外部数据，并声明其不是指令
+  ],
+  outputSchema,                      // JSONSchemaType<Verdict>；省略时 output 为 undefined
+  model: 'optional-model-id',        // 仅传给支持该能力的 provider
+  permissions: 'read-only',          // 默认值，可选 workspace-write
+  timeoutMs: 120_000,
+  signal,
+  traceId,
+  onEvent: (e) => {},                // 可选：queued / started / finished
+})
+// r: { sessionId, taskId, text, output: Verdict, durationMs }
+```
+
+`provider` 是 dsh 中已注册的 subagent provider 名称，例如 `claude-code`、`codex`。`ctx.subagents` 与子进程服务由 dsh 的 base bundle 提供，Profile 里只需安装对应的 provider 包。
+
+### 隔离与权限
+
+- 每个任务在 `workspaceDir/<taskId>/` 下使用一个新建的空目录（权限 0700）作为 Agent 的工作目录，结束后删除；`keepWorkdir: true` 时保留，便于排查。
+- `permissions` 默认 `read-only`，可选 `workspace-write`，不提供更高档位。
+- 支持工具过滤的 provider：按 `toolAllowlist` 传入工具白名单，白名单之外的工具（包括 bash 和网络）都不可见。
+- 不支持工具过滤的 provider（claude-code、codex）：权限由 provider 实例自身的配置决定，必须在 `declaredPermissions` 中如实声明它的权限上限。未声明，或声明的上限高于本次请求的档位时，任务以 `unsupported_permissions` 失败。
+
+<Notice title="claude-code 可以声明为 read-only">
+已验证 claude-code 在默认的 `permissionMode: dontAsk` 下既不能执行命令也不能写文件，因此可以声明为 `declaredPermissions: { claude-code: read-only }`。如果你修改了 provider 的权限模式，请同步修改这里的声明。
+</Notice>
+
+### 不可信数据
+
+- 来自 WebSocket 等外部来源的数据传给 Agent 时，用 `untrusted()` 包裹。它会生成随机的分隔标记，外部数据无法伪造结束标记"逃逸"出来。
+- Agent 返回的 `text` 与 `output` 同样视为不可信：本包只做 Schema 校验，据此触发推送等副作用前，业务包必须按白名单校验取值。
+
+### 结构化输出
+
+给出 `outputSchema` 时：
+
+- provider 支持原生结构化输出时直接使用；claude-code、codex 不支持，本包会在 prompt 末尾追加要求，让 Agent 在一个 json 代码块中输出结果。
+- 从答案中取 JSON 的规则：取最后一个标注为 `json` 的代码块；没有则取最后一个未标注语言的代码块；都没有则把整段答案作为 JSON 解析。选中的候选解析失败时直接判为 `invalid_output`，不回退到更早的代码块；空答案同样判为 `invalid_output`。
+- 取到的结果一律再用 Ajv 按 `outputSchema` 校验，通过后放入 `output`，类型由 `outputSchema` 推断。
+
+### 并发、超时与卸载
+
+- 同时最多 `maxConcurrency` 个任务运行，其余按 FIFO 排队；排队数达到 `maxQueueSize` 时新任务立即以 `queue_full` 失败，`health()` 为 `degraded`。
+- `signal` 在排队期中止时移出队列、不占用并发槽；运行期中止时取消委托；调用时已中止则立即以 `aborted` 失败。
+- 单任务超过 `timeoutMs` 时取消委托并以 `timeout` 失败。
+- Service 卸载时，排队和运行中的任务都以 `aborted` 结束。
+
+### Agent 进程的环境变量
+
+provider 启动 Agent 时，会剔除名字匹配 `KEY`、`PASSWORD`、`SECRET`、`TOKEN` 的环境变量与 `DSH_*`。因此本包的密钥（例如 `TYPESAFE_API_KEY`）不会进入 Agent 进程；反过来，如果 Agent 依赖这类变量鉴权（例如 `ANTHROPIC_AUTH_TOKEN`），需要在 provider 自己的配置 `env` 中显式给出。
+
+### 审计
+
+claude-code、codex 不持久化 Session，这些任务不会出现在 dsh Web 的会话列表中。审计依赖本包的结构化日志（prompt 与答案只记录长度与哈希）和业务包自己的记录。
+
+</ServiceDoc>
+</Base>

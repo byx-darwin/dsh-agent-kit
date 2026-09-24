@@ -1,0 +1,64 @@
+---
+title: 钉钉推送
+---
+import Base from '../../layouts/Base.astro'
+import ServiceDoc from '../../components/ServiceDoc.astro'
+import Notice from '../../components/Notice.astro'
+
+<Base title="钉钉推送" description="ctx.dingtalk：通过 dws CLI 发送文本与 Markdown 消息，支持 user / bot / webhook 身份、单聊、多群、@ 与幂等键。">
+<ServiceDoc id="dingtalk">
+
+## 接口
+
+```ts
+const r = await ctx.dingtalk.send({
+  markdown: '## 标题\n正文',             // 或 text: '纯文本'，二选一
+  title: '标题',
+  target: { chatId: 'cid...' },          // 或 { userId } / { openDingtalkId } / { chatIds: [...] }（仅 bot）
+  at: { userIds: ['...'], all: false },  // 另有 openDingtalkIds（user / bot）、mobiles（仅 webhook）
+  idempotencyKey: 'evt_...',
+  traceId: 'evt_...',
+  signal,                                // 可选，中止时终止 dws 子进程
+})
+// r.results: Array<{ target, ok, messageId?, error? }>
+```
+
+本 Service 通过子进程调用 `dws chat +messages-send`：
+
+- 不经过 shell，参数统一写成 `--key=value` 形式，以 `-` 开头的正文也不会被当成选项。
+- 固定附加 `--yes --format=json`，常驻进程不会卡在交互确认上。
+- 子进程只继承环境变量白名单，本包的其他密钥不会传给 dws。
+- 超时或卸载时先发 SIGTERM，宽限 `killGraceMs` 后发 SIGKILL，连同孙进程一起回收（Windows 上用 `taskkill /T /F`）。
+
+### 目标与身份
+
+`target` 省略时使用配置的 `defaultTarget`；单次调用的 `target` 会覆盖它，多个业务包共用本包时互不影响。目标、@ 列表与幂等键在拼装参数前做格式校验，以 `-` 开头的值会被拒绝（`invalid_target`）。
+
+| 身份 | `chatId` | `chatIds` | `userId` | `openDingtalkId` | @ 参数 | 幂等键 |
+|---|---|---|---|---|---|---|
+| `user` | 支持 | 不支持 | 支持 | 支持 | `openDingtalkIds`、`all` | 支持 |
+| `bot` | 支持 | 支持，最多 100 个 | 支持 | 支持 | `userIds`、`openDingtalkIds`、`all` | 忽略 |
+| `webhook` | 不传 target，目标由 token 所在群决定 | | | | `userIds`、`mobiles`、`all` | 忽略 |
+
+bot 身份统一走批量参数，dws 返回逐目标结果。批量发送的部分失败甚至全部失败都不抛错，体现在 `results` 中。
+
+### 重试
+
+只有在 `user` 身份且给出 `idempotencyKey` 时，才会对可重试的失败（超时，或 dws 错误类别为 network / timeout / rate_limit / server / unavailable）最多重试 `retry.maxAttempts` 次，间隔从 500ms 起指数增长。其他情况不自动重试，避免重复发送。
+
+### 登录态与 dryRun
+
+- 启动时以及每隔 `preflightIntervalMs` 执行 `dws auth status` 检查登录态。失效时 `health()` 返回 `failed`，并触发 `agent-kit/service-failed` 事件。
+- `dryRun: true` 时附加 `--dry-run`，只做参数解析与日志、不真实发送，适合本地开发与测试；此时不检查登录态。
+- `webhook` 身份不检查登录态。
+
+<Notice title="webhook 身份不推荐" tone="warn">
+dws 只支持以 `--webhook-token` 命令行参数传入 token，运行期间用 `ps` 能看到。本包启动时会记录警告；服务器环境推荐使用 `bot` 身份。
+</Notice>
+
+### dwsPath 与 Windows
+
+`dwsPath` 必须是绝对路径；省略时启动时从 `PATH` 解析。Windows 上 npm 全局安装的是 `dws.cmd`，本包会自动定位到它背后的 `dws.js` 并用 node 运行。手动配置 `dwsPath` 时，请指向可执行文件、`.exe` 或 `.js`，不要指向 `.cmd` / `.bat`。
+
+</ServiceDoc>
+</Base>
