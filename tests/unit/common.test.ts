@@ -96,7 +96,11 @@ describe('runProcess', () => {
     const r = await runProcess(process.execPath, ['-e', 'console.log(JSON.stringify(Object.keys(process.env)))'], { env, timeoutMs: 5000, killGraceMs: 100 })
     const keys = JSON.parse(r.stdout) as string[]
     expect(keys).not.toContain('AGENT_KIT_TEST_SECRET')
-    expect(keys.every((k) => (BASE_ENV_WHITELIST as readonly string[]).includes(k) || k === '__CF_USER_TEXT_ENCODING')).toBe(true)
+    // Windows 上 libuv 会为子进程补齐系统必需变量（非密钥），且变量名不区分大小写
+    const LIBUV_WIN32_REQUIRED = ['HOMEDRIVE', 'HOMEPATH', 'LOGONSERVER', 'PATH', 'SYSTEMDRIVE', 'SYSTEMROOT', 'TEMP', 'USERDOMAIN', 'USERNAME', 'USERPROFILE', 'WINDIR']
+    const allowed = new Set([...BASE_ENV_WHITELIST, '__CF_USER_TEXT_ENCODING', ...(process.platform === 'win32' ? LIBUV_WIN32_REQUIRED : [])].map((k) => (process.platform === 'win32' ? k.toUpperCase() : k)))
+    const unexpected = keys.filter((k) => !allowed.has(process.platform === 'win32' ? k.toUpperCase() : k))
+    expect(unexpected).toEqual([])
     expect(r.exitCode).toBe(0)
   })
 
@@ -111,8 +115,13 @@ describe('runProcess', () => {
     const started = Date.now()
     const r = await runProcess(process.execPath, ['-e', script], { env: pickEnv(BASE_ENV_WHITELIST), timeoutMs: 300, killGraceMs: 200 })
     expect(r.timedOut).toBe(true)
-    expect(r.signal).toBe('SIGKILL')
-    expect(Date.now() - started).toBeGreaterThanOrEqual(450)
+    if (process.platform === 'win32') {
+      // Windows 用 taskkill /T /F 立即强制结束进程树，没有 SIGTERM 宽限阶段
+      expect(r.exitCode).not.toBe(0)
+    } else {
+      expect(r.signal).toBe('SIGKILL')
+      expect(Date.now() - started).toBeGreaterThanOrEqual(450)
+    }
     const { child } = JSON.parse(r.stdout.trim().split('\n')[0]!) as { child: number }
     await until(() => {
       try {

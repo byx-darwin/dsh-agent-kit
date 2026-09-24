@@ -98,7 +98,7 @@ describe('windows ACL restriction (I3)', () => {
 
   it('restrictWindowsAcl warns and returns false when USERNAME is not set', async () => {
     const warnings: string[] = []
-    const ok = await restrictWindowsAcl(file, { username: undefined, runner: () => ({ status: 0 }), onWarning: (m) => warnings.push(m) })
+    const ok = await restrictWindowsAcl(file, { username: '', runner: () => ({ status: 0 }), onWarning: (m) => warnings.push(m) })
     expect(ok).toBe(false)
     expect(warnings[0]).toMatch(/USERNAME/)
   })
@@ -168,7 +168,8 @@ describe('typesafe key', () => {
     expect(defaultKeyTarget('win32')).toBe('credentials')
   })
 
-  it('write times out and kills a hung security process instead of hanging forever', async () => {
+  // 钥匙串只在 macOS 上使用；假 security 是 shell 脚本，Windows 无法直接执行
+  it.skipIf(process.platform === 'win32')('write times out and kills a hung security process instead of hanging forever', async () => {
     const slow = createMacosKeychain(join(fixturesDir, 'slow-security.sh'), 200)
     await expect(slow.write('svc', 'acct', 'v')).rejects.toThrow(/timed out/)
   })
