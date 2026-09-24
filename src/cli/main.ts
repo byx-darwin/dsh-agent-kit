@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util'
 import { createCheckContext, runChecks, type CheckContext } from '../checks/index.js'
 import { listProfiles, locateProfile, resolveDshHome, type ProfileInfo } from '../profile/index.js'
 import { formatReport } from './doctor.js'
-import { USAGE } from './messages.js'
+import { USAGE, errorMessage, multipleProfiles, noProfile, unknownOption } from './messages.js'
 
 export interface CliIO {
   out(text: string): void
@@ -27,11 +27,11 @@ export async function pickProfile(home: string, requested: string | undefined, p
     if (p?.hasKit) withKit.push(p)
   }
   if (withKit.length === 1) return withKit[0]!
-  if (withKit.length === 0) throw new UsageError(`在 ${home} 中没有安装 @mc/dsh-agent-kit 的 Profile；请用 --profile 指定，或先运行 dsh plugin --profile <名字> add @mc/dsh-agent-kit\n`)
+  if (withKit.length === 0) throw new UsageError(noProfile(home))
   if (prompter) {
     // Task 7 将实现真正的交互式选择；这里先保留占位以便类型兼容。
   }
-  throw new UsageError(`有多个 Profile 安装了本包，请用 --profile 指定：${withKit.map((p) => p.name).join(', ')}\n`)
+  throw new UsageError(multipleProfiles(withKit.map((p) => p.name)))
 }
 
 export async function main(argv: string[], io: CliIO = defaultIO, deps: CliDeps = {}): Promise<number> {
@@ -56,10 +56,10 @@ export async function main(argv: string[], io: CliIO = defaultIO, deps: CliDeps 
     throw new UsageError(USAGE)
   } catch (e) {
     if (e instanceof UsageError || (e as { code?: string }).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION') {
-      io.err(e instanceof UsageError ? e.message : `${(e as Error).message}\n${USAGE}`)
+      io.err(e instanceof UsageError ? e.message : unknownOption((e as Error).message))
       return 2
     }
-    io.err(`错误：${(e as Error).message}\n`)
+    io.err(errorMessage((e as Error).message))
     return 1
   }
 }
