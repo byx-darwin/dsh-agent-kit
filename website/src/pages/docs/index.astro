@@ -7,10 +7,10 @@ import { withBasePath } from '../../lib/paths'
 const base = import.meta.env.BASE_URL
 ---
 
-<Base title="文档" description="dsh-agent-kit 四个 Service 的接口、配置与错误码，以及配置引导、安全和通用约定。">
+<Base title="文档" description="dsh-agent-kit 六个 Service 的接口、配置与错误码，以及配置引导、安全和通用约定。">
   <p class="eyebrow">文档</p>
-  <h1>四个 Service，一套约定</h1>
-  <p class="lead">每个 Service 可以单独启用；业务包只 inject 用到的那几个。下面的约定对四个 Service 都成立。</p>
+  <h1>六个 Service，一套约定</h1>
+  <p class="lead">每个 Service 可以单独启用；业务包只 inject 用到的那几个。下面的约定对所有 Service 都成立。</p>
 
   <div class="grid-2">
     {
@@ -50,7 +50,7 @@ onError: (err, frame) => {
   <h3>生命周期与卸载</h3>
   <ul>
     <li>连接、定时器、子进程、排队中的任务都随调用方插件的生命周期释放。</li>
-    <li>卸载时：WebSocket 以 1001 关闭；正在执行的 <code>onMessage</code> 收到的 <code>signal</code> 被中止；Agent 任务以 <code>aborted</code> 结束；dws 子进程先 SIGTERM、宽限后 SIGKILL 回收。</li>
+    <li>卸载时：WebSocket 以 1001 关闭；正在执行的 <code>onMessage</code> 收到的 <code>signal</code> 被中止；Agent 任务以 <code>aborted</code> 结束；dws、lark-cli 子进程先 SIGTERM、宽限后 SIGKILL 回收。</li>
   </ul>
 
   <h3>健康状态与可观测性</h3>
@@ -63,7 +63,7 @@ onError: (err, frame) => {
 
   <h3>本地开发与测试</h3>
   <p>
-    <code>@mc/dsh-agent-kit/testing</code> 导出本地 WebSocket 测试服务端、假 subagent provider、Jev mock 和假 dws 脚本，业务包可以在没有 dws 与 Agent 登录态的环境下开发和测试；钉钉推送也可以设为 <code>dryRun</code>。
+    <code>@mc/dsh-agent-kit/testing</code> 导出本地 WebSocket 测试服务端、假 subagent provider、Jev mock、假 dws 脚本（<code>createFakeDws</code>）和假 lark-cli 脚本（<code>createFakeLark</code>），业务包可以在没有 dws、lark-cli 与 Agent 登录态的环境下开发和测试；钉钉推送与飞书推送也可以设为 <code>dryRun</code>。
   </p>
 </Base>
 

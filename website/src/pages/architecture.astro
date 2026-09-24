@@ -26,21 +26,21 @@ const enable = `# Profile 的 cordis.patch.yml
     defaultTarget: { chatId: cidxxxx }`
 ---
 
-<Base title="架构" description="dsh-agent-kit 如何挂进 DeepSeek Harness：bundle patch 层、默认禁用的四个 Service、常驻的设置服务，以及业务包如何接入。" wide>
+<Base title="架构" description="dsh-agent-kit 如何挂进 DeepSeek Harness：bundle patch 层、默认禁用的六个 Service、常驻的设置服务，以及业务包如何接入。" wide>
   <div class="narrow">
     <p class="eyebrow">架构</p>
-    <h1>一个包，四个 Service，一层 dsh</h1>
+    <h1>一个包，六个 Service，一层 dsh</h1>
     <p class="lead">
       本包是一组 DeepSeek Harness（dsh）插件 Service。业务包通过 cordis 的 inject 使用它们，自己只写协议、路由、模板和流程。
     </p>
   </div>
 
-  <Figure src="/architecture.svg" alt="dsh-agent-kit 架构图：业务包在上，dsh-agent-kit 的四个 Service 在中间并连接外部系统，dsh 在最下层" caption="业务包 → dsh-agent-kit → dsh；四个 Service 各自连接一个外部系统。" width={960} />
+  <Figure src="/architecture.svg" alt="dsh-agent-kit 架构图：业务包在上，dsh-agent-kit 的六个 Service 在中间，其中五个连接外部系统，通知渠道转发给钉钉或飞书，dsh 在最下层" caption="业务包 → dsh-agent-kit → dsh；通知渠道把消息转发给钉钉或飞书，其余 Service 各自连接一个外部系统。" width={960} />
 
   <div class="narrow">
     <h2>bundle 与 patch 层</h2>
     <p>
-      本包在 <code>package.json</code> 中声明为 dsh 的 bundle。<code>dsh plugin add</code> 之后，dsh 会把本包的 <code>patch.yml</code> 加入 Profile 的层叠配置。patch 里注册了五行：
+      本包在 <code>package.json</code> 中声明为 dsh 的 bundle。<code>dsh plugin add</code> 之后，dsh 会把本包的 <code>patch.yml</code> 加入 Profile 的层叠配置。patch 里注册了七行：
     </p>
     <div class="table-wrap">
       <table>
@@ -61,7 +61,7 @@ const enable = `# Profile 的 cordis.patch.yml
       </table>
     </div>
     <p>
-      四个 Service 默认禁用：dsh 不会导入禁用行的模块，也不会校验它的配置，所以未启用的 Service 缺少配置不影响启动。在 Profile 的 <code>cordis.patch.yml</code> 中按 id 启用即可；按 id 修改 <code>config</code> 时整段替换，不与 bundle 中的值合并。
+      六个 Service 默认禁用：dsh 不会导入禁用行的模块，也不会校验它的配置，所以未启用的 Service 缺少配置不影响启动。在 Profile 的 <code>cordis.patch.yml</code> 中按 id 启用即可；按 id 修改 <code>config</code> 时整段替换，不与 bundle 中的值合并。
     </p>
     <pre><code>{enable}</code></pre>
     <p>
@@ -72,7 +72,10 @@ const enable = `# Profile 的 cordis.patch.yml
     <p>业务包把本包声明为 peer 依赖，保证一个 Profile 中只加载一份实例；开发期可以用 <code>link:</code> 指向本包的本地 checkout。</p>
     <pre><code>{businessPackage}</code></pre>
     <p>
-      业务包的插件只 inject 用到的 Service，例如 <code>export const inject = ['agentWs', 'dingtalk']</code>。Service 注册的连接、定时器、子进程都随业务包插件的生命周期释放。
+      业务包的插件只 inject 用到的 Service，例如 <code>export const inject = ['agentWs', 'notify']</code>。Service 注册的连接、定时器、子进程都随业务包插件的生命周期释放。
+    </p>
+    <p>
+      只需要发通知时，推荐 inject <code>notify</code> 而不是 <code>dingtalk</code> 或 <code>feishu</code>。<code>notify</code> 不 inject 渠道 Service，而是在发送时查找它们：cordis 4 的 inject 都是必需的，如果 inject 了渠道，停用任一渠道都会连带卸载 notify 与依赖它的业务插件。现在启用、停用或切换渠道只影响发送结果，不会重新加载 notify，也不会重新加载只 inject <code>notify</code> 的业务插件。
     </p>
 
     <h2>依赖与版本对齐</h2>

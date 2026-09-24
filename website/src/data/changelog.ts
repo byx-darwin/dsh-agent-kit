@@ -9,12 +9,12 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: '0.1.0',
     date: '2026-09-24',
     items: [
-      '四个 Service：ctx.agentWs（WebSocket 客户端）、ctx.dingtalk（钉钉推送）、ctx.agentTasks（Agent 任务）、ctx.jev（Jev 判断），默认禁用、按需启用。',
+      '六个 Service：ctx.agentWs（WebSocket 客户端）、ctx.dingtalk（钉钉推送）、ctx.feishu（飞书推送，经 lark-cli）、ctx.notify（与渠道无关的通知，渠道与策略可随时切换）、ctx.agentTasks（Agent 任务）、ctx.jev（Jev 判断），默认禁用、按需启用。',
       '统一的 KitError 错误模型、health() 健康状态与 agent-kit/service-failed 事件、日志统一脱敏。',
-      '配置引导：doctor 检查、setup 交互式配置、dsh Web「设置 → Agent Kit」页。',
+      '配置引导：doctor 检查、setup 交互式配置（缺少 dws / lark-cli 时列出并在确认后安装锁定版本）、dsh Web「设置 → Agent Kit」页。',
       'TypeSafe Key 可来自环境变量、macOS 钥匙串（ai.typesafe.api-key）或 dsh 凭据文件。',
       'Linux、macOS、Windows 三平台 CI 通过。',
-      '@mc/dsh-agent-kit/testing：本地 WebSocket 测试服务端、假 subagent provider、Jev mock、假 dws。',
+      '@mc/dsh-agent-kit/testing：本地 WebSocket 测试服务端、假 subagent provider、Jev mock、假 dws、假 lark-cli。',
     ],
   },
 ]

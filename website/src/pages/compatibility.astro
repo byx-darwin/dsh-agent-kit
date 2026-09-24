@@ -15,17 +15,18 @@ const runtime: { name: string; version: string; note: string }[] = [
     note: optional[name]?.optional ? '可选 peer 依赖，只有启用 Jev 时需要' : 'peer 依赖，与 dsh 对齐',
   })),
   { name: '@deepseek-ai/dsh-subagent-claude-code / codex', version: '与 dsh 相同', note: '必须显式指定版本（例如 0.1.5-rc.3）：latest 标签指向 0.0.1-rc.1，与 dsh 不匹配' },
-  { name: 'dws（钉钉 CLI）', version: 'v1.0.62', note: '已验证的版本；输出格式以该版本为准' },
+  { name: 'dws（钉钉 CLI，dingtalk-workspace-cli）', version: 'v1.0.62', note: '已验证的版本；输出格式以该版本为准，setup 安装与 doctor 修复建议都锁定到它' },
+  { name: 'lark-cli（飞书 CLI，@larksuite/cli）', version: 'v1.0.96', note: '已验证的版本；输出格式以该版本为准，setup 安装与 doctor 修复建议都锁定到它' },
 ]
 
 const platforms = [
   { name: 'Linux', status: 'CI 通过', note: 'ubuntu-latest，Node 22.19 与 24' },
   { name: 'macOS', status: 'CI 通过', note: 'macos-latest，Node 22.19 与 24；TypeSafe Key 可存入钥匙串' },
-  { name: 'Windows', status: 'CI 通过', note: 'windows-latest，Node 22.19 与 24；dws 的 npm .cmd 自动定位到 dws.js，超时用 taskkill 结束进程树' },
+  { name: 'Windows', status: 'CI 通过', note: 'windows-latest，Node 22.19 与 24；dws、lark-cli 的 npm .cmd 自动定位到背后的 .js 入口，超时用 taskkill 结束进程树' },
 ]
 ---
 
-<Base title="兼容性" description="dsh-agent-kit 支持的 Node、dsh、cordis、dws、subagent provider 与 TypeSafe SDK 版本，以及 Linux、macOS、Windows 的状态。">
+<Base title="兼容性" description="dsh-agent-kit 支持的 Node、dsh、cordis、dws、lark-cli、subagent provider 与 TypeSafe SDK 版本，以及 Linux、macOS、Windows 的状态。">
   <p class="eyebrow">兼容性</p>
   <h1>版本与平台</h1>
   <p class="lead">当前版本 v{pkg.version}。下表中的依赖版本直接读取自本包的 package.json。</p>

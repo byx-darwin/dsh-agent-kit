@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { WsConfig } from '../../src/ws/config'
 import { DingtalkConfig } from '../../src/dingtalk/config'
+import { FeishuConfig } from '../../src/feishu/config'
+import { NotifyConfig } from '../../src/notify/config'
 import { AgentTasksConfig } from '../../src/agent-tasks/config'
 import { JevConfig } from '../../src/jev/service'
 import { configRows } from '../src/data/config-tables'
@@ -16,6 +18,8 @@ describe('config tables', () => {
   it.each([
     ['agentWs', WsConfig],
     ['dingtalk', DingtalkConfig],
+    ['feishu', FeishuConfig],
+    ['notify', NotifyConfig],
     ['agentTasks', AgentTasksConfig],
     ['jev', JevConfig],
   ] as const)('%s rows cover exactly the schema leaf fields', (id, schema) => {
@@ -43,8 +47,10 @@ describe('config tables', () => {
     expect(SERVICES.map((s) => [s.numeral, s.id])).toEqual([
       ['壹', 'agentWs'],
       ['贰', 'dingtalk'],
-      ['叁', 'agentTasks'],
-      ['肆', 'jev'],
+      ['叁', 'feishu'],
+      ['肆', 'notify'],
+      ['伍', 'agentTasks'],
+      ['陆', 'jev'],
     ])
     for (const s of SERVICES) expect(s.errors.length).toBeGreaterThan(0)
   })
@@ -53,6 +59,8 @@ describe('config tables', () => {
     const sources: Record<string, string> = {
       agentWs: 'src/ws/connection.ts',
       dingtalk: 'src/dingtalk/errors.ts',
+      feishu: 'src/feishu/errors.ts',
+      notify: 'src/notify/service.ts',
       agentTasks: 'src/agent-tasks/service.ts',
       jev: 'src/jev/service.ts',
     }
