@@ -1,0 +1,123 @@
+---
+title: 快速开始
+---
+import Base from '../layouts/Base.astro'
+import CopyCommand from '../components/CopyCommand.astro'
+import Notice from '../components/Notice.astro'
+import Figure from '../components/Figure.astro'
+import { withBasePath } from '../lib/paths'
+
+export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
+
+<Base title="快速开始" description="安装 dsh 与本包，用 setup 完成配置，用 doctor 验证，或在 dsh Web 的设置页里操作。">
+
+<p class="eyebrow">快速开始</p>
+
+# 从零到一个能跑的 Profile
+
+本页带你走完：准备环境 → 安装 → 用 `setup` 配置 → 用 `doctor` 验证 → 在 Web 设置页查看状态。每一步都可以单独回头重来。
+
+## 环境要求
+
+- Node.js `^22.19` 或 `>=24`。
+- [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh) CLI `0.1.5-rc.3`。当前为预发布版本，dsh 与 cordis 相关依赖需锁定到与之一致的版本。
+- 使用钉钉推送：已安装并登录 `dws`，服务器环境推荐 `bot` 身份。
+- 使用 Agent 任务：安装 `@deepseek-ai/dsh-subagent-claude-code` 和/或 `@deepseek-ai/dsh-subagent-codex`，并完成 Claude Code / Codex 的原生登录。
+- 使用 Jev 判断：安装 `@typesafe-ai/sdk`，并准备好 TypeSafe API Key（存放位置见本页最后一节）。
+- 生产部署：Profile 进程由 systemd、pm2 等进程守护托管。
+
+## 安装
+
+先安装 dsh，并基于 web 模板创建一个常驻 Profile：
+
+```sh
+npm i -g @deepseek-ai/dsh@0.1.5-rc.3
+dsh --profile my-agent --from-default-profile web
+```
+
+再把本包和 Agent provider 装进这个 Profile。subagent 包必须显式指定版本：它们的 `latest` 标签目前指向 `0.0.1-rc.1`，与 dsh 不匹配。
+
+<CopyCommand command="dsh plugin --profile my-agent add @mc/dsh-agent-kit @deepseek-ai/dsh-subagent-claude-code@0.1.5-rc.3" npm />
+
+最后装上你自己的业务包：
+
+```sh
+dsh plugin --profile my-agent add ./my-business-plugin-0.1.0.tgz
+```
+
+## 用 setup 配置
+
+`setup` 是本包自带的交互式配置工具，不需要启动 dsh：
+
+<CopyCommand command="npx @mc/dsh-agent-kit setup --profile my-agent" />
+
+它会依次：
+
+1. **选择 Profile**：在 `$DSH_HOME/profiles` 下查找装了本包的 Profile；只有一个时自动选中，有多个时让你选。
+2. **选择要启用的 Service**：已启用的默认勾选。
+3. **逐个配置**：当前值作为默认值。钉钉可以按群名搜索群，user 身份未登录时可以直接拉起 `dws auth login`；Agent 任务需要为 claude-code / codex 声明权限上限；Jev 的 Key 输入时不回显。
+4. **预览改动并确认**：以差异视图展示 `cordis.patch.yml` 的改动，确认后才写入。密钥单独保存，不会出现在差异里。
+5. **自动运行 doctor**：检查刚写入的配置。
+
+任何一步取消都不会写入文件。
+
+## 用 doctor 验证
+
+`doctor` 只读，不修改任何文件。它只检查已启用 Service 需要的项，每个未通过的项都附一条修复命令：
+
+<CopyCommand command="npx @mc/dsh-agent-kit doctor --profile my-agent" />
+
+```text
+Profile: my-agent
+
+[通用]
+  ✓ Node.js 版本：当前 24.8.0，需要 ^22.19 或 >=24
+  ✓ 本包已加入 Profile：Profile my-agent 已包含 @mc/dsh-agent-kit
+  ✓ 配置修改即时生效：patchReload: live
+[dingtalk]
+  ✓ 钉钉 配置：配置有效
+  ✓ dws 已安装：/usr/local/bin/dws
+  ✓ dws 登录状态：已登录 张三 @ 示例科技
+[agent-tasks]
+  ✓ Agent 任务 配置：配置有效
+  ✗ subagent provider 已安装：未安装 claude-code 或 codex provider
+      → dsh plugin --profile my-agent add @deepseek-ai/dsh-subagent-claude-code@0.1.5-rc.3
+  ✓ 权限上限已声明：所有已安装 provider 都已声明
+
+存在未通过的检查项，请按提示修复。
+```
+
+加上 `--json` 会输出机器可读的报告，适合接入 CI；有未通过的项时退出码为 1。
+
+## 在 Web 设置页查看与修改
+
+启动 Profile 后，打开 dsh Web 界面，进入「设置 → Agent Kit」。每个 Service 一张卡片，可以启用或停用、修改配置、查看运行状态和检查结果；效果与 `setup` 相同，两者读写同一份 `cordis.patch.yml`。
+
+```sh
+dsh --profile my-agent --no-open
+```
+
+<Figure src="/walkthrough/settings.png" alt="dsh Web 设置页中的 Agent Kit 页面，四个 Service 各一张卡片" caption="设置 → Agent Kit：四个 Service 的状态、检查结果与配置表单。" />
+
+<Notice title="什么时候是只读">
+只有 dsh Web 绑定在 `127.0.0.1` 时设置页才可修改；绑定到其他地址，或没有加载 Web 服务时，设置页一律只读，避免把配置写入接口暴露到网络上。
+</Notice>
+
+## TypeSafe Key 存在哪里
+
+读取顺序在三个平台上一致，靠前的优先：
+
+| 顺序 | 来源 | 说明 |
+|---|---|---|
+| 1 | 环境变量 `TYPESAFE_API_KEY` | 所有平台；`setup` 与设置页不会覆盖或清除它 |
+| 2 | macOS 钥匙串 | 仅 macOS；服务名默认 `ai.typesafe.api-key`，可与 gitflow-cli 共用 |
+| 3 | dsh 凭据文件 | `$DSH_HOME/.credentials.yaml`，Linux 与 Windows 上保存 Key 的默认位置 |
+
+`setup` 与设置页保存 Key 时：macOS 默认写入钥匙串，Linux 与 Windows 写入 dsh 凭据文件。
+
+## 下一步
+
+- 了解每个 Service 的接口与配置：<a href={link('/docs')}>文档</a>。
+- 了解本包如何挂进 dsh、业务包如何接入：<a href={link('/architecture')}>架构</a>。
+
+</Base>

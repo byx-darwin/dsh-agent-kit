@@ -1,18 +1,135 @@
 ---
 import Base from '../layouts/Base.astro'
-import CopyCommand from '../components/CopyCommand.astro'
 import ServiceCard from '../components/ServiceCard.astro'
-import Notice from '../components/Notice.astro'
-import ConfigTable from '../components/ConfigTable.astro'
-import { configRows } from '../data/config-tables'
+import CopyCommand from '../components/CopyCommand.astro'
 import { SITE } from '../lib/site'
+import { SERVICES } from '../data/services'
+import { RELEASE } from '../data/release'
+import { withBasePath } from '../lib/paths'
+
+const base = import.meta.env.BASE_URL
+
+const patchExample = `- id: agent-kit-ws
+  disabled: false
+- id: agent-kit-dingtalk
+  disabled: false
+  config:
+    identity: bot
+    robotCode: dingxxxx`
+
+const pluginExample = `export const inject = ['agentWs', 'dingtalk', 'agentTasks', 'jev']
+
+export function apply(ctx: Context, config: Config) {
+  ctx.agentWs.connect<Frame>({
+    url: config.url,
+    headers: async () => ({ 'X-Token': await getToken() }),
+    onMessage: async (frame, { signal }) => {
+      // 委托：外部数据用 untrusted() 包裹，Agent 默认只读
+      const draft = await ctx.agentTasks.run<Result>({
+        provider: 'claude-code',
+        title: \`classify \${frame.id}\`,
+        prompt: [CLASSIFY_INSTRUCTIONS, untrusted('event', frame.input)],
+        outputSchema: ResultSchema,
+        signal,
+      })
+
+      // 校验：用 Jev 判断候选结果是否与输入相符
+      const { answers } = await ctx.jev.judge({
+        state: { input: frame.input, candidate: draft.output },
+        questions: { wrong: noul('候选结果与输入证据不符') },
+        signal,
+      })
+
+      // 推送：不相符时告警到钉钉
+      if (answers.wrong.noul >= 0.7) {
+        await ctx.dingtalk.send({ title: '需要人工复核', markdown: render(frame, draft), idempotencyKey: frame.id })
+      }
+    },
+  })
+}`
 ---
 
-<Base title="dsh-agent-kit" description={SITE.positioning}>
-  <h1>{SITE.tagline}</h1>
-  <CopyCommand command="npx @mc/dsh-agent-kit setup" npm />
-  <ServiceCard numeral="贰" verb="推送" name="钉钉推送" summary="示例" href="/docs/dingtalk" />
-  <Notice title="提示">示例</Notice>
-  <ConfigTable rows={configRows('dingtalk')} />
-  <ConfigTable rows={configRows('jev')} />
+<Base title="dsh-agent-kit" description={SITE.positioning} wide>
+  <section class="hero">
+    <p class="eyebrow">DEEPSEEK HARNESS 插件工具包</p>
+    <h1>{SITE.tagline}</h1>
+    <p class="lead">
+      连接、推送、委托、校验——四件与业务无关、却每个项目都要重写一遍的事，收进一个包里，默认安全，按需启用。
+    </p>
+    <p class="actions">
+      <a class="button primary" href={withBasePath(base, '/quickstart')}>快速开始</a>
+      <a class="button secondary" href={withBasePath(base, '/docs')}>阅读文档</a>
+    </p>
+    <p class="version">v{RELEASE.version}{!RELEASE.published && ' · 尚未发布到 npm'}</p>
+  </section>
+
+  <section>
+    <h2>四件事</h2>
+    <div class="grid-2">
+      {
+        SERVICES.map((s) => (
+          <ServiceCard numeral={s.numeral} verb={s.verb} name={`${s.name} · ${s.context}`} summary={s.summary} href={`/docs/${s.slug}`} />
+        ))
+      }
+    </div>
+  </section>
+
+  <section class="narrow">
+    <h2>默认安全</h2>
+    <ul>
+      <li>密钥只从环境变量、钥匙串或 dsh 凭据文件读取，不传给本包启动的任何子进程；钉钉凭据由 dws 自己管理。</li>
+      <li>来自 WebSocket 的数据和 Agent 的输出都视为不可信：Agent 默认只读、在独立的空目录中运行，输出经过 Schema 与业务白名单校验后才应触发副作用。</li>
+      <li>只允许 <code>wss://</code>，不关闭证书校验，不跟随重定向。</li>
+      <li>日志和错误统一脱敏，不记录鉴权头、API Key、webhook token 与完整消息正文。</li>
+    </ul>
+    <p><a href={withBasePath(base, '/docs/security')}>阅读安全说明</a></p>
+  </section>
+
+  <section class="narrow">
+    <h2>按需启用</h2>
+    <p>
+      四个 Service 在本包的 bundle 中以禁用状态注册。只有在 Profile 的 <code>cordis.patch.yml</code> 中启用的 Service 才会加载并校验配置；未启用的 Service 不影响其他部分。
+    </p>
+    <pre><code>{patchExample}</code></pre>
+    <p>也可以用 <code>setup</code> 交互式生成这段配置，或在 dsh Web 的设置页里直接勾选。</p>
+  </section>
+
+  <section class="narrow">
+    <h2>业务包长这样</h2>
+    <p>业务包只 inject 用到的 Service，协议、路由、模板和流程留在自己的代码里。</p>
+    <pre><code>{pluginExample}</code></pre>
+    <p><a href={withBasePath(base, '/architecture')}>了解它与 dsh 的关系</a></p>
+  </section>
+
+  <section class="narrow">
+    <h2>三步开始</h2>
+    <CopyCommand command="dsh plugin --profile my-agent add @mc/dsh-agent-kit" npm />
+    <CopyCommand command="npx @mc/dsh-agent-kit setup --profile my-agent" />
+    <CopyCommand command="npx @mc/dsh-agent-kit doctor --profile my-agent" />
+    <p><a href={withBasePath(base, '/quickstart')}>完整的快速开始</a></p>
+  </section>
 </Base>
+
+<style>
+  .hero {
+    max-width: 760px;
+    padding: 24px 0 8px;
+  }
+  .hero h1 {
+    font-size: clamp(34px, 6vw, 56px);
+    margin: 0.3em 0 0.4em;
+  }
+  .actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 1.4em;
+  }
+  .version {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .narrow {
+    max-width: var(--measure);
+  }
+</style>
