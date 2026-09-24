@@ -34,6 +34,7 @@ export const commonChecks: Check = (ctx) => {
       title: '配置修改即时生效',
       status: profile.patchReload === 'live' ? 'pass' : 'warn',
       detail: profile.patchReload === 'live' ? 'patchReload: live' : 'patchReload: startup，修改配置后需要重启 dsh',
+      ...(profile.patchReload === 'live' ? {} : { fix: '修改后重启 dsh；或在 Profile package.json 的 dsh.profile.patchReload 设为 "live"' }),
     },
   ]
 }

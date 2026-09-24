@@ -91,3 +91,53 @@ describe('service checks', () => {
     expect(byId(noSdk, 'agent-kit-jev.sdk')!.status).toBe('fail')
   })
 })
+
+describe('every fail/warn result carries a fix', () => {
+  function assertFixes(r: Awaited<ReturnType<typeof runChecks>>): void {
+    for (const result of r.results) {
+      if (result.status === 'fail' || result.status === 'warn') {
+        expect(result.fix, `${result.id} (${result.status}) is missing a fix`).toBeTruthy()
+        expect(result.fix!.length).toBeGreaterThan(0)
+      }
+    }
+  }
+
+  it('common: patch-reload warn has a fix', async () => {
+    const r = await runChecks(ctx({ profile: { ...ctx().profile, patchReload: 'startup' } }))
+    expect(byId(r, 'patch-reload')).toMatchObject({ status: 'warn', fix: expect.stringContaining('patchReload') })
+    assertFixes(r)
+  })
+
+  it('dingtalk: webhook-token fail (env unset) has a fix', async () => {
+    const enabled = snapshot({ 'agent-kit-dingtalk': { enabled: true, config: { identity: 'webhook', webhookTokenEnv: 'DT_TOKEN' } } })
+    const r = await runChecks(ctx({ snapshot: enabled, env: {} }))
+    expect(byId(r, 'agent-kit-dingtalk.webhook-token')).toMatchObject({ status: 'fail', fix: expect.stringContaining('DT_TOKEN') })
+    assertFixes(r)
+  })
+
+  it('dingtalk: webhook-token fail (webhookTokenEnv unset) has a fix', async () => {
+    const enabled = snapshot({ 'agent-kit-dingtalk': { enabled: true, config: { identity: 'webhook' } } })
+    const r = await runChecks(ctx({ snapshot: enabled }))
+    expect(byId(r, 'agent-kit-dingtalk.webhook-token')).toMatchObject({ status: 'fail', fix: expect.stringContaining('webhookTokenEnv') })
+    assertFixes(r)
+  })
+
+  it('run: <kit>.config fail has a fix', async () => {
+    const r = await runChecks(ctx({ snapshot: snapshot({ 'agent-kit-ws': { enabled: true, config: { pingIntervalMs: 30000, readTimeoutMs: 1000 } } }) }))
+    expect(byId(r, 'agent-kit-ws.config')).toMatchObject({ status: 'fail', fix: expect.stringContaining('setup') })
+    assertFixes(r)
+  })
+
+  it('holds across every other scenario in this file', async () => {
+    assertFixes(await runChecks(ctx({ nodeVersion: '20.10.0', profile: { ...ctx().profile, hasKit: false, patchReload: 'startup' } })))
+    const enabledDingtalk = snapshot({ 'agent-kit-dingtalk': { enabled: true, config: { identity: 'user' } } })
+    assertFixes(await runChecks(ctx({ snapshot: enabledDingtalk, findExecutable: () => undefined })))
+    assertFixes(await runChecks(ctx({ snapshot: enabledDingtalk, exec: async () => ({ exitCode: 0, stdout: JSON.stringify({ authenticated: false }), stderr: '' }) })))
+    const enabledAgentTasks = snapshot({ 'agent-kit-agent-tasks': { enabled: true, config: { workspaceDir: '/tmp/x' } } })
+    assertFixes(await runChecks(ctx({ snapshot: enabledAgentTasks, resolveModule: (m) => m !== '@deepseek-ai/dsh-subagent-codex' })))
+    assertFixes(await runChecks(ctx({ snapshot: enabledAgentTasks, resolveModule: (m) => !m.startsWith('@deepseek-ai/dsh-subagent-') })))
+    const enabledJev = snapshot({ 'agent-kit-jev': { enabled: true, config: {} } })
+    assertFixes(await runChecks(ctx({ snapshot: enabledJev })))
+    assertFixes(await runChecks(ctx({ snapshot: enabledJev, resolveModule: (m) => m !== '@typesafe-ai/sdk' })))
+  })
+})

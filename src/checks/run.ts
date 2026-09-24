@@ -55,6 +55,7 @@ export async function runChecks(ctx: CheckContext): Promise<CheckReport> {
       title: `${meta.title} 配置`,
       status: validated.ok ? 'pass' : 'fail',
       detail: validated.ok ? '配置有效' : validated.errors.map((e) => `${e.path}: ${e.message}`).join('; '),
+      ...(validated.ok ? {} : { fix: `运行 npx @mc/dsh-agent-kit setup 或在设置页修改 ${meta.title} 配置` }),
     })
     const extra = SERVICE_CHECKS[meta.id]
     if (extra) results.push(...(await extra(ctx)))
