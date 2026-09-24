@@ -5,6 +5,14 @@ import { AdminError } from './remote.js'
 
 type Service = ServiceStatus
 
+/** 本包四行的标题按界面语言翻译（issue #4）；业务行用它登记的 label，缺译时退回服务端给的标题。 */
+function serviceTitle(service: Service, t: T): string {
+  if (service.registered) return service.title
+  const key = `service.${service.id}`
+  const text = t(key)
+  return text && text !== key ? text : service.title
+}
+
 /** 业务行登记的密钥（issue #1）：只写不读，存入 dsh 凭据文件。 */
 function EntrySecrets({ service, status, api, t, onChanged }: { service: Service; status: AdminStatus; api: AdminApi; t: T; onChanged(): void }) {
   const [values, setValues] = useState<Record<string, string>>({})
@@ -59,11 +67,12 @@ export function ServiceCard(props: { service: Service; checks: CheckResult[]; st
   const [saving, setSaving] = useState(false)
   const disabled = !props.status.writable || saving
   const Form = FORMS[service.id as KitId]
-  const dependents = service.dependents?.map((d) => d.title).join('、')
+  const title = serviceTitle(service, t)
+  const dependents = service.dependents?.map((d) => d.title).join(t('list.separator'))
 
   const save = async () => {
     // patchReload: live 下停用一行会连带卸载所有 inject 它的插件，进程仍在，外部守护进程察觉不到（issue #1）
-    if (service.enabled && !enabled && dependents && !window.confirm(t('confirmDisableDependents', { title: service.title, names: dependents }))) return
+    if (service.enabled && !enabled && dependents && !window.confirm(t('confirmDisableDependents', { title: title, names: dependents }))) return
     setSaving(true)
     setMessage(undefined)
     try {
@@ -83,13 +92,13 @@ export function ServiceCard(props: { service: Service; checks: CheckResult[]; st
   }
 
   const reloadHint =
-    props.status.patchReload !== 'live' ? undefined : service.registered ? t('reloadRegistered', { title: service.title }) : dependents ? t('reloadDependents', { names: dependents }) : undefined
+    props.status.patchReload !== 'live' ? undefined : service.registered ? t('reloadRegistered', { title: title }) : dependents ? t('reloadDependents', { names: dependents }) : undefined
 
   return (
-    <section className="agent-kit-card" aria-label={service.title}>
+    <section className="agent-kit-card" aria-label={title}>
       <header>
-        <h3>{service.title}</h3>
-        <button type="button" role="switch" aria-checked={enabled} aria-label={`${t('enabled')} ${service.title}`} disabled={disabled} onClick={() => setEnabled(!enabled)}>
+        <h3>{title}</h3>
+        <button type="button" role="switch" aria-checked={enabled} aria-label={`${t('enabled')} ${title}`} disabled={disabled} onClick={() => setEnabled(!enabled)}>
           {enabled ? t('switch.on') : t('switch.off')}
         </button>
       </header>
@@ -107,14 +116,14 @@ export function ServiceCard(props: { service: Service; checks: CheckResult[]; st
           .filter((c) => c.status !== 'pass' && c.status !== 'skip')
           .map((c) => (
             <li key={c.id} data-status={c.status}>
-              {c.title}：{c.detail}
+              {t('check.item', { title: c.title, detail: c.detail })}
               {c.fix && <div>→ {c.fix}</div>}
             </li>
           ))}
       </ul>
       {enabled && (Form ? <Form config={config} onChange={setConfig} disabled={disabled} t={t} /> : <EntryForm fields={service.fields ?? []} config={config} onChange={setConfig} disabled={disabled} t={t} />)}
       {reloadHint && <p className="agent-kit-hint">{reloadHint}</p>}
-      <button type="button" aria-label={`${t('save')} ${service.title}`} disabled={disabled} onClick={save}>
+      <button type="button" aria-label={`${t('save')} ${title}`} disabled={disabled} onClick={save}>
         {saving ? t('saving') : t('save')}
       </button>
       {message && <p role="status" style={{ whiteSpace: 'pre-line' }}>{message}</p>}

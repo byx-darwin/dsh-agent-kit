@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsPage } from '../../src/client/settings-page.js'
 import { AGENT_KIT_REMOTE, createAdminApi, type AdminApi, type AdminStatus } from '../../src/client/remote.js'
-import { zh } from '../../src/client/locale.js'
+import { en, zh } from '../../src/client/locale.js'
 
 // vitest.config.ts 未开启 `test.globals`，@testing-library/react 的自动清理依赖全局 afterEach，
 // 因此这里显式注册，避免上一个用例渲染的 DOM 残留导致下一个用例里出现重复元素。
@@ -302,5 +302,25 @@ describe('AGENT_KIT_REMOTE descriptors (issue #3)', () => {
       ['setSecret', ['target', 'value', 'ref']],
       ['clearSecret', ['target', 'ref']],
     ])
+  })
+})
+
+describe('English UI (issue #4)', () => {
+  const tEn = (k: string, vars?: Record<string, string | number>) => (en[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => String(vars?.[n] ?? ''))
+
+  it('renders kit card titles and labels in English, keeping registered labels as given', async () => {
+    const s = status()
+    s.services[1] = { ...s.services[1]!, enabled: true, dependents: [{ id: 'biz-row', title: 'Biz' }, { id: 'other', title: 'Other' }] }
+    s.services.push({ id: 'biz-row', title: 'Biz', enabled: false, phase: null, health: null, config: undefined, registered: true, fields: [], secrets: [] })
+    render(<SettingsPage api={fakeApi(s)} t={tEn} />)
+    expect(await screen.findByRole('heading', { name: 'Agent Kit settings' })).toBeTruthy()
+    for (const title of ['WebSocket', 'DingTalk', 'Agent tasks', 'Jev judge', 'Biz']) expect(screen.getByRole('region', { name: title })).toBeTruthy()
+    expect(screen.getByText(en.reloadDependents!.replace('{names}', 'Biz, Other'))).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Save DingTalk' })).toBeTruthy()
+    expect(screen.getByLabelText(en['dingtalk.identity']!)).toBeTruthy()
+    // 除了服务端生成的检查文案（issue #4 已注明），页面上没有中文
+    expect(screen.getByText(/^TypeSafe Key: 没有找到/)).toBeTruthy()
+    const text = document.body.textContent!.replace(/没有找到|设置 Key/g, '')
+    expect(text).not.toMatch(/[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]/)
   })
 })
