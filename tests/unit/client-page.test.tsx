@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsPage } from '../../src/client/settings-page.js'
-import { createAdminApi, type AdminApi, type AdminStatus } from '../../src/client/remote.js'
+import { AGENT_KIT_REMOTE, createAdminApi, type AdminApi, type AdminStatus } from '../../src/client/remote.js'
 import { zh } from '../../src/client/locale.js'
 
 // vitest.config.ts 未开启 `test.globals`，@testing-library/react 的自动清理依赖全局 afterEach，
@@ -279,5 +279,28 @@ describe('registered entries (issue #1)', () => {
     await api.setSecret('credentials', 'v')
     await api.clearSecret('credentials', 'BIZ_TOKEN')
     expect(calls).toEqual([['credentials', 'v', 'BIZ_TOKEN'], ['credentials', 'v', undefined], ['credentials', 'BIZ_TOKEN']])
+  })
+})
+
+describe('AGENT_KIT_REMOTE descriptors (issue #3)', () => {
+  it('satisfy both the dsh 0.1.5 gateway client and the 0.1.7 typert registry', () => {
+    for (const d of AGENT_KIT_REMOTE.descriptors) {
+      // 0.1.7 的 typert 注册表：结果 codec 为 src-json 或带 create() 的 strict codec
+      expect(d.result.mode).toBe('src-json')
+      for (const p of d.parameters) {
+        const codec = p.codec as { mode: string; typeSymbol: string; schema: { parse(v: unknown): unknown }; create(): { parse(v: unknown): unknown } }
+        expect(codec.mode).toBe('strict')
+        expect(codec.typeSymbol).toBe(`@mc/dsh-agent-kit#agentKitAdmin/${d.method}:${p.name}`)
+        // 0.1.5：codec.schema.parse；0.1.7：codec.create().parse
+        expect(codec.schema.parse({ a: 1 })).toEqual({ a: 1 })
+        expect(codec.create().parse('x')).toBe('x')
+      }
+    }
+    expect(AGENT_KIT_REMOTE.descriptors.map((d) => [d.method, d.parameters.map((p) => p.wire)])).toEqual([
+      ['status', []],
+      ['saveService', ['id', 'enabled', 'config', 'expectedVersion']],
+      ['setSecret', ['target', 'value', 'ref']],
+      ['clearSecret', ['target', 'ref']],
+    ])
   })
 })

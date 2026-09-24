@@ -29,3 +29,19 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm run test:coverage
+
+  # 以 dsh 0.1.7 的 cordis / typert / schemastery 版本替换 peer 依赖后再跑一遍（issue #3）。
+  # 开发依赖里的 dsh-app-boot 仍是 0.1.5 的，所以用 --force 越过它的 peer 约束。
+  dsh-017:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm i --no-save --force @deepseek-ai/cordis@4.0.4 @deepseek-ai/dsh-typert-protocol@0.1.7-alpha.2 @deepseek-ai/schemastery@3.18.4
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npx vitest run

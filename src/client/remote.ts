@@ -60,7 +60,12 @@ export class AdminError extends Error {
 }
 
 const PKG = '@mc/dsh-agent-kit'
-const json = { mode: 'strict', typeSymbol: `${PKG}#json`, schema: { parse: (v: unknown) => v } }
+const passthrough = { parse: (v: unknown) => v }
+/**
+ * 参数 codec 同时满足两代 dsh（issue #3）：0.1.5 的网关客户端直接调用 `codec.schema.parse()`；
+ * 0.1.7 起 typert 注册表要求 strict codec 带 `create()` 工厂，并通过 `codec.create().parse()` 取用。
+ */
+const json = { mode: 'strict', typeSymbol: `${PKG}#json`, schema: passthrough, create: () => passthrough }
 const method = (name: string, params: string[]) => ({
   id: `${PKG}#agentKitAdmin/${name}`,
   service: 'agentKitAdmin',
