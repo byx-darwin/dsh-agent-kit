@@ -42,12 +42,34 @@ export interface AdminStatus {
   typesafeKey: { configured: boolean; source?: string }
   keyTargets: KeyTarget[]
 }
+export interface DingtalkLoginState {
+  state: 'waiting' | 'succeeded' | 'failed' | 'cancelled'
+  code?: string
+  url?: string
+  manualUrl?: string
+  expiresAt?: string
+  message?: string
+}
+export interface DingtalkAuthStatus {
+  installed: boolean
+  authenticated: boolean
+  user?: string
+  corp?: string
+  expiresAt?: string
+  refreshExpiresAt?: string
+  error?: string
+  login?: DingtalkLoginState
+}
 export interface AdminApi {
   status(): Promise<AdminStatus>
   saveService(id: string, enabled: boolean, config: Record<string, unknown> | null, expectedVersion: string): Promise<{ version: string }>
   /** `ref` 缺省时为 TypeSafe Key；否则为业务行登记的密钥（只能存入凭据文件）。 */
   setSecret(target: KeyTarget, value: string, ref?: string): Promise<{ configured: boolean; source?: string }>
   clearSecret(target: KeyTarget, ref?: string): Promise<{ configured: boolean; source?: string }>
+  dingtalkAuth(): Promise<DingtalkAuthStatus>
+  dingtalkLogin(): Promise<DingtalkLoginState>
+  dingtalkLoginCancel(): Promise<{ cancelled: true }>
+  dingtalkLogout(): Promise<DingtalkAuthStatus>
 }
 export class AdminError extends Error {
   constructor(
@@ -84,6 +106,10 @@ export const AGENT_KIT_REMOTE = {
     method('saveService', ['id', 'enabled', 'config', 'expectedVersion']),
     method('setSecret', ['target', 'value', 'ref']),
     method('clearSecret', ['target', 'ref']),
+    method('dingtalkAuth', []),
+    method('dingtalkLogin', []),
+    method('dingtalkLoginCancel', []),
+    method('dingtalkLogout', []),
   ],
 }
 
@@ -124,5 +150,9 @@ export function createAdminApi(ctx: ClientContext): AdminApi {
     // 网关客户端要求实参个数与描述一致；值为 undefined 的参数不会上线，服务端按缺省处理
     setSecret: (target, value, ref) => unwrap(svc().setSecret!(target, value, ref)),
     clearSecret: (target, ref) => unwrap(svc().clearSecret!(target, ref)),
+    dingtalkAuth: () => unwrap(svc().dingtalkAuth!()),
+    dingtalkLogin: () => unwrap(svc().dingtalkLogin!()),
+    dingtalkLoginCancel: () => unwrap(svc().dingtalkLoginCancel!()),
+    dingtalkLogout: () => unwrap(svc().dingtalkLogout!()),
   }
 }

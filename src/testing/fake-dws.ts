@@ -16,7 +16,7 @@ export type FakeDwsSendStep =
 export interface FakeDwsScenario {
   auth?: 'ok' | 'expired' | 'error'
   /** `dws auth login --device` 的结果；approve 后 auth 变为 ok。 */
-  login?: 'approve' | 'deny' | 'hang' | 'no_link'
+  login?: 'approve' | 'deny' | 'hang' | 'no_link' | 'success' | 'fail'
   loginDelayMs?: number
   /** 按调用次序取，超出时重复最后一个。 */
   send?: FakeDwsSendStep[]

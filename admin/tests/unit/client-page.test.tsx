@@ -38,6 +38,10 @@ function fakeApi(
     saveService: vi.fn(async () => ({ version: 'v2' })),
     setSecret: vi.fn(async () => ({ configured: true, source: 'credentials' })),
     clearSecret: vi.fn(async () => ({ configured: false })),
+    dingtalkAuth: vi.fn(async () => ({ installed: true, authenticated: false })),
+    dingtalkLogin: vi.fn(async () => ({ state: 'waiting' as const })),
+    dingtalkLoginCancel: vi.fn(async () => ({ cancelled: true as const })),
+    dingtalkLogout: vi.fn(async () => ({ installed: true, authenticated: false })),
   }
 }
 
@@ -300,7 +304,7 @@ describe('AGENT_KIT_REMOTE descriptors (issue #3)', () => {
       ['status', []],
       ['saveService', ['id', 'enabled', 'config', 'expectedVersion']],
       ['setSecret', ['target', 'value', 'ref']],
-      ['clearSecret', ['target', 'ref']],
+      ['clearSecret', ['target', 'ref']], ['dingtalkAuth', []], ['dingtalkLogin', []], ['dingtalkLoginCancel', []], ['dingtalkLogout', []],
     ])
   })
 })
@@ -355,3 +359,67 @@ describe('Feishu and notification channel cards', () => {
     await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-feishu', true, { identity: 'bot', defaultTarget: { userId: 'ou_me' }, profile: 'prod' }, 'v1'))
   })
 })
+
+describe('DingTalk sign-in panel', () => {
+  const withDingtalk = () =>
+    status({
+      services: [{ id: 'agent-kit-dingtalk', title: '钉钉', enabled: true, phase: 'active', health: { status: 'ok', detail: 'ok' }, config: { identity: 'user' } }],
+      checks: [],
+    })
+
+  it('shows the signed-in account and signs out after confirmation', async () => {
+    const api = fakeApi(withDingtalk())
+    api.dingtalkAuth = vi.fn(async () => ({ installed: true, authenticated: true, user: '张三', corp: '示例公司', expiresAt: '2026-09-24T21:30:00+08:00', refreshExpiresAt: '2026-10-24T19:30:00+08:00' }))
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<SettingsPage api={api} t={t} />)
+    expect(await screen.findByText(/张三 @ 示例公司 · 登录有效至 10-24 \d\d:30（访问凭证每 2 小时自动续期）/)).toBeTruthy()
+    expect(screen.getByText(zh['dingtalk.auth.signedIn']!)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: zh['dingtalk.auth.login']! })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh['dingtalk.auth.logout']! }))
+    await waitFor(() => expect(api.dingtalkLogout).toHaveBeenCalledOnce())
+    expect(confirm).toHaveBeenCalled()
+    confirm.mockRestore()
+  })
+
+  it('starts a device login, shows the code and link, and polls until signed in', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const api = fakeApi(withDingtalk())
+    let signedIn = false
+    let started = false
+    api.dingtalkLogin = vi.fn(async () => (started = true, { state: 'waiting' as const, code: 'ABCD-EFGH', url: 'https://login.dingtalk.com/oauth2/device/verify.htm?user_code=ABCD-EFGH' }))
+    api.dingtalkAuth = vi.fn(async () =>
+      signedIn
+        ? { installed: true, authenticated: true, user: '张三', login: { state: 'succeeded' as const } }
+        : started
+          ? { installed: true, authenticated: false, login: { state: 'waiting' as const, code: 'ABCD-EFGH', url: 'https://login.dingtalk.com/oauth2/device/verify.htm?user_code=ABCD-EFGH' } }
+          : { installed: true, authenticated: false })
+    render(<SettingsPage api={api} t={t} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh['dingtalk.auth.login']! }))
+    expect(await screen.findByText('ABCD-EFGH')).toBeTruthy()
+    expect((screen.getByRole('link', { name: zh['dingtalk.auth.open']! }) as HTMLAnchorElement).href).toContain('user_code=ABCD-EFGH')
+    signedIn = true
+    await act(async () => { await vi.advanceTimersByTimeAsync(3500) })
+    expect(await screen.findByText(zh['dingtalk.auth.signedIn']!)).toBeTruthy()
+    expect(screen.queryByText('ABCD-EFGH')).toBeNull()
+    vi.useRealTimers()
+  })
+
+  it('is hidden for the webhook identity', async () => {
+    const api = fakeApi(status({ services: [{ id: 'agent-kit-dingtalk', title: '钉钉', enabled: true, phase: 'active', health: null, config: { identity: 'webhook' } }], checks: [] }))
+    render(<SettingsPage api={api} t={t} />)
+    await screen.findByRole('region', { name: '钉钉' })
+    expect(screen.queryByRole('region', { name: zh['dingtalk.auth.section']! })).toBeNull()
+    expect(api.dingtalkAuth).not.toHaveBeenCalled()
+  })
+
+  it('warns and offers sign-in when the login expires within 3 days', async () => {
+    const api = fakeApi(withDingtalk())
+    const soon = new Date(Date.now() + 2 * 24 * 3600_000).toISOString()
+    api.dingtalkAuth = vi.fn(async () => ({ installed: true, authenticated: true, user: '张三', expiresAt: new Date().toISOString(), refreshExpiresAt: soon }))
+    render(<SettingsPage api={api} t={t} />)
+    expect(await screen.findByText(zh['dingtalk.auth.expiring']!)).toBeTruthy()
+    expect(screen.getByRole('button', { name: zh['dingtalk.auth.login']! })).toBeTruthy()
+    expect(screen.getByRole('button', { name: zh['dingtalk.auth.logout']! })).toBeTruthy()
+  })
+})
+

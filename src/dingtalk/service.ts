@@ -144,14 +144,16 @@ export class DingtalkService extends KitService<DingtalkCounters> {
     return r.ok
   }
 
-  private async checkLogin(): Promise<{ ok: boolean; detail: string; account?: string }> {
+  private async checkLogin(): Promise<{ ok: boolean; detail: string; account?: string; profile?: string }> {
     try {
       const r = await this.exec(['auth', 'status', '--format=json'], this.controller.signal)
       if (r.exitCode !== 0) return { ok: false, detail: `dws auth status exited with ${r.exitCode}: ${parseErrorOutput(r.stderr).message}` }
-      const data = JSON.parse(r.stdout) as { authenticated?: boolean; token_valid?: boolean; refresh_token_valid?: boolean; user_name?: string; corp_name?: string }
+      const data = JSON.parse(r.stdout) as { authenticated?: boolean; token_valid?: boolean; refresh_token_valid?: boolean; user_name?: string; corp_name?: string; corp_id?: string; user_id?: string }
       const ok = data.authenticated === true && (data.token_valid === true || data.refresh_token_valid === true)
       const account = [data.user_name, data.corp_name].filter(Boolean).join(' @ ')
-      return { ok, detail: ok ? `logged in${account ? ` as ${account}` : ''}` : 'dws is not logged in', ...(account ? { account } : {}) }
+      // dws 的账号标识 corpId:userId，logout 用它只退出当前账号
+      const profile = data.corp_id && data.user_id ? `${data.corp_id}:${data.user_id}` : undefined
+      return { ok, detail: ok ? `logged in${account ? ` as ${account}` : ''}` : 'dws is not logged in', ...(account ? { account } : {}), ...(profile ? { profile } : {}) }
     } catch (e) {
       return { ok: false, detail: `dws auth status failed: ${(e as Error).message}` }
     }
@@ -176,7 +178,7 @@ export class DingtalkService extends KitService<DingtalkCounters> {
   /**
    * 设备流登录（`dws auth login --device`）：拿到授权链接即返回，由调用方把链接交给要登录的人；dws 在后台
    * 轮询，对方授权后 `completed` 以新的状态 resolve。同一时间只进行一次登录，重复调用返回同一个会话。
-   * 注意：dws 的登录态是本机共享的，这会替换本机当前的钉钉登录。
+   * 注意：dws 的登录态是本机共享的，登录成功后本机其他使用 dws 的程序也会看到这个账号。
    */
   async login(options: { signal?: AbortSignal } = {}): Promise<LoginSession> {
     if (this.config.identity === 'webhook') throw new DingtalkSendError('unsupported', 'webhook identity has no login')
@@ -217,10 +219,15 @@ export class DingtalkService extends KitService<DingtalkCounters> {
     return session
   }
 
-  /** 退出 dws 登录（`dws auth logout`，退出本机全部钉钉账号），返回退出后的状态。 */
+  /**
+   * 退出当前钉钉账号（`dws auth logout --profile=<corpId>:<userId>`），返回退出后的状态。dws 不带
+   * `--profile` 时会退出本机全部账号，所以取不到当前账号标识时不调用 logout，直接返回当前状态。
+   */
   async logout(): Promise<ChannelStatus> {
     if (this.config.identity === 'webhook') throw new DingtalkSendError('unsupported', 'webhook identity has no login')
-    const r = await this.exec(['auth', 'logout', '--format=json'], this.controller.signal)
+    const current = await this.checkLogin()
+    if (!current.profile) return this.status()
+    const r = await this.exec(['auth', 'logout', `--profile=${current.profile}`, '--yes', '--format=json'], this.controller.signal)
     if (r.exitCode !== 0) throw new DingtalkSendError('exit_nonzero', `dws auth logout exited with ${r.exitCode}: ${parseErrorOutput(r.stderr).message}`)
     this.logger.info('dingtalk logged out')
     return this.status()

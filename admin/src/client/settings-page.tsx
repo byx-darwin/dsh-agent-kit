@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { T } from './forms.js'
 import type { AdminApi, AdminStatus, KeyTarget } from './remote.js'
+import { DingtalkAuthPanel } from './dingtalk-auth.js'
 import { ServiceCard } from './service-card.js'
 
 /** 与 secrets/typesafe-key.ts 里的 SHARED_KEYCHAIN_SERVICE 保持一致：与 gitflow-cli 等工具共享的钥匙串服务名。 */
@@ -45,20 +46,27 @@ function KeyPanel({ status, api, t, onChanged }: { status: AdminStatus; api: Adm
     }
   }
   return (
-    <section className="agent-kit-key" aria-label={t('jev.keySection')}>
-      <p>{status.typesafeKey.configured ? t('jev.keyConfigured', { source: sourceLabel(source ?? '', t) }) : t('jev.keyMissing')}</p>
-      <label htmlFor="agent-kit-key">{t('jev.key')}</label>
-      <input id="agent-kit-key" type="password" autoComplete="off" disabled={disabled} value={value} onChange={(e) => setValue(e.target.value)} />
-      <label htmlFor="agent-kit-key-target">{t('jev.target')}</label>
-      <select id="agent-kit-key-target" disabled={disabled} value={target} onChange={(e) => setTarget(e.target.value as KeyTarget)}>
-        {status.keyTargets.map((k) => (
-          <option key={k} value={k}>{t(`target.${k}`)}</option>
-        ))}
-      </select>
-      <button type="button" disabled={disabled || !value} onClick={save}>{t('jev.saveKey')}</button>
-      {status.typesafeKey.configured && (
-        <button type="button" disabled={disabled} onClick={clear}>{t('jev.clearKey')}</button>
-      )}
+    <section className="agent-kit-secrets" aria-label={t('jev.keySection')}>
+      <div className="agent-kit-secret">
+        <div className="agent-kit-secret-head">
+          <label htmlFor="agent-kit-key">{t('jev.key')}</label>
+          <span className="agent-kit-tag" data-tone={status.typesafeKey.configured ? 'ok' : 'warn'}>
+            {status.typesafeKey.configured ? t('jev.keyConfigured', { source: sourceLabel(source ?? '', t) }) : t('jev.keyMissing')}
+          </span>
+        </div>
+        <div className="agent-kit-secret-row">
+          <input id="agent-kit-key" type="password" autoComplete="off" disabled={disabled} value={value} onChange={(e) => setValue(e.target.value)} />
+          <select id="agent-kit-key-target" aria-label={t('jev.target')} disabled={disabled} value={target} onChange={(e) => setTarget(e.target.value as KeyTarget)}>
+            {status.keyTargets.map((k) => (
+              <option key={k} value={k}>{t(`target.${k}`)}</option>
+            ))}
+          </select>
+          <button type="button" className="agent-kit-btn" data-variant="primary" disabled={disabled || !value} onClick={save}>{t('jev.saveKey')}</button>
+          {status.typesafeKey.configured && (
+            <button type="button" className="agent-kit-btn" disabled={disabled} onClick={clear}>{t('jev.clearKey')}</button>
+          )}
+        </div>
+      </div>
       {error && <p role="alert">{error}</p>}
     </section>
   )
@@ -117,17 +125,20 @@ export function SettingsPage({ api, t }: { api: AdminApi; t: T }) {
     [api, clearTimers],
   )
 
-  if (error) return <p role="alert">{t('loadFailed', { message: error })}</p>
-  if (!status) return <p>{t('loading')}</p>
+  if (error) return <div className="agent-kit-settings"><p role="alert">{t('loadFailed', { message: error })}</p></div>
+  if (!status) return <div className="agent-kit-settings"><p className="agent-kit-meta">{t('loading')}</p></div>
   return (
     <div className="agent-kit-settings">
       <h2>{t('title')}</h2>
-      <p>{t('profile', { name: status.profile })}</p>
-      {status.patchReload === 'startup' && <p>{t('reloadStartup')}</p>}
-      {!status.writable && <p role="note">{t('readOnly', { reason: status.readOnlyReason ?? '' })}</p>}
-      {status.services.map((s) => (
-        <div key={`${s.id}-${generation}`}>
+      <p className="agent-kit-meta">
+        <span>{t('profile', { name: status.profile })}</span>
+        {status.patchReload === 'startup' && <span>{t('reloadStartup')}</span>}
+      </p>
+      {!status.writable && <p role="note" className="agent-kit-banner">{t('readOnly', { reason: status.readOnlyReason ?? '' })}</p>}
+      <div className="agent-kit-cards">
+        {status.services.map((s) => (
           <ServiceCard
+            key={`${s.id}-${generation}`}
             service={s}
             checks={status.checks.filter((c) => c.scope === s.id)}
             status={status}
@@ -136,10 +147,14 @@ export function SettingsPage({ api, t }: { api: AdminApi; t: T }) {
             onSaved={refreshSoon}
             onConflict={refreshAfterConflict}
             onSecretChanged={refreshAfterConflict}
-          />
-          {s.id === 'agent-kit-jev' && <KeyPanel status={status} api={api} t={t} onChanged={load} />}
-        </div>
-      ))}
+          >
+            {s.id === 'agent-kit-jev' && <KeyPanel status={status} api={api} t={t} onChanged={load} />}
+            {s.id === 'agent-kit-dingtalk' && s.enabled && (s.config as { identity?: string } | undefined)?.identity !== 'webhook' && (
+              <DingtalkAuthPanel api={api} t={t} writable={status.writable} onChanged={refreshAfterConflict} />
+            )}
+          </ServiceCard>
+        ))}
+      </div>
     </div>
   )
 }

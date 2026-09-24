@@ -251,7 +251,7 @@ if (cur.running && !cur.online) {
 | 飞书 | `user` | `lark-cli auth login --scope=im:message.send_as_user im:message --no-wait --json`，随后在后台运行 `--device-code=<code>` 等待授权 | `lark-cli auth logout` |
 | 飞书 | `bot` | 抛出 `unsupported`（bot 使用 `lark-cli config init` 配置的应用凭据，没有用户登录） | 抛出 `unsupported` |
 
-> **注意**：`dws` 的登录态是本机共享的。钉钉 `login()` 会替换本机当前的钉钉登录；钉钉 `logout()` 会退出**本机全部钉钉账号**，同一系统用户下使用 dws 的其他程序也会受影响。
+> **注意**：`dws` 的登录态是本机共享的（属于运行 Profile 的系统用户），同一用户下使用 dws 的其他程序也会看到登录与退出的结果。钉钉 `logout()` 只退出当前账号（`dws auth logout --profile=<corpId>:<userId>`），不用 dws 默认的「退出全部账号」；取不到当前账号时不做任何事。
 
 登录相关的错误码：`unsupported`（该身份没有登录）、`login_failed`（CLI 在给出授权链接之前就失败了），都在 `DingtalkSendError` / `FeishuSendError` 上。相关类型 `ChannelName`、`ChannelStatus`、`LoginSession`、`ChannelNotRunning`、`NotifyStatus` 与常量 `DEFAULT_LOGIN_TTL_MS` 从根入口导出。
 

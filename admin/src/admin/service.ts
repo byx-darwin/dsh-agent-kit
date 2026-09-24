@@ -22,6 +22,8 @@ import {
 } from '@mc/dsh-agent-kit/secrets'
 import { assertEntry, entrySecretRefs, validateEntryConfig, type AgentKitEntry, type EntryField, type RegisteredEntry } from './entry.js'
 import { collectEntries } from './registry.js'
+import { DeviceLogin, logout, readAuthStatus, type DingtalkAuthStatus, type DingtalkLoginState } from './dingtalk-auth.js'
+import { resolveExecutable } from '@mc/dsh-agent-kit'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -217,7 +219,10 @@ export class AgentKitAdmin extends TypertRemoteService {
     private readonly config: AdminConfig = {},
   ) {
     super(ctx, 'agentKitAdmin')
+    ctx.effect(() => () => this.login.cancel(), 'agent-kit: dingtalk login')
   }
+
+  private readonly login = new DeviceLogin()
 
   private get keyStore(): KeyStoreOptions {
     const credentials = (this.ctx as unknown as { get(name: 'credentials'): Credentials }).get('credentials')
@@ -460,6 +465,50 @@ export class AgentKitAdmin extends TypertRemoteService {
     }
     return describeAfterWrite(false, () => describeTypesafeKey(options))
   }
+
+  /** 钉钉行配置的 dwsPath，缺省从 PATH 解析；与 DingtalkService 一致。 */
+  private async dwsPath(): Promise<string | undefined> {
+    const profile = await this.locate()
+    const config = profile ? ((await readKitEntries(profile.patchFile)).entries['agent-kit-dingtalk'].config as { dwsPath?: string } | undefined) : undefined
+    return config?.dwsPath ?? resolveExecutable('dws')
+  }
+
+  /** dws 的登录状态，以及进行中的设备码登录。只读，只读模式下也可用。 */
+  async dingtalkAuth(): Promise<DingtalkAuthStatus> {
+    const { account: _account, ...status } = await readAuthStatus(await this.dwsPath())
+    const login = this.login.state
+    return { ...status, ...(login ? { login: { ...login } } : {}) }
+  }
+
+  /** 发起设备码登录，返回验证码与授权链接；授权在浏览器里完成，页面轮询 `dingtalkAuth`。 */
+  async dingtalkLogin(): Promise<DingtalkLoginState> {
+    await this.writable()
+    const dws = await this.dwsPath()
+    if (!dws) failWith('bad_request', '找不到 dws，先安装 dingtalk-workspace-cli 或在钉钉配置中填写 dwsPath')
+    return this.login.start(dws)
+  }
+
+  async dingtalkLoginCancel(): Promise<{ cancelled: true }> {
+    await this.writable()
+    this.login.cancel()
+    return { cancelled: true }
+  }
+
+  /** 只退出当前账号（dws 默认会退出全部账号）。 */
+  async dingtalkLogout(): Promise<DingtalkAuthStatus> {
+    await this.writable()
+    const dws = await this.dwsPath()
+    if (!dws) failWith('bad_request', '找不到 dws')
+    const current = await readAuthStatus(dws)
+    try {
+      await logout(dws, current.account)
+    } catch (e) {
+      failWith('bad_request', `退出失败：${redact((e as Error).message)}`)
+    }
+    return this.dingtalkAuth()
+  }
 }
 
-for (const method of ['status', 'saveService', 'setSecret', 'clearSecret']) markRemote(AgentKitAdmin.prototype, method)
+for (const method of ['status', 'saveService', 'setSecret', 'clearSecret', 'dingtalkAuth', 'dingtalkLogin', 'dingtalkLoginCancel', 'dingtalkLogout']) {
+  markRemote(AgentKitAdmin.prototype, method)
+}

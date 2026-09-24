@@ -42,6 +42,6 @@ describe('admin bundle in a real dsh loader', () => {
     const admin = c.get('agentKitAdmin')
     expect(admin).toBeDefined()
     const names = remoteMethods(admin as object).map((m) => m.exportName ?? m.method).sort()
-    expect(names).toEqual(['clearSecret', 'saveService', 'setSecret', 'status'])
+    expect(names).toEqual(['clearSecret', 'dingtalkAuth', 'dingtalkLogin', 'dingtalkLoginCancel', 'dingtalkLogout', 'saveService', 'setSecret', 'status'])
   })
 })

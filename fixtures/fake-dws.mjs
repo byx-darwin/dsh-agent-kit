@@ -6,7 +6,7 @@
 // fake-dws.json:
 // {
 //   "auth": "ok" | "expired" | "error",
-//   "login": "approve" | "deny" | "hang" | "no_link",   // dws auth login --device；approve 后 auth 变为 ok
+//   "login": "approve" | "deny" | "hang" | "no_link",   // dws auth login --device；approve 后 auth 变为 ok（success / fail 为 approve / deny 的别名）
 //   "loginDelayMs": 300,
 //   "send": [ { "mode": "success" | "fail" | "hang" | "bad_output" | "partial", ... }, ... ]  // 按调用次序取，超出时重复最后一个
 // }
@@ -40,15 +40,23 @@ if (args[0] === 'auth' && args[1] === 'status') {
   const auth = state.auth ?? scenario.auth ?? 'ok'
   if (auth === 'error') err({ error: { category: 'auth', code: 2, message: 'not logged in' } }, 2)
   const ok = auth === 'ok'
-  out({ success: true, authenticated: ok, token_valid: ok, refresh_token_valid: ok, ...(ok ? { user_name: '测试用户', corp_name: '测试组织', user_id: 'u1' } : { message: '未登录' }) })
+  out({
+    success: true,
+    authenticated: ok,
+    token_valid: ok,
+    refresh_token_valid: ok,
+    ...(ok
+      ? { expires_at: '2026-09-24T21:30:00+08:00', refresh_expires_at: '2026-10-24T19:30:00+08:00', corp_id: 'dingcorp', corp_name: '示例公司', user_id: 'u1', user_name: '张三' }
+      : { message: '未登录' }),
+  })
   process.exit(0)
 }
 
 if (args[0] === 'auth' && args[1] === 'login') {
   // 真实 dws 的设备流把验证码与链接以纯文本写在 stderr，然后同一进程每 5 秒轮询一次
-  const mode = scenario.login ?? 'approve'
+  const mode = { success: 'approve', fail: 'deny' }[scenario.login] ?? scenario.login ?? 'approve'
   if (mode === 'no_link') err({ error: { category: 'network', code: 1, message: 'request device code failed' } }, 1)
-  process.stderr.write('● Step 1: Requesting device authorization code...\n\n  authorization code: FAKE-CODE\n  Authorization code will expire in 900 seconds.\n\n  Authorization link (code included):\nhttps://login.dingtalk.com/oauth2/device/verify.htm?caller=dws&user_code=FAKE-CODE\n\n● Step 2: Waiting for user authorization...\n')
+  process.stderr.write('● Step 1: Requesting device authorization code...\n\n  authorization code: FAKE-CODE\n  Authorization code will expire in 900 seconds.\n\n  Authorization link (code included):\nhttps://login.dingtalk.com/oauth2/device/verify.htm?caller=dws&user_code=FAKE-CODE\n\n  Link for entering the code manually:\nhttps://login.dingtalk.com/oauth2/device/verify.htm?caller=dws\n\n● Step 2: Waiting for user authorization...\n')
   if (mode === 'hang') await new Promise(() => setInterval(() => {}, 1000))
   await new Promise((r) => setTimeout(r, scenario.loginDelayMs ?? 300))
   if (mode === 'deny') err({ error: { category: 'auth', code: 1, message: 'authorization denied' } }, 1)
@@ -58,6 +66,7 @@ if (args[0] === 'auth' && args[1] === 'login') {
 }
 
 if (args[0] === 'auth' && args[1] === 'logout') {
+  // 只退出 --profile 指定的账号时也清掉假 dws 唯一的账号
   setAuth('expired')
   out({ success: true, message: '已退出' })
   process.exit(0)

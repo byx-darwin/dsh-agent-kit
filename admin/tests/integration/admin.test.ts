@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { createFakeDws } from '@mc/dsh-agent-kit/testing'
 import { AgentKitAdmin } from '../../src/admin/service.js'
 import { SHARED_KEYCHAIN_SERVICE, type Keychain } from '@mc/dsh-agent-kit/secrets'
 
@@ -209,4 +210,39 @@ describe('AgentKitAdmin', () => {
     expect(s.typesafeKey).toEqual({ configured: false })
     expect(s.keyTargets).toEqual(['credentials'])
   })
+
+  describe('dws sign-in', () => {
+    const savedEnv = { ...process.env }
+    let dws: ReturnType<typeof createFakeDws>
+    const withDws = (scenario: Parameters<typeof createFakeDws>[0]) => {
+      dws = createFakeDws(scenario)
+      process.env.DWS_CONFIG_DIR = dws.dir
+      writeFileSync(join(profileDir, 'cordis.patch.yml'), `- id: agent-kit-ws\n  disabled: false\n- id: agent-kit-dingtalk\n  disabled: false\n  config:\n    identity: user\n    dwsPath: ${dws.path}\n`)
+    }
+    afterEach(() => {
+      process.env = { ...savedEnv }
+      dws?.cleanup()
+    })
+
+    it('shows the account, logs in with a device code and signs out only the current account', async () => {
+      withDws({ auth: 'ok', login: 'success', loginDelayMs: 100 })
+      const admin = await setup('127.0.0.1')
+      expect(await admin.dingtalkAuth()).toMatchObject({ installed: true, authenticated: true, user: '张三', corp: '示例公司' })
+      expect(await admin.dingtalkLogin()).toMatchObject({ state: 'waiting', code: 'FAKE-CODE' })
+      await expect.poll(async () => (await admin.dingtalkAuth()).login?.state, { timeout: 3000 }).toBe('succeeded')
+      await admin.dingtalkLogout()
+      expect(dws.calls().at(-2)!.args).toEqual(['auth', 'logout', '--profile', 'dingcorp:u1', '--yes'])
+    })
+
+    it('reads the status but refuses to log in or out while read-only', async () => {
+      withDws({ auth: 'ok' })
+      const admin = await setup('0.0.0.0')
+      expect(await admin.dingtalkAuth()).toMatchObject({ authenticated: true })
+      await expect(admin.dingtalkLogin()).rejects.toThrow(/read_only/)
+      await expect(admin.dingtalkLogout()).rejects.toThrow(/read_only/)
+      await expect(admin.dingtalkLoginCancel()).rejects.toThrow(/read_only/)
+      expect(dws.calls().some((c) => c.args[1] === 'login' || c.args[1] === 'logout')).toBe(false)
+    })
+  })
 })
+

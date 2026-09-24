@@ -116,7 +116,7 @@ describe('NotifyService', () => {
     const { notify } = await consumer({ channel: 'feishu' })
     let s = await notify().status()
     expect(s.channel).toBe('feishu')
-    expect(s.channels.dingtalk).toMatchObject({ running: true, online: true, account: '测试用户 @ 测试组织' })
+    expect(s.channels.dingtalk).toMatchObject({ running: true, online: true, account: '张三 @ 示例公司' })
     expect(s.channels.feishu).toMatchObject({ running: true, identity: 'user', online: false })
 
     const session = await notify().login()
