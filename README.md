@@ -204,6 +204,66 @@ const provider = new FakeSubagentProvider({ name: 'claude-code', handler: () => 
 await ctx.plugin(FakeSubagentRuntime, { providers: [provider] }) // 或注册到真实 ctx.subagents
 ```
 
+### 把业务包的配置接入设置页与 doctor
+
+业务包自己的 loader 行（连接地址、token 引用、通知目标、功能开关……）可以登记到本包的设置页、`agentKitAdmin`、`doctor` 和密钥管理，运维在一个页面里配完整个 Profile，不需要再写第二个设置页。
+
+推荐在 `package.json` 里声明**静态清单**：业务插件未启用、配置有误或启动失败时，卡片、表单和检查照样出现，`doctor` 也从这里发现业务行。
+
+```jsonc
+{
+  "dsh": {
+    "bundle": { "patch": "./patch.yml" },
+    "agentKit": { "entries": ["./lib/agent-kit-entry.js"] }
+  }
+}
+```
+
+清单模块必须无副作用（不要在顶层连接网络、读取环境），默认导出一个或一组条目：
+
+```ts
+// src/agent-kit-entry.ts
+import { defineEntry } from '@mc/dsh-agent-kit/entry'
+import { Config } from './config.js' // Schemastery schema
+
+export default defineEntry({
+  id: 'my-agent',                         // cordis.patch.yml 中的行 id
+  label: '我的业务',
+  schema: Config,                         // 先用 schema 校验并补默认值
+  validate: (c) => [                      // schema 表达不了的约束；path 相对本行 config
+    ...(c.url.startsWith('wss://') ? [] : [{ path: 'url', message: '必须是 wss://' }]),
+    ...(c.batchSize > c.maxInFlight ? [{ path: 'batchSize', message: '不能大于 maxInFlight' }] : []),
+  ],
+  fields: [
+    { path: 'url', label: '上游地址' },
+    { path: 'alertTarget.chatId', label: '告警群 ID' },
+    { path: 'batchSize', label: '批大小', kind: 'number' },
+    { path: 'mode', label: '模式', kind: 'select', options: ['shadow', 'live'] },
+  ],
+  // ref 可以来自配置：保存新的 tokenEnv 后，设置页和 setSecret 跟随新名字
+  secrets: [{ label: '上游 Token', refFrom: 'tokenEnv', ref: 'MY_AGENT_TOKEN' }],
+  service: 'myAgent',                     // 行运行中时，从 ctx.myAgent.health() 读取状态
+  dependsOn: ['agent-kit-ws', 'agent-kit-dingtalk'], // 停用这些行前，设置页会提示连带停止本行
+  checks: async (ctx) => [
+    { id: 'upstream', title: '上游可达', status: 'pass', detail: 'ok' },
+  ],
+})
+```
+
+也可以在插件里运行时登记（插件需 inject `agentKitAdmin`，卸载时自动注销；同 id 时覆盖清单，例如补上 `health`）：
+
+```ts
+export const inject = ['agentWs', 'agentKitAdmin']
+export function apply(ctx: Context) {
+  ctx.agentKitAdmin.registerEntry({ ...entry, health: () => ({ status: 'ok', detail: `${conn.state}` }) })
+}
+```
+
+- 保存业务行与本包的行共用同一套版本冲突检测；只替换被保存的那一行，其他行的文本逐字节不变。
+- 校验失败时返回 `invalid_config` 和按字段的错误（`path` 为 `<行 id>.<字段>`），与本包自己的行一致。
+- 业务行的密钥只写入 dsh 凭据文件（`$DSH_HOME/.credentials.yaml`），插件运行时用 `ctx.credentials.resolve(ref)` 或本包导出的 `resolveSecretRef(ref)` 读取（环境变量优先）。
+- 业务行被停用时照常检查：配置错误记为警告，不让 `doctor` 因一个未启用的行失败；启用后记为失败。
+
 完整接口、错误码、配置默认值和卸载语义见 [设计文档](docs/superpowers/specs/2026-09-23-dsh-agent-kit-design.md)。
 
 ## 配置

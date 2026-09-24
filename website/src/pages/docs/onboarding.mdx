@@ -12,7 +12,7 @@ import Figure from '../../components/Figure.astro'
 
 # doctor、setup 与设置页
 
-三种方式读写的是同一份配置：Profile 目录下 `cordis.patch.yml` 中 id 为 `agent-kit-*` 的几行。手动编辑这个文件，效果也完全一样。
+三种方式读写的是同一份配置：Profile 目录下 `cordis.patch.yml` 中 id 为 `agent-kit-*` 的几行，以及业务包登记进来的行（见下文「业务包的行」）。手动编辑这个文件，效果也完全一样。
 
 ## doctor：检查
 
@@ -54,6 +54,17 @@ import Figure from '../../components/Figure.astro'
 </Notice>
 
 <Figure src="/walkthrough/settings-readonly.png" alt="只读状态下的 Agent Kit 设置页" caption="只读状态：所有编辑控件禁用，并显示原因。" />
+
+## 业务包的行
+
+业务包可以把自己的 loader 行登记进来：设置页多出一张同样的卡片（启用开关、运行状态、检查结果、配置表单和密钥），`doctor` 也会列出它的检查，`scope` 为该行的 id。
+
+- 登记方式有两种：在业务包 `package.json` 的 `dsh.agentKit.entries` 里声明无副作用的清单模块；或在插件里调用 `ctx.agentKitAdmin.registerEntry(...)`。推荐用清单——业务插件没启用、配置有误或启动失败时，卡片和检查照样出现，而这正是最需要它们的时候。
+- 保存任何一行，只替换那一行的文本；其他行（包括注释和格式）逐字节不变，并与本包的行共用冲突检测。
+- 业务行的密钥只写入 dsh 凭据文件；密钥名可以取自配置（例如 `tokenEnv`），保存新配置后跟随新名字。
+- `patchReload: live` 时，停用本包的某一行会连带卸载所有依赖它的业务插件，dsh 进程仍在运行，systemd 等外部守护进程察觉不到。业务行声明了 `dependsOn` 时，设置页会在保存前列出会被连带停止的插件并请求确认。
+
+写法见 README 的「把业务包的配置接入设置页与 doctor」。
 
 ## 密钥保存在哪里
 
