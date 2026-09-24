@@ -61,7 +61,9 @@
   "dependencies": {
     "@deepseek-ai/dsh-atomic-write": "^0.1.5-rc.3",
     "@deepseek-ai/dsh-typert-protocol": "^0.1.5-rc.3",
+    "@inquirer/prompts": "^7.10.1",
     "ajv": "^8.17.1",
+    "diff": "^8.0.4",
     "ws": "^8.18.0",
     "yaml": "^2.9.1"
   },

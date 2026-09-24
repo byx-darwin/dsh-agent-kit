@@ -1,9 +1,11 @@
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   clearTypesafeKey,
+  createMacosKeychain,
   credentialsFile,
   defaultKeyTarget,
   describeTypesafeKey,
@@ -14,6 +16,8 @@ import {
   writeCredential,
   type Keychain,
 } from '../../src/secrets/index.js'
+
+const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), '../fixtures')
 
 let home: string
 let file: string
@@ -99,6 +103,11 @@ describe('typesafe key', () => {
     expect(defaultKeyTarget('darwin')).toBe('keychain')
     expect(defaultKeyTarget('linux')).toBe('credentials')
     expect(defaultKeyTarget('win32')).toBe('credentials')
+  })
+
+  it('write times out and kills a hung security process instead of hanging forever', async () => {
+    const slow = createMacosKeychain(join(fixturesDir, 'slow-security.sh'), 200)
+    await expect(slow.write('svc', 'acct', 'v')).rejects.toThrow(/timed out/)
   })
 
   it.skipIf(process.platform !== 'darwin')('real macOS keychain round trip', async () => {
