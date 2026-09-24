@@ -8,13 +8,13 @@ const optional = (pkg.peerDependenciesMeta ?? {}) as Record<string, { optional?:
 
 const runtime: { name: string; version: string; note: string }[] = [
   { name: 'Node.js', version: pkg.engines.node, note: '本包的 engines 声明' },
-  { name: '@deepseek-ai/dsh', version: '0.1.5-rc.3', note: '预发布版本；dsh 与 cordis 相关依赖需锁定到一致的版本' },
+  { name: '@deepseek-ai/dsh', version: '0.1.5-rc.3 || 0.1.7-alpha.2', note: '预发布版本；dsh 与 cordis 相关依赖需锁定到与所用 dsh 一致的版本。0.1.7 在 CI 的 dsh-017 任务中以对应的 peer 版本测试' },
   ...Object.entries(peers).map(([name, version]) => ({
     name,
     version,
     note: optional[name]?.optional ? '可选 peer 依赖，只有启用 Jev 时需要' : 'peer 依赖，与 dsh 对齐',
   })),
-  { name: '@deepseek-ai/dsh-subagent-claude-code / codex', version: '0.1.5-rc.3', note: '必须显式指定版本：latest 标签指向 0.0.1-rc.1，与 dsh 不匹配' },
+  { name: '@deepseek-ai/dsh-subagent-claude-code / codex', version: '与 dsh 相同', note: '必须显式指定版本（例如 0.1.5-rc.3）：latest 标签指向 0.0.1-rc.1，与 dsh 不匹配' },
   { name: 'dws（钉钉 CLI）', version: 'v1.0.62', note: '已验证的版本；输出格式以该版本为准' },
 ]
 

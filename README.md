@@ -51,7 +51,7 @@
 ## 环境要求
 
 - Node.js `^22.19` 或 `>=24`
-- [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh) CLI `0.1.5-rc.3`（当前为预发布版本，dsh 与 cordis 相关依赖需锁定到与之一致的版本）
+- [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh) CLI `0.1.5-rc.3` 或 `0.1.7-alpha.2`（均为预发布版本，dsh 与 cordis 相关依赖需锁定到与所用 dsh 一致的版本；以下示例以 `0.1.5-rc.3` 为准，使用 0.1.7 时把版本号一并替换）
 - 使用 `ctx.dingtalk`：已安装并登录 `dws`；服务器环境推荐 `bot` 身份
 - 使用 `ctx.agentTasks`：安装 `@deepseek-ai/dsh-subagent-claude-code` 和/或 `@deepseek-ai/dsh-subagent-codex`（`ctx.subagents` 与子进程服务由 dsh 的 base bundle 提供），并完成 Claude Code / Codex 的原生登录（provider 会剔除名字含 KEY / TOKEN / SECRET / PASSWORD 的环境变量，依赖这类变量鉴权时需在 provider 的 Config `env` 中显式给出）
 - 使用 `ctx.jev`：安装 `@typesafe-ai/sdk`，并设置环境变量 `TYPESAFE_API_KEY`；macOS 上也可以用 `keychainService` 从钥匙串读取，推荐与 gitflow-cli 等工具共享的服务名 `ai.typesafe.api-key`（保存：`security add-generic-password -a "$USER" -s ai.typesafe.api-key -U -w`）
@@ -128,7 +128,7 @@ CLI 与 Web 保存 Key 时会提示当前平台可选的目标（`keychain` / `c
 }
 ```
 
-`@deepseek-ai/cordis` 的版本与目标 dsh 依赖的版本保持一致（dsh `0.1.5-rc.3` 对应 `4.0.2`）。开发期可以用 `link:` 指向本包的本地 checkout。
+`@deepseek-ai/cordis` 的版本与目标 dsh 依赖的版本保持一致（dsh `0.1.5-rc.3` 对应 `4.0.2`，`0.1.7-alpha.2` 对应 `4.0.4`）。开发期可以用 `link:` 指向本包的本地 checkout。
 
 插件示例：
 
