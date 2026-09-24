@@ -330,20 +330,18 @@ describe('Feishu and notification channel cards', () => {
     const s = status()
     s.services.splice(2, 0,
       { id: 'agent-kit-feishu', title: '飞书', enabled: true, phase: 'active', health: { status: 'ok', detail: 'ready' }, config: { identity: 'bot', defaultTarget: { chatId: 'oc_a' } } },
-      { id: 'agent-kit-notify', title: '通知渠道', enabled: true, phase: 'active', health: { status: 'ok', detail: 'channels: dingtalk (all)' }, config: { channels: ['dingtalk'], strategy: 'all' } },
+      { id: 'agent-kit-notify', title: '通知渠道', enabled: true, phase: 'active', health: { status: 'ok', detail: 'channel: dingtalk' }, config: { channel: 'dingtalk' } },
     )
     return s
   }
 
-  it('switches notification channels to Feishu-first failover and saves', async () => {
+  it('switches the notification channel and saves', async () => {
     const api = fakeApi(withChannels())
     render(<SettingsPage api={api} t={t} />)
     const card = await screen.findByRole('region', { name: '通知渠道' })
-    fireEvent.click(within(card).getByLabelText(zh['notify.channel.feishu']!))
-    fireEvent.change(within(card).getByLabelText(zh['notify.strategy']!), { target: { value: 'failover' } })
-    fireEvent.change(within(card).getByLabelText(zh['notify.first']!), { target: { value: 'feishu' } })
+    fireEvent.change(within(card).getByLabelText(zh['notify.channel']!), { target: { value: 'feishu' } })
     fireEvent.click(within(card).getByRole('button', { name: `${zh.save} 通知渠道` }))
-    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-notify', true, { channels: ['feishu', 'dingtalk'], strategy: 'failover' }, 'v1'))
+    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-notify', true, { channel: 'feishu' }, 'v1'))
   })
 
   it('edits the Feishu default target and keeps the kind when the id changes', async () => {

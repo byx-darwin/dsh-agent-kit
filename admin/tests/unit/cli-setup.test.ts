@@ -262,42 +262,21 @@ describe('setup: channel CLIs, Feishu and notification channels', () => {
     expect(readFileSync(patchFile, 'utf8')).toContain('chatId: oc_alert')
   })
 
-  it('configures notification channels with failover order, and a later run switches channels in place', async () => {
+  it('picks one notification channel, and a later run switches it in place', async () => {
     const installed = new Set(['dws', 'lark-cli'])
-    let r = cliDeps(
-      [
-        ['agent-kit-dingtalk', 'agent-kit-feishu', 'agent-kit-notify'],
-        'bot', 'dingRobot1', 'none', false, // 钉钉
-        'bot', 'none', false, // 飞书
-        ['dingtalk', 'feishu'], 'failover', 'feishu', // 通知：两个渠道，主备，先飞书
-        true, // 写入
-      ],
-      installed,
-    )
+    const rows = ['agent-kit-dingtalk', 'agent-kit-feishu', 'agent-kit-notify']
+    const channels = ['bot', 'dingRobot1', 'none', false, 'bot', 'none', false]
+    let r = cliDeps([rows, ...channels, 'feishu', true], installed)
     await main(['setup', '--profile', 'kit'], io(), r.deps)
-    let text = readFileSync(patchFile, 'utf8')
-    expect(text).toMatch(/id: agent-kit-notify\n\s+disabled: false\n\s+config:\n\s+channels:\n\s+- feishu\n\s+- dingtalk\n\s+strategy: failover/)
+    expect(readFileSync(patchFile, 'utf8')).toMatch(/id: agent-kit-notify\n\s+disabled: false\n\s+config:\n\s+channel: feishu\n/)
 
-    // 之后只切换通知渠道：只保留钉钉；空选会被要求重选
-    out = []
-    r = cliDeps(
-      [
-        ['agent-kit-dingtalk', 'agent-kit-feishu', 'agent-kit-notify'],
-        'bot', 'dingRobot1', 'none', false,
-        'bot', 'none', false,
-        [], ['dingtalk'], // 先空选，被要求重选
-        true,
-      ],
-      installed,
-    )
+    r = cliDeps([rows, ...channels, 'dingtalk', true], installed)
     await main(['setup', '--profile', 'kit'], io(), r.deps)
-    text = readFileSync(patchFile, 'utf8')
-    expect(out.join('')).toContain('至少选择一个渠道')
-    expect(text).toMatch(/id: agent-kit-notify\n\s+disabled: false\n\s+config:\n\s+channels:\n\s+- dingtalk\n\s+strategy: failover/)
+    expect(readFileSync(patchFile, 'utf8')).toMatch(/id: agent-kit-notify\n\s+disabled: false\n\s+config:\n\s+channel: dingtalk\n/)
   })
 
   it('warns when notify points at a channel that is not enabled', async () => {
-    const r = cliDeps([['agent-kit-notify'], ['feishu'], true], new Set())
+    const r = cliDeps([['agent-kit-notify'], 'feishu', true], new Set())
     await main(['setup', '--profile', 'kit'], io(), r.deps)
     expect(out.join('')).toContain('注意：飞书 没有启用')
     expect(out.join('')).toContain('agent-kit-feishu 未启用')

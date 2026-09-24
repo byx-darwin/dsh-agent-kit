@@ -15,6 +15,9 @@ export type FakeDwsSendStep =
 
 export interface FakeDwsScenario {
   auth?: 'ok' | 'expired' | 'error'
+  /** `dws auth login --device` 的结果；approve 后 auth 变为 ok。 */
+  login?: 'approve' | 'deny' | 'hang' | 'no_link'
+  loginDelayMs?: number
   /** 按调用次序取，超出时重复最后一个。 */
   send?: FakeDwsSendStep[]
 }
@@ -40,6 +43,7 @@ export function createFakeDws(scenario: FakeDwsScenario = {}) {
     setScenario: (s: FakeDwsScenario) => {
       write(s)
       rmSync(join(dir, 'send-count'), { force: true })
+      rmSync(join(dir, 'auth-state.json'), { force: true })
     },
     calls(): FakeDwsCall[] {
       const file = join(dir, 'calls.jsonl')

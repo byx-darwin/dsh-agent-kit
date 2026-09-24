@@ -1,14 +1,15 @@
 import type { Context } from '@deepseek-ai/cordis'
-import { ConfigError, KitError, type KitErrorOptions } from '../common/errors.js'
+import type { ChannelStatus, LoginSession } from '../common/channel.js'
+import { KitError, type KitErrorOptions } from '../common/errors.js'
 import { digest } from '../common/redact.js'
 import { KitService, type ServiceHealth } from '../common/service.js'
 import type { DingtalkAt, DingtalkTarget } from '../dingtalk/args.js'
 import type { DingtalkService } from '../dingtalk/service.js'
 import type { FeishuAt, FeishuTarget } from '../feishu/args.js'
 import type { FeishuService } from '../feishu/service.js'
-import { NotifyConfig, assertNotifyConfig, type NotifyChannel } from './config.js'
+import { NOTIFY_CHANNELS, NotifyConfig, type NotifyChannel } from './config.js'
 
-export type NotifyErrorCode = 'channel_unavailable' | 'all_failed'
+export type NotifyErrorCode = 'channel_unavailable' | 'invalid_channel'
 
 export class NotifyError extends KitError {
   declare readonly code: NotifyErrorCode
@@ -21,29 +22,40 @@ export class NotifyError extends KitError {
 
 export interface NotifySendOptions {
   title?: string
-  /** Markdown 正文，与 `text` 二选一。各渠道按自己的方式渲染。 */
+  /** Markdown 正文，与 `text` 二选一。 */
   markdown?: string
   text?: string
-  /** 按渠道覆盖目标；缺省用各渠道配置的 defaultTarget。 */
+  /** 按渠道给出目标，切换渠道后自动用对应的一项；缺省用该渠道配置的 defaultTarget。 */
   targets?: { dingtalk?: DingtalkTarget; feishu?: FeishuTarget }
   /** 按渠道 @ 人（两个渠道的用户 id 体系不同）。 */
   at?: { dingtalk?: DingtalkAt; feishu?: FeishuAt }
-  /** 透传给各渠道；飞书与钉钉 user 身份据此去重与重试。 */
+  /** 透传给渠道；飞书与钉钉 user 身份据此去重与重试。 */
   idempotencyKey?: string
   traceId?: string
   signal?: AbortSignal
 }
 
-export interface NotifyChannelResult {
+export interface NotifySendResult {
+  /** 实际发往的渠道。 */
   channel: NotifyChannel
-  ok: boolean
   /** 渠道自己的逐目标结果。 */
-  results?: Array<{ ok: boolean; messageId?: string; error?: KitError }>
-  error?: KitError
+  results: Array<{ ok: boolean; messageId?: string; error?: KitError }>
 }
 
-export interface NotifySendResult {
-  results: NotifyChannelResult[]
+/** 未运行的渠道（对应的行未启用或启动失败）。 */
+export interface ChannelNotRunning {
+  channel: NotifyChannel
+  running: false
+  detail: string
+}
+
+export interface NotifyStatus {
+  /** 当前生效的渠道。 */
+  channel: NotifyChannel
+  /** `config`：来自配置；`runtime`：运行中被 `use()` 切换过（重启或修改配置后回到配置值）。 */
+  source: 'config' | 'runtime'
+  /** 每个渠道的登录状态。 */
+  channels: Record<NotifyChannel, (ChannelStatus & { running: true }) | ChannelNotRunning>
 }
 
 export interface NotifyCounters {
@@ -59,88 +71,105 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-type Channel = Pick<DingtalkService, 'send' | 'health'> | Pick<FeishuService, 'send' | 'health'>
+type Channel = DingtalkService | FeishuService
 
 /**
- * 与渠道无关的通知：业务包只调用 `ctx.notify.send()`，发到钉钉还是飞书由本行的 `channels` 决定，
- * 运维可以在设置页或 `setup` 中随时修改，不需要改业务代码。
+ * 与渠道无关的通知：业务包只调用 `ctx.notify.send()`，同一时间发往一个渠道（钉钉或飞书）。
  *
- * 不 inject 渠道服务，而是在发送时用 `ctx.get()` 取：cordis 的 inject 都是必需的，inject 了
- * 渠道就意味着停用任一渠道都会连带卸载本服务以及所有依赖它的业务插件。现在停用或切换渠道只影响
- * 发送结果（未运行的渠道报 `channel_unavailable`），业务插件不受影响。
- *
- * 修改本行自己的配置（channels / strategy）同样不重载：cordis 默认在配置变更时重启插件，进而重启
- * 所有 inject 了 notify 的业务插件；这里在本 fiber 的 `internal/update` 钩子里校验新配置并原地替换，
- * 不调用 `next()`，从而否决这次重启。
+ * - 切换渠道：修改本行配置的 `channel`，或在运行中调用 `use()`。两种方式都不重载本服务与依赖它的
+ *   业务插件：修改配置时在本 fiber 的 `internal/update` 钩子里原地换上新值（不调用 `next()`，否决
+ *   cordis 默认的重启）；`use()` 只改内存中的选择，重启或配置变更后回到配置值。
+ * - 不 inject 渠道服务，而是在发送时用 `ctx.get()` 取：cordis 的 inject 都是必需的，inject 了渠道就
+ *   意味着停用任一渠道都会连带卸载本服务以及所有依赖它的业务插件。
+ * - `status()` 给出每个渠道的实时登录状态；`login()` / `logout()` 转给对应渠道。
  */
 export class NotifyService extends KitService<NotifyCounters> {
   static Config = NotifyConfig
   private current: NotifyConfig
+  private override?: NotifyChannel
   private lastSuccessAt: number | null = null
   private readonly counters: NotifyCounters = { success: 0, failure: 0, lastFailureAt: null, lastErrorCode: null }
 
   constructor(ctx: Context, config: NotifyConfig) {
     super(ctx, 'notify')
-    this.current = checked(config)
+    this.current = config
     const self = this
     ctx.on('internal/update', function (next, _noSave, _restart) {
-      // this 为本插件的 fiber；next 已经过 NotifyConfig 解析
-      self.current = checked(next as NotifyConfig)
+      // this 为本插件的 fiber；next 已经过 NotifyConfig 解析。配置是运维的最新决定，覆盖 use() 的临时选择。
+      self.current = next as NotifyConfig
+      self.override = undefined
       ;(this as unknown as { config: NotifyConfig }).config = self.current
-      self.logger.info('notify config updated in place', { channels: self.current.channels, strategy: self.current.strategy })
+      self.logger.info('notify channel updated from config', { channel: self.current.channel })
     })
   }
 
-  /** 当前生效的配置；修改本行配置后原地更新。 */
   get config(): NotifyConfig {
     return this.current
   }
 
-  private channel(name: NotifyChannel): Channel | undefined {
+  /** 当前生效的渠道。 */
+  get channel(): NotifyChannel {
+    return this.override ?? this.current.channel
+  }
+
+  /** 运行中切换渠道，立即生效；重启或修改配置后回到配置值。要长期切换请改配置。 */
+  use(channel: NotifyChannel): void {
+    if (!NOTIFY_CHANNELS.includes(channel)) throw new NotifyError('invalid_channel', `unknown channel ${String(channel)}`)
+    this.override = channel === this.current.channel ? undefined : channel
+    this.logger.info('notify channel switched at runtime', { channel })
+  }
+
+  private service(name: NotifyChannel): Channel | undefined {
     return (this.ctx as unknown as { get(name: string): Channel | undefined }).get(name)
   }
 
-  async send(options: NotifySendOptions): Promise<NotifySendResult> {
-    const { channels, strategy } = this.config
-    this.logger.info('notify send', { traceId: options.traceId, channels, strategy, body: digest(options.markdown ?? options.text ?? '') })
-    const results: NotifyChannelResult[] = []
-    if (strategy === 'failover') {
-      for (const name of channels) {
-        const r = await this.sendChannel(name, options)
-        results.push(r)
-        if (r.ok || options.signal?.aborted) break
-      }
-    } else {
-      results.push(...(await Promise.all(channels.map((name) => this.sendChannel(name, options)))))
-    }
-    if (!results.some((r) => r.ok)) {
-      const err = new NotifyError('all_failed', `notification failed on every channel: ${results.map((r) => `${r.channel}: ${r.error?.message ?? 'failed'}`).join('; ')}`, {
-        details: { results: results.map((r) => ({ channel: r.channel, code: r.error?.code })) },
-      })
-      this.recordFailure(err.code)
-      throw err
-    }
-    const failed = results.find((r) => !r.ok)
-    if (failed) this.recordFailure(failed.error?.code ?? 'send_failed')
-    else this.recordSuccess()
-    return { results }
+  private require(name: NotifyChannel): Channel {
+    const svc = this.service(name)
+    if (!svc) throw new NotifyError('channel_unavailable', `${name} is not running; enable agent-kit-${name}`, { details: { channel: name } })
+    return svc
   }
 
-  private async sendChannel(name: NotifyChannel, options: NotifySendOptions): Promise<NotifyChannelResult> {
-    const svc = this.channel(name)
-    if (!svc) return { channel: name, ok: false, error: new NotifyError('channel_unavailable', `${name} is not running; enable agent-kit-${name}`) }
+  async send(options: NotifySendOptions): Promise<NotifySendResult> {
+    const channel = this.channel
+    this.logger.info('notify send', { traceId: options.traceId, channel, body: digest(options.markdown ?? options.text ?? '') })
     try {
+      const svc = this.require(channel)
       const common = { title: options.title, markdown: options.markdown, text: options.text, idempotencyKey: options.idempotencyKey, traceId: options.traceId, signal: options.signal }
       const r =
-        name === 'dingtalk'
+        channel === 'dingtalk'
           ? await (svc as DingtalkService).send({ ...common, target: options.targets?.dingtalk, at: options.at?.dingtalk })
           : await (svc as FeishuService).send({ ...common, target: options.targets?.feishu, at: options.at?.feishu })
       const results = r.results.map((x) => ({ ok: x.ok, ...(x.messageId ? { messageId: x.messageId } : {}), ...(x.error ? { error: x.error } : {}) }))
-      const error = results.find((x) => !x.ok)?.error
-      return { channel: name, ok: !error, results, ...(error ? { error } : {}) }
+      const failed = results.find((x) => !x.ok)
+      if (failed) this.recordFailure(failed.error?.code ?? 'send_failed')
+      else this.recordSuccess()
+      return { channel, results }
     } catch (e) {
-      return { channel: name, ok: false, error: e instanceof KitError ? e : new NotifyError('all_failed', (e as Error).message, { cause: e }) }
+      this.recordFailure((e as KitError).code ?? 'send_failed')
+      throw e
     }
+  }
+
+  /** 当前渠道与每个渠道的实时登录状态。 */
+  async status(): Promise<NotifyStatus> {
+    const entries = await Promise.all(
+      NOTIFY_CHANNELS.map(async (name) => {
+        const svc = this.service(name)
+        if (!svc) return [name, { channel: name, running: false, detail: `agent-kit-${name} is not running` }] as const
+        return [name, { ...(await svc.status()), running: true }] as const
+      }),
+    )
+    return { channel: this.channel, source: this.override ? 'runtime' : 'config', channels: Object.fromEntries(entries) as NotifyStatus['channels'] }
+  }
+
+  /** 登录指定渠道（缺省为当前渠道），见各渠道的 `login()`。 */
+  async login(channel: NotifyChannel = this.channel, options: { signal?: AbortSignal } = {}): Promise<LoginSession> {
+    return this.require(channel).login(options)
+  }
+
+  /** 退出指定渠道（缺省为当前渠道）的登录，见各渠道的 `logout()`。 */
+  async logout(channel: NotifyChannel = this.channel): Promise<ChannelStatus> {
+    return this.require(channel).logout()
   }
 
   private recordSuccess(): void {
@@ -156,25 +185,15 @@ export class NotifyService extends KitService<NotifyCounters> {
 
   health(): ServiceHealth<NotifyCounters> {
     const counters = { ...this.counters }
-    const missing = this.config.channels.filter((name) => !this.channel(name))
-    const unhealthy = this.config.channels.filter((name) => this.channel(name)?.health().status === 'failed')
-    const down = [...new Set([...missing, ...unhealthy])]
-    if (down.length === this.config.channels.length) return { status: 'failed', detail: `no channel available: ${down.join(', ')}`, counters }
-    if (down.length > 0) return { status: 'degraded', detail: `channel unavailable: ${down.join(', ')}`, counters }
+    const channel = this.channel
+    const svc = this.service(channel)
+    if (!svc) return { status: 'failed', detail: `channel ${channel} is not running`, counters }
+    if (svc.health().status === 'failed') return { status: 'failed', detail: `channel ${channel}: ${svc.health().detail}`, counters }
     if (counters.lastFailureAt !== null && (this.lastSuccessAt === null || counters.lastFailureAt > this.lastSuccessAt)) {
       return { status: 'degraded', detail: `last send failed: ${counters.lastErrorCode}`, counters }
     }
-    return { status: 'ok', detail: `channels: ${this.config.channels.join(', ')} (${this.config.strategy})`, counters }
+    return { status: 'ok', detail: `channel: ${channel}${this.override ? ' (runtime)' : ''}`, counters }
   }
-}
-
-function checked(config: NotifyConfig): NotifyConfig {
-  try {
-    assertNotifyConfig(config)
-  } catch (e) {
-    throw new ConfigError('notify', (e as Error).message, { field: 'channels' })
-  }
-  return config
 }
 
 export default NotifyService

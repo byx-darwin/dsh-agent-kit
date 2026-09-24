@@ -9,6 +9,8 @@
 //   "auth": { "bot": true, "user": false } | "not_configured",
 //   "user": { "openId": "ou_me", "userName": "Me" },
 //   "chats": [ { "chat_id": "oc_1", "name": "告警群" } ],
+//   "login": "approve" | "deny" | "hang" | "start_fail",   // user 身份的设备流登录；approve 后 user 可用
+//   "loginDelayMs": 300,
 //   "send": [ { "mode": "success" | "fail" | "hang" | "bad_output", "type": "network", "failTargets": ["oc_2"] }, ... ]  // 按调用次序取，超出时重复最后一个
 // }
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -37,8 +39,35 @@ if (scenario.auth === 'not_configured') {
   fail(undefined, { type: 'config', subtype: 'not_configured', message: 'not configured', hint: 'run `lark-cli config init --new`' })
 }
 
+// 登录 / 退出改变的状态写在 auth-state.json，覆盖场景里的 auth.user
+const statePath = dir ? join(dir, 'auth-state.json') : undefined
+const state = statePath && existsSync(statePath) ? JSON.parse(readFileSync(statePath, 'utf8')) : {}
+const setUser = (user) => statePath && writeFileSync(statePath, JSON.stringify({ user }))
+
+if (args[0] === 'auth' && args[1] === 'login') {
+  const mode = scenario.login ?? 'approve'
+  if (flag('no-wait')) {
+    if (mode === 'start_fail') fail('user', { type: 'network', message: 'request device code failed' }, 1)
+    out({ ok: true, data: { verification_url: 'https://accounts.feishu.cn/oauth/v1/device/verify?user_code=ABCD-EFGH', device_code: 'dc_fake', user_code: 'ABCD-EFGH', expires_in: 600 } })
+    process.exit(0)
+  }
+  if (flag('device-code') !== 'dc_fake') fail('user', { type: 'validation', message: 'unknown device code' }, 2)
+  if (mode === 'hang') await new Promise(() => setInterval(() => {}, 1000))
+  await new Promise((r) => setTimeout(r, scenario.loginDelayMs ?? 300))
+  if (mode === 'deny') fail('user', { type: 'authentication', subtype: 'access_denied', message: 'user denied the authorization' }, 1)
+  setUser(true)
+  out({ ok: true, identity: 'user', data: { userName: scenario.user?.userName ?? 'Tester', openId: scenario.user?.openId ?? 'ou_fake_me' } })
+  process.exit(0)
+}
+
+if (args[0] === 'auth' && args[1] === 'logout') {
+  setUser(false)
+  out({ ok: true, data: { loggedOut: true } })
+  process.exit(0)
+}
+
 if (args[0] === 'auth' && args[1] === 'status') {
-  const auth = scenario.auth ?? { bot: true, user: false }
+  const auth = { bot: true, user: false, ...(scenario.auth ?? {}), ...(state.user !== undefined ? { user: state.user } : {}) }
   const user = scenario.user ?? {}
   out({
     appId: 'cli_fake',
@@ -72,7 +101,7 @@ const steps = scenario.send ?? [{ mode: 'success' }]
 const step = steps[Math.min(index, steps.length - 1)] ?? { mode: 'success' }
 const target = flag('chat-id') ?? flag('user-id')
 
-if (identity === 'user' && !(scenario.auth ?? {}).user) {
+if (identity === 'user' && !(state.user ?? (scenario.auth ?? {}).user)) {
   fail('user', { type: 'authentication', subtype: 'token_missing', message: 'need_user_authorization (user: )', hint: 'run `lark-cli auth login`' })
 }
 if (flag('dry-run')) {

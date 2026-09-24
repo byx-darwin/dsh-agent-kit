@@ -16,6 +16,9 @@ export interface FakeLarkScenario {
   /** 各身份是否可用；`not_configured` 模拟未运行过 `lark-cli config init`。 */
   auth?: { bot?: boolean; user?: boolean } | 'not_configured'
   user?: { openId?: string; userName?: string }
+  /** user 身份设备流登录的结果；approve 后 user 可用。 */
+  login?: 'approve' | 'deny' | 'hang' | 'start_fail'
+  loginDelayMs?: number
   /** `im +chat-search` 的数据源，按名称子串匹配。 */
   chats?: { chat_id: string; name: string }[]
   /** 按调用次序取，超出时重复最后一个。 */
@@ -43,6 +46,7 @@ export function createFakeLark(scenario: FakeLarkScenario = {}) {
     setScenario: (s: FakeLarkScenario) => {
       write(s)
       rmSync(join(dir, 'send-count'), { force: true })
+      rmSync(join(dir, 'auth-state.json'), { force: true })
     },
     calls(): FakeLarkCall[] {
       const file = join(dir, 'calls.jsonl')

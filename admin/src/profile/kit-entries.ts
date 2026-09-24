@@ -1,7 +1,7 @@
 import { AgentTasksConfig } from '@mc/dsh-agent-kit/agent-tasks'
 import { DingtalkConfig } from '@mc/dsh-agent-kit/dingtalk'
 import { FeishuConfig } from '@mc/dsh-agent-kit/feishu'
-import { NotifyConfig, assertNotifyConfig } from '@mc/dsh-agent-kit/notify'
+import { NotifyConfig } from '@mc/dsh-agent-kit/notify'
 import type { ServiceName } from '@mc/dsh-agent-kit'
 import { JevConfig } from '@mc/dsh-agent-kit/jev'
 import { WsConfig, assertWsConfig } from '@mc/dsh-agent-kit/ws'
@@ -58,7 +58,7 @@ export const KIT_ENTRIES: readonly KitEntryMeta[] = [
   { id: 'agent-kit-ws', service: 'agentWs', module: '@mc/dsh-agent-kit/ws', title: 'WebSocket', validate: validator(WsConfig as unknown as Schema, assertWsConfig) },
   { id: 'agent-kit-dingtalk', service: 'dingtalk', module: '@mc/dsh-agent-kit/dingtalk', title: '钉钉', validate: validator(DingtalkConfig as unknown as Schema, validateDingtalk) },
   { id: 'agent-kit-feishu', service: 'feishu', module: '@mc/dsh-agent-kit/feishu', title: '飞书', validate: validator(FeishuConfig as unknown as Schema) },
-  { id: 'agent-kit-notify', service: 'notify', module: '@mc/dsh-agent-kit/notify', title: '通知渠道', validate: validator(NotifyConfig as unknown as Schema, assertNotifyConfig) },
+  { id: 'agent-kit-notify', service: 'notify', module: '@mc/dsh-agent-kit/notify', title: '通知渠道', validate: validator(NotifyConfig as unknown as Schema) },
   { id: 'agent-kit-agent-tasks', service: 'agentTasks', module: '@mc/dsh-agent-kit/agent-tasks', title: 'Agent 任务', validate: validator(AgentTasksConfig as unknown as Schema) },
   { id: 'agent-kit-jev', service: 'jev', module: '@mc/dsh-agent-kit/jev', title: 'Jev 判断', validate: validator(JevConfig as unknown as Schema) },
 ]

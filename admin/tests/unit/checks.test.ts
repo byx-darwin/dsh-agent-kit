@@ -170,16 +170,10 @@ describe('feishu and notify checks', () => {
     expect(byId(r, 'agent-kit-feishu.identity')).toMatchObject({ status: 'skip', detail: 'dryRun 模式不检查' })
   })
 
-  it('fails notify channels whose rows are not enabled', async () => {
-    const r = await runChecks(
-      ctx({
-        snapshot: snapshot({
-          'agent-kit-dingtalk': { enabled: true, config: { identity: 'user', dryRun: true } },
-          'agent-kit-notify': { enabled: true, config: { channels: ['dingtalk', 'feishu'] } },
-        }),
-      }),
-    )
-    expect(byId(r, 'agent-kit-notify.channel-dingtalk')).toMatchObject({ status: 'pass' })
-    expect(byId(r, 'agent-kit-notify.channel-feishu')).toMatchObject({ status: 'fail', fix: expect.stringContaining('启用 飞书') })
+  it('fails the notify channel when its row is not enabled', async () => {
+    const on = await runChecks(ctx({ snapshot: snapshot({ 'agent-kit-dingtalk': { enabled: true, config: { identity: 'user', dryRun: true } }, 'agent-kit-notify': { enabled: true, config: { channel: 'dingtalk' } } }) }))
+    expect(byId(on, 'agent-kit-notify.channel')).toMatchObject({ status: 'pass', title: '通知渠道：钉钉' })
+    const off = await runChecks(ctx({ snapshot: snapshot({ 'agent-kit-notify': { enabled: true, config: { channel: 'feishu' } } }) }))
+    expect(byId(off, 'agent-kit-notify.channel')).toMatchObject({ status: 'fail', fix: expect.stringContaining('启用 飞书') })
   })
 })
