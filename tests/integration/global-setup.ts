@@ -9,7 +9,12 @@ export default function setup() {
   execFileSync(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'), '-p', join(root, 'tsconfig.build.json')], { stdio: 'inherit' })
   const link = join(root, 'node_modules/@mc/dsh-agent-kit')
   mkdirSync(dirname(link), { recursive: true })
-  if (!existsSync(link) && !isSymlink(link)) symlinkSync('../..', link, 'dir')
+  if (!existsSync(link) && !isSymlink(link)) {
+    // Windows 的目录 symlink 需要开发者模式/管理员权限；junction 不需要，
+    // 但要求目标是绝对路径（相对路径的 junction 行为不可靠）。
+    if (process.platform === 'win32') symlinkSync(root, link, 'junction')
+    else symlinkSync('../..', link, 'dir')
+  }
 }
 
 function isSymlink(path: string): boolean {

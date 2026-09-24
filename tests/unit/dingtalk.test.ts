@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { buildSendArgs } from '../../src/dingtalk/args.js'
@@ -196,9 +198,52 @@ describe('DingtalkService', () => {
     expect(resolveExecutable('definitely-not-a-binary-xyz')).toBeUndefined()
   })
 
+  describe('resolveExecutable on win32', () => {
+    let dir: string
+    afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+    it('prefers dws.exe when present', () => {
+      dir = mkdtempSync(join(tmpdir(), 'dws-win32-exe-'))
+      writeFileSync(join(dir, 'dws.exe'), '')
+      expect(resolveExecutable('dws', dir, 'win32')).toBe(join(dir, 'dws.exe'))
+    })
+
+    it('maps a dws.cmd shim to the npm global bin/dws.js it wraps', () => {
+      dir = mkdtempSync(join(tmpdir(), 'dws-win32-cmd-'))
+      writeFileSync(join(dir, 'dws.cmd'), '@echo off\r\nnode "%~dp0\\node_modules\\dingtalk-workspace-cli\\bin\\dws.js" %*\r\n')
+      const binDir = join(dir, 'node_modules', 'dingtalk-workspace-cli', 'bin')
+      mkdirSync(binDir, { recursive: true })
+      writeFileSync(join(binDir, 'dws.js'), '')
+      expect(resolveExecutable('dws', dir, 'win32')).toBe(join(binDir, 'dws.js'))
+    })
+
+    it('skips a dws.cmd shim without a resolvable bin/dws.js', () => {
+      dir = mkdtempSync(join(tmpdir(), 'dws-win32-cmd-orphan-'))
+      writeFileSync(join(dir, 'dws.cmd'), '@echo off\r\n')
+      expect(resolveExecutable('dws', dir, 'win32')).toBeUndefined()
+    })
+
+    it('splits PATH on ";" and ignores relative entries', () => {
+      dir = mkdtempSync(join(tmpdir(), 'dws-win32-multi-'))
+      writeFileSync(join(dir, 'dws.exe'), '')
+      expect(resolveExecutable('dws', `relative;${dir}`, 'win32')).toBe(join(dir, 'dws.exe'))
+    })
+  })
+
   it('fails to start when dws is not in PATH', async () => {
     process.env.PATH = '/nonexistent'
     await expect(t.root.plugin(DingtalkService, { identity: 'user' })).rejects.toThrow(/not found in PATH/)
+  })
+
+  it('mentions dws.js/dws.exe in the not-found message on Windows', async () => {
+    const original = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    process.env.PATH = '/nonexistent'
+    try {
+      await expect(t.root.plugin(DingtalkService, { identity: 'user' })).rejects.toThrow(/dws\.js.*dws\.exe|dws\.exe.*dws\.js/)
+    } finally {
+      Object.defineProperty(process, 'platform', { value: original })
+    }
   })
 
   it('sends with the default target and per-call override', async () => {

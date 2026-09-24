@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ConfigError, KitError, isKitError } from '../../src/common/errors.js'
 import { BASE_ENV_WHITELIST, killTree, pickEnv, runProcess } from '../../src/common/process.js'
@@ -139,6 +142,19 @@ describe('runProcess', () => {
   it('does not interpret arguments through a shell', async () => {
     const r = await runProcess(process.execPath, ['-e', 'console.log(process.argv[1])', '$(echo pwned); rm -rf /'], { env: pickEnv(['PATH']), timeoutMs: 5000, killGraceMs: 100 })
     expect(r.stdout.trim()).toBe('$(echo pwned); rm -rf /')
+  })
+
+  it('spawns .mjs/.js/.cjs files via process.execPath instead of relying on a shebang (needed on Windows)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'runprocess-script-'))
+    try {
+      const script = join(dir, 'echo-argv.mjs')
+      writeFileSync(script, '#!/usr/bin/env node\nconsole.log(JSON.stringify(process.argv.slice(2)))\n')
+      const r = await runProcess(script, ['a', 'b c'], { env: pickEnv(BASE_ENV_WHITELIST), timeoutMs: 5000, killGraceMs: 100 })
+      expect(r.exitCode).toBe(0)
+      expect(JSON.parse(r.stdout.trim())).toEqual(['a', 'b c'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

@@ -42,7 +42,10 @@ export function runProcess(file: string, args: readonly string[], options: RunPr
       resolve({ exitCode: null, signal: null, stdout: '', stderr: '', timedOut: false, aborted: true })
       return
     }
-    const child = spawn(file, args, {
+    const isScript = /\.(mjs|cjs|js)$/i.test(file)
+    const spawnFile = isScript ? process.execPath : file
+    const spawnArgs = isScript ? [file, ...args] : args
+    const child = spawn(spawnFile, spawnArgs, {
       cwd: options.cwd,
       env: options.env,
       shell: false,
