@@ -1,6 +1,6 @@
 import { redact, redactValue } from './redact.js'
 
-export type ServiceName = 'agentWs' | 'dingtalk' | 'agentTasks' | 'jev'
+export type ServiceName = 'agentWs' | 'dingtalk' | 'agentTasks' | 'jev' | 'kit'
 
 const KIT_ERROR = Symbol.for('@mc/dsh-agent-kit/KitError')
 
