@@ -1,0 +1,11 @@
+{
+  // 构建产物通过包名引用已构建的基础包（../lib），不把基础包源码编进来
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib",
+    "sourceMap": false
+  },
+  "include": ["src"],
+  "exclude": ["src/client"]
+}

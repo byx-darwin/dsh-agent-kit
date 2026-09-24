@@ -4,3 +4,4 @@ coverage/
 .tmp/
 *.tgz
 .superpowers/
+/admin/lib/

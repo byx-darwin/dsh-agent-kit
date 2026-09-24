@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // 类型检查与测试直接对着基础包的源码，不必先构建基础包
+    "paths": {
+      "@mc/dsh-agent-kit": ["../src/index.ts"],
+      "@mc/dsh-agent-kit/*": ["../src/*/index.ts"]
+    }
+  },
+  "include": ["src", "tests", "vitest.config.ts"]
+}

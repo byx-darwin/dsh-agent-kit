@@ -29,6 +29,13 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm run test:coverage
+      # 可选运维包 @mc/dsh-agent-kit-admin：依赖从根目录 node_modules 解析
+      - run: npm run typecheck
+        working-directory: admin
+      - run: npm run build
+        working-directory: admin
+      - run: npm run test:coverage
+        working-directory: admin
 
   # 以 dsh 0.1.7 的 cordis / typert / schemastery 版本替换 peer 依赖后再跑一遍（issue #3）。
   # 开发依赖里的 dsh-app-boot 仍是 0.1.5 的，所以用 --force 越过它的 peer 约束。
@@ -45,3 +52,5 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npx vitest run
+      - run: npx tsc -p tsconfig.json --noEmit && npm run build && npx vitest run
+        working-directory: admin

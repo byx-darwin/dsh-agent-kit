@@ -2,4 +2,4 @@ export { FeishuService as default, FeishuService, LARK_ENV_WHITELIST, type Feish
 export { FeishuConfig } from './config.js'
 export { FeishuSendError, type FeishuErrorCode } from './errors.js'
 export { MAX_FEISHU_TARGETS, buildFeishuArgs, resolveTargets, targetIdempotencyKey, type FeishuAt, type FeishuIdentity, type FeishuResolvedTarget, type FeishuTarget } from './args.js'
-export type { FeishuTargetResult } from './output.js'
+export { identityAvailable, parseFeishuError, parseFeishuOutput, type FeishuTargetResult } from './output.js'
