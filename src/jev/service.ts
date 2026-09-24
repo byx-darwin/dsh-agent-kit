@@ -2,9 +2,9 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { raceAbort } from '../common/abort.js'
 import { ConfigError, KitError, type ConfigInput } from '../common/errors.js'
-import { BASE_ENV_WHITELIST, pickEnv, runProcess } from '../common/process.js'
 import { redactValue, registerSecret } from '../common/redact.js'
 import { KitService, type ServiceHealth } from '../common/service.js'
+import { resolveTypesafeKey, SHARED_KEYCHAIN_SERVICE, type KeyStoreOptions } from '../secrets/typesafe-key.js'
 import type { Answers, EntryType, JevUsage, Questions } from './types.js'
 
 export const JEV_API_KEY_ENV = 'TYPESAFE_API_KEY'
@@ -20,8 +20,7 @@ export interface JevConfig {
 
 const KeychainName = z.string().pattern(/^[\w.@:-]{1,128}$/)
 
-/** 与其他工具（如 gitflow-cli）共享 TypeSafe Key 时推荐的钥匙串服务名。 */
-export const SHARED_KEYCHAIN_SERVICE = 'ai.typesafe.api-key'
+export { SHARED_KEYCHAIN_SERVICE }
 
 export const JevConfig: z<ConfigInput<JevConfig>, JevConfig> = z.object({
   model: z.string().default('jev-latest').description('SDK 支持的模型名'),
@@ -31,22 +30,6 @@ export const JevConfig: z<ConfigInput<JevConfig>, JevConfig> = z.object({
     .description('macOS 钥匙串服务名，推荐共享名 ai.typesafe.api-key；可给列表按顺序尝试'),
   keychainAccount: z.string().pattern(/^[\w.@:-]{1,128}$/).description('钥匙串账户名，默认 $USER'),
 }) as z<ConfigInput<JevConfig>, JevConfig>
-
-/** 从钥匙串读取密钥；找不到时返回 undefined。 */
-export type KeychainReader = (service: string, account: string) => Promise<string | undefined>
-
-/** 通过 `/usr/bin/security find-generic-password -w` 读取 macOS 钥匙串（不经过 shell，5 秒超时）。 */
-export const macosKeychainReader: KeychainReader = async (service, account) => {
-  const r = await runProcess('/usr/bin/security', ['find-generic-password', '-a', account, '-s', service, '-w'], {
-    env: pickEnv(BASE_ENV_WHITELIST),
-    timeoutMs: 5000,
-    killGraceMs: 500,
-    maxOutputBytes: 64 * 1024,
-  })
-  if (r.exitCode !== 0) return undefined
-  const key = r.stdout.replace(/[\r\n]+$/, '')
-  return key.trim() ? key : undefined
-}
 
 export type JevErrorCode = 'unavailable' | 'rate_limited' | 'unauthorized' | 'bad_request' | 'aborted'
 
@@ -115,10 +98,8 @@ export class JevService extends KitService<JevCounters> {
   static Config = JevConfig
   /** 测试钩子：替换 SDK 客户端的创建方式。 */
   static clientFactory: JevClientFactory = defaultClientFactory
-  /** 测试钩子：替换钥匙串读取方式。 */
-  static keychainReader: KeychainReader = macosKeychainReader
-  /** 测试钩子：当前平台。 */
-  static platform: NodeJS.Platform = process.platform
+  /** 测试钩子：覆盖密钥解析中的钥匙串实现 / 平台 / 凭据文件路径。 */
+  static keyStore: Pick<KeyStoreOptions, 'keychain' | 'platform' | 'credentialsFile'> = {}
   readonly config: JevConfig
   private apiKey?: string
   private client?: JevClient
@@ -128,49 +109,25 @@ export class JevService extends KitService<JevCounters> {
   constructor(ctx: Context, config: JevConfig) {
     super(ctx, 'jev')
     this.config = config
-    const apiKey = process.env[JEV_API_KEY_ENV]?.trim() ? process.env[JEV_API_KEY_ENV] : undefined
-    if (apiKey) this.useKey(apiKey)
-    else if (!this.keychainEnabled()) {
-      throw new ConfigError('jev', `environment variable ${JEV_API_KEY_ENV} is not set`, { field: JEV_API_KEY_ENV })
+    if (config.keychainService && (JevService.keyStore.platform ?? process.platform) !== 'darwin') {
+      this.logger.warn('keychainService is only supported on macOS; ignoring it', { platform: JevService.keyStore.platform ?? process.platform })
     }
     ctx.effect(() => () => this.controller.abort(), 'jev.abortInFlight')
   }
 
   async [Service.init](): Promise<void> {
-    if (!this.apiKey) {
-      const services = ([] as string[]).concat(this.config.keychainService!)
-      const account = this.config.keychainAccount ?? process.env.USER ?? ''
-      let key: string | undefined
-      let found: string | undefined
-      for (const service of account ? services : []) {
-        try {
-          key = await JevService.keychainReader(service, account)
-        } catch (e) {
-          throw new ConfigError('jev', `failed to read keychain item ${service}: ${(e as Error).message}`, { field: 'keychainService' })
-        }
-        if (key) {
-          found = service
-          break
-        }
-      }
-      if (!key) {
-        throw new ConfigError('jev', `${JEV_API_KEY_ENV} is not set and keychain item ${services.join(' / ')} (account ${account || '<unknown>'}) was not found`, {
-          field: 'keychainService',
-        })
-      }
-      this.useKey(key)
-      this.logger.info('api key loaded from keychain', { service: found })
+    const resolved = await resolveTypesafeKey({
+      ...JevService.keyStore,
+      keychainService: this.config.keychainService,
+      keychainAccount: this.config.keychainAccount,
+      credentials: (this.ctx as unknown as { get(name: string): KeyStoreOptions['credentials'] }).get('credentials'),
+    })
+    if (!resolved) {
+      throw new ConfigError('jev', `${JEV_API_KEY_ENV} is not set, and no key was found in the keychain or the dsh credentials store`, { field: JEV_API_KEY_ENV })
     }
+    this.useKey(resolved.key)
+    this.logger.info('api key resolved', { source: resolved.source })
     this.client = await JevService.clientFactory({ apiKey: this.apiKey!, model: this.config.model, timeoutMs: this.config.timeoutMs })
-  }
-
-  private keychainEnabled(): boolean {
-    if (!this.config.keychainService) return false
-    if (JevService.platform !== 'darwin') {
-      this.logger.warn('keychainService is only supported on macOS; ignoring it', { platform: JevService.platform })
-      return false
-    }
-    return true
   }
 
   private useKey(key: string): void {

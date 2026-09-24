@@ -2,17 +2,8 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { Document, isMap, isSeq, parseDocument, type YAMLMap, type YAMLSeq } from 'yaml'
-import { KitError } from '../common/errors.js'
 import { KIT_ENTRIES, kitEntry, type FieldError, type KitId } from './kit-entries.js'
-
-export type ProfileErrorCode = 'conflict' | 'invalid_config' | 'unsupported_yaml' | 'parse_error' | 'profile_not_found'
-
-export class ProfileError extends KitError {
-  constructor(code: ProfileErrorCode, message: string, details?: { errors?: FieldError[]; line?: number }) {
-    super('kit', code, message, { retryable: code === 'conflict', details })
-    this.name = 'ProfileError'
-  }
-}
+import { ProfileError } from './profile-error.js'
 
 export interface KitEntryState {
   enabled: boolean

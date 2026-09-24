@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { ProfileError } from './patch-file.js'
+import { ProfileError } from './profile-error.js'
 
 export interface ProfileInfo {
   name: string

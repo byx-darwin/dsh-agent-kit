@@ -1,6 +1,9 @@
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { JevService, classify, defaultClientFactory, macosKeychainReader, type JevConfig } from '../../src/jev/service.js'
+import { JevService, classify, defaultClientFactory, type JevConfig } from '../../src/jev/service.js'
+import { macosKeychain } from '../../src/secrets/keychain.js'
 import { choice, noul, score } from '../../src/jev/types.js'
 import { clearSecretsForTesting } from '../../src/common/redact.js'
 import { createJevMock, defaultAnswers, jevHttpError, type JevMock } from '../../src/testing/jev-mock.js'
@@ -72,6 +75,7 @@ describe('JevService', () => {
     if (savedKey === undefined) delete process.env.TYPESAFE_API_KEY
     else process.env.TYPESAFE_API_KEY = savedKey
     clearSecretsForTesting()
+    JevService.keyStore = {}
   })
 
   async function setup(config: Partial<JevConfig> = {}) {
@@ -83,9 +87,23 @@ describe('JevService', () => {
     return () => consumer.jev
   }
 
-  it('fails to start without TYPESAFE_API_KEY', async () => {
+  it('fails to start when no key source has a key', async () => {
     delete process.env.TYPESAFE_API_KEY
-    await expect(t.root.plugin(JevService, {})).rejects.toThrow(/TYPESAFE_API_KEY/)
+    JevService.keyStore = { platform: 'linux', credentialsFile: join(tmpdir(), `agent-kit-none-${process.pid}.yaml`) }
+    await expect(t.root.plugin(JevService, {})).rejects.toThrow(/TYPESAFE_API_KEY is not set/)
+  })
+
+  it('falls back to the dsh credentials service', async () => {
+    delete process.env.TYPESAFE_API_KEY
+    JevService.keyStore = { platform: 'linux' }
+    let seenKey = ''
+    mock.factory = async (opts) => ((seenKey = opts.apiKey), { systemOne: async () => ({ model: 'm', answers: {} }) })
+    restore()
+    restore = mock.install()
+    t.root.provide('credentials', { resolve: async (ref: string) => (ref === 'TYPESAFE_API_KEY' ? { value: 'svc-key-123', source: 'file' } : undefined) } as never)
+    await setup()
+    expect(seenKey).toBe('svc-key-123')
+    expect(t.logs.some((l) => l.includes('"source":"credentials"'))).toBe(true)
   })
 
   it.each([[{ timeoutMs: 10 }], [{ timeoutMs: 400_000 }]])('rejects invalid config %j', async (config) => {
@@ -182,19 +200,22 @@ describe('JevService', () => {
   })
 
   describe('keychain fallback', () => {
-    const saved = { reader: JevService.keychainReader, platform: JevService.platform, user: process.env.USER }
+    const saved = { keyStore: JevService.keyStore, user: process.env.USER }
     const calls: Array<[string, string]> = []
-    beforeEach(() => {
-      calls.length = 0
-      JevService.platform = 'darwin'
-      JevService.keychainReader = async (service, account) => {
+    const fakeKeychain = {
+      read: async (service: string, account: string) => {
         calls.push([service, account])
         return service === 'gitflow-cli-typesafe' ? 'keychain-api-key-123' : undefined
-      }
+      },
+      write: async () => {},
+      remove: async () => {},
+    }
+    beforeEach(() => {
+      calls.length = 0
+      JevService.keyStore = { platform: 'darwin', keychain: fakeKeychain }
     })
     afterEach(() => {
-      JevService.keychainReader = saved.reader
-      JevService.platform = saved.platform
+      JevService.keyStore = saved.keyStore
       if (saved.user === undefined) delete process.env.USER
       else process.env.USER = saved.user
     })
@@ -214,7 +235,7 @@ describe('JevService', () => {
       expect(calls).toEqual([['gitflow-cli-typesafe', 'alice']])
       expect(seenKey).toBe('keychain-api-key-123')
       expect(jev().health().status).toBe('ok')
-      expect(t.logs.some((l) => l.includes('api key loaded from keychain'))).toBe(true)
+      expect(t.logs.some((l) => l.includes('api key resolved') && l.includes('keychain:gitflow-cli-typesafe'))).toBe(true)
       expect(t.logs.join('\n')).not.toContain('keychain-api-key-123')
     })
 
@@ -225,7 +246,7 @@ describe('JevService', () => {
         ['ai.typesafe.api-key', 'alice'],
         ['gitflow-cli-typesafe', 'alice'],
       ])
-      expect(t.logs.some((l) => l.includes('"service":"gitflow-cli-typesafe"'))).toBe(true)
+      expect(t.logs.some((l) => l.includes('keychain:gitflow-cli-typesafe'))).toBe(true)
     })
 
     it('defaults the account to $USER', async () => {
@@ -237,17 +258,14 @@ describe('JevService', () => {
 
     it('fails to start when neither the env var nor the keychain item exists', async () => {
       delete process.env.TYPESAFE_API_KEY
-      await expect(t.root.plugin(JevService, { keychainService: 'missing-service' })).rejects.toThrow(/keychain item missing-service/)
-      await expect(t.root.plugin(JevService, { keychainService: ['a.b', 'c.d'] })).rejects.toThrow(/keychain item a\.b \/ c\.d/)
-      JevService.keychainReader = async () => {
-        throw new Error('security crashed')
-      }
-      await expect(t.root.plugin(JevService, { keychainService: 'x' })).rejects.toThrow(/failed to read keychain/)
+      JevService.keyStore = { platform: 'darwin', keychain: fakeKeychain, credentialsFile: join(tmpdir(), `agent-kit-none-${process.pid}.yaml`) }
+      await expect(t.root.plugin(JevService, { keychainService: 'missing-service' })).rejects.toThrow(/TYPESAFE_API_KEY is not set/)
+      await expect(t.root.plugin(JevService, { keychainService: ['a.b', 'c.d'] })).rejects.toThrow(/TYPESAFE_API_KEY is not set/)
     })
 
     it('ignores keychainService outside macOS', async () => {
       delete process.env.TYPESAFE_API_KEY
-      JevService.platform = 'linux'
+      JevService.keyStore = { platform: 'linux', keychain: fakeKeychain, credentialsFile: join(tmpdir(), `agent-kit-none-${process.pid}.yaml`) }
       await expect(t.root.plugin(JevService, { keychainService: 'gitflow-cli-typesafe' })).rejects.toThrow(/TYPESAFE_API_KEY is not set/)
       expect(calls).toEqual([])
       expect(t.logs.some((l) => l.includes('only supported on macOS'))).toBe(true)
@@ -257,8 +275,8 @@ describe('JevService', () => {
       await expect(t.root.plugin(JevService, { keychainService: 'a b; rm' } as never)).rejects.toThrow(/invalid config[\s\S]*keychainService/)
     })
 
-    it.skipIf(process.platform !== 'darwin')('real macOS reader returns undefined for a missing item', async () => {
-      expect(await macosKeychainReader('dsh-agent-kit-nonexistent-service', 'nobody')).toBeUndefined()
+    it.skipIf(process.platform !== 'darwin')('real macOS keychain returns undefined for a missing item', async () => {
+      expect(await macosKeychain.read('dsh-agent-kit-nonexistent-service', 'nobody')).toBeUndefined()
     })
   })
 
