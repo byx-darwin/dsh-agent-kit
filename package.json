@@ -6,6 +6,9 @@
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
+  "bin": {
+    "dsh-agent-kit": "./bin/dsh-agent-kit.mjs"
+  },
   "exports": {
     ".": {
       "types": "./lib/index.d.ts",
@@ -38,6 +41,7 @@
   },
   "files": [
     "lib",
+    "bin",
     "patch.yml",
     "fixtures/fake-dws.mjs",
     "README.md",
