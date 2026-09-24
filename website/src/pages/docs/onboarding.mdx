@@ -43,6 +43,7 @@ import Figure from '../../components/Figure.astro'
 启动 Profile 后进入 dsh Web 的「设置 → Agent Kit」：
 
 - 每个 Service 一张卡片：启用开关、运行状态、检查结果与配置表单。
+- 界面文案跟随 dsh Web 的语言，支持中文和英文；检查项的标题、详情和修复建议由服务端生成，目前只有中文。
 - 保存时会比对配置文件的版本；如果期间有人改过这份文件（包括另一个终端里的 `setup` 或手动编辑），会提示冲突并刷新，避免覆盖。
 - 保存成功后，dsh 会用新配置重新加载对应 Service，页面随后自动刷新状态。
 - TypeSafe Key 只能写入或清除，不能读回；页面只显示「已配置」与来源。清除与 gitflow-cli 共用的钥匙串条目前会先确认。

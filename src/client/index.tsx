@@ -1,5 +1,5 @@
 import type { ClientContext } from './host-types.js'
-import { zh } from './locale.js'
+import { en, zh } from './locale.js'
 import { AGENT_KIT_REMOTE, createAdminApi } from './remote.js'
 import { SettingsPage } from './settings-page.js'
 
@@ -7,7 +7,7 @@ export const inject = ['slots', 'locale', 'remote']
 const NS = 'settings.agentKit'
 
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh }), 'agent-kit: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'agent-kit: dictionaries')
   const t = ctx.locale.bind(NS)
   let disposeRemote: (() => void) | undefined
   const ready = ctx.remote.$mount(AGENT_KIT_REMOTE).then((d) => (disposeRemote = d))
