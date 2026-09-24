@@ -9,7 +9,7 @@ import { withBasePath } from '../lib/paths'
 
 export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
 
-<Base title="快速开始" description="安装 dsh 与本包，用 setup 完成配置，用 doctor 验证，或在 dsh Web 的设置页里操作。">
+<Base title="快速开始" description="安装 dsh 与本包；可选安装运维工具 @mc/dsh-agent-kit-admin，用 setup 完成配置、用 doctor 验证，或在 dsh Web 的设置页里操作。">
 
 <p class="eyebrow">快速开始</p>
 
@@ -17,14 +17,16 @@ export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
 
 本页带你走完：准备环境 → 安装 → 用 `setup` 配置 → 用 `doctor` 验证 → 在 Web 设置页查看状态。每一步都可以单独回头重来。
 
+`setup`、`doctor` 与设置页来自可选的运维工具 `@mc/dsh-agent-kit-admin`。不装它也可以：六个 Service 都在 `@mc/dsh-agent-kit` 中，直接编辑 Profile 的 `cordis.patch.yml` 启用并配置即可（见各 Service 文档的「配置」一节）。
+
 ## 环境要求
 
 - Node.js `^22.19` 或 `>=24`。
 - [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh) CLI `0.1.5-rc.3`。当前为预发布版本，dsh 与 cordis 相关依赖需锁定到与之一致的版本。
 - 使用钉钉推送：已安装并登录 `dws`（`dingtalk-workspace-cli`，已验证 `1.0.62`），服务器环境推荐 `bot` 身份。
 - 使用飞书推送：已安装飞书官方 CLI `lark-cli`（`@larksuite/cli`，已验证 `1.0.96`），并运行 `lark-cli config init` 配好飞书应用的 App ID / App Secret；服务器环境推荐 `bot` 身份。
-- 使用通知渠道：同时启用它要用到的钉钉和/或飞书。
-- 上面两个 CLI 可以先不装：`setup` 会列出缺少的，经你确认后安装。
+- 使用通知渠道：同时启用它所选的渠道（钉钉或飞书）。
+- 上面两个 CLI 可以先不装：admin 包的 `setup` 会列出缺少的，经你确认后安装。
 - 使用 Agent 任务：安装 `@deepseek-ai/dsh-subagent-claude-code` 和/或 `@deepseek-ai/dsh-subagent-codex`，并完成 Claude Code / Codex 的原生登录。
 - 使用 Jev 判断：安装 `@typesafe-ai/sdk`，并准备好 TypeSafe API Key（存放位置见本页最后一节）。
 - 生产部署：Profile 进程由 systemd、pm2 等进程守护托管。
@@ -48,18 +50,22 @@ dsh --profile my-agent --from-default-profile web
 dsh plugin --profile my-agent add ./my-business-plugin-0.1.0.tgz
 ```
 
+如果要用下面的 `setup`、`doctor` 与设置页，再装上可选的运维工具：
+
+<CopyCommand command="dsh plugin --profile my-agent add @mc/dsh-agent-kit-admin" npm />
+
 ## 用 setup 配置
 
-`setup` 是本包自带的交互式配置工具，不需要启动 dsh：
+`setup` 是 admin 包自带的交互式配置工具，不需要启动 dsh：
 
-<CopyCommand command="npx @mc/dsh-agent-kit setup --profile my-agent" />
+<CopyCommand command="npx @mc/dsh-agent-kit-admin setup --profile my-agent" />
 
 它会依次：
 
-1. **选择 Profile**：在 `$DSH_HOME/profiles` 下查找装了本包的 Profile；只有一个时自动选中，有多个时让你选。
+1. **选择 Profile**：在 `$DSH_HOME/profiles` 下查找装了 `@mc/dsh-agent-kit` 的 Profile；只有一个时自动选中，有多个时让你选。
 2. **选择要启用的 Service**：已启用的默认勾选。
 3. **安装缺少的渠道 CLI**：启用了钉钉或飞书、而对应的 CLI 不在 `PATH` 中时，列出缺少的（默认全选，可以只装一个），展示将要运行的命令（`npm i -g dingtalk-workspace-cli@1.0.62`、`npm i -g @larksuite/cli@1.0.96`）并请你确认一次。跳过或失败时只打印手动命令，不影响后续步骤。
-4. **逐个配置**：当前值作为默认值。钉钉可以按群名搜索群，user 身份未登录时可以直接拉起 `dws auth login`；飞书可以直接拉起 `lark-cli config init`（以及 user 身份的 `lark-cli auth login`），按群名搜索群或输入 chat_id / open_id；通知渠道勾选发往钉钉、飞书或两者，并选择发送策略；Agent 任务需要为 claude-code / codex 声明权限上限；Jev 的 Key 输入时不回显。
+4. **逐个配置**：当前值作为默认值。钉钉可以按群名搜索群，user 身份未登录时可以直接拉起 `dws auth login`；飞书可以直接拉起 `lark-cli config init`（以及 user 身份的 `lark-cli auth login`），按群名搜索群或输入 chat_id / open_id；通知渠道选择一个（钉钉或飞书），选中的渠道没有启用时会提示；Agent 任务需要为 claude-code / codex 声明权限上限；Jev 的 Key 输入时不回显。
 5. **预览改动并确认**：以差异视图展示 `cordis.patch.yml` 的改动，确认后才写入。密钥单独保存，不会出现在差异里。
 6. **自动运行 doctor**：检查刚写入的配置。
 
@@ -69,7 +75,7 @@ dsh plugin --profile my-agent add ./my-business-plugin-0.1.0.tgz
 
 `doctor` 只读，不修改任何文件。它只检查已启用 Service 需要的项，每个未通过的项都附一条修复命令：
 
-<CopyCommand command="npx @mc/dsh-agent-kit doctor --profile my-agent" />
+<CopyCommand command="npx @mc/dsh-agent-kit-admin doctor --profile my-agent" />
 
 ```text
 Profile: my-agent
@@ -90,7 +96,6 @@ Profile: my-agent
 [notify]
   ✓ 通知渠道 配置：配置有效
   ✓ 通知渠道：钉钉：agent-kit-dingtalk 已启用
-  ✓ 通知渠道：飞书：agent-kit-feishu 已启用
 [agent-tasks]
   ✓ Agent 任务 配置：配置有效
   ✗ subagent provider 已安装：未安装 claude-code 或 codex provider
@@ -104,7 +109,7 @@ Profile: my-agent
 
 ## 在 Web 设置页查看与修改
 
-启动 Profile 后，打开 dsh Web 界面，进入「设置 → Agent Kit」。每个 Service 一张卡片，可以启用或停用、修改配置、查看运行状态和检查结果；效果与 `setup` 相同，两者读写同一份 `cordis.patch.yml`。「通知渠道」卡片勾选发往钉钉还是飞书，保存后业务包的 `ctx.notify` 立即改发新渠道，业务插件不重新加载。
+Profile 中装了 admin 包时，启动后打开 dsh Web 界面，进入「设置 → Agent Kit」。每个 Service 一张卡片，可以启用或停用、修改配置、查看运行状态和检查结果；效果与 `setup` 相同，两者读写同一份 `cordis.patch.yml`。「通知渠道」卡片选择发往钉钉还是飞书（同一时间一个），保存后业务包的 `ctx.notify` 立即改发新渠道，业务插件不重新加载。
 
 ```sh
 dsh --profile my-agent --no-open
@@ -126,7 +131,7 @@ dsh --profile my-agent --no-open
 | 2 | macOS 钥匙串 | 仅 macOS；服务名默认 `ai.typesafe.api-key`，可与 gitflow-cli 共用 |
 | 3 | dsh 凭据文件 | `$DSH_HOME/.credentials.yaml`，Linux 与 Windows 上保存 Key 的默认位置 |
 
-`setup` 与设置页保存 Key 时：macOS 默认写入钥匙串，Linux 与 Windows 写入 dsh 凭据文件。
+用 admin 包的 `setup` 与设置页保存 Key 时：macOS 默认写入钥匙串，Linux 与 Windows 写入 dsh 凭据文件。
 
 ## 下一步
 

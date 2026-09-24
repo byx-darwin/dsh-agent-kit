@@ -8,7 +8,7 @@ import { withBasePath } from '../../lib/paths'
 
 export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
 
-<Base title="通知渠道" description="ctx.notify：与渠道无关的通知。业务包只调用 ctx.notify.send()，发到钉钉还是飞书、全部发送还是主备切换，由运维在设置页或 setup 中决定。">
+<Base title="通知渠道" description="ctx.notify：与渠道无关的通知。业务包只调用 ctx.notify.send()，同一时间发往一个渠道（钉钉或飞书），渠道可改配置或在运行中用 use() 切换，并提供登录状态与登录。">
 <ServiceDoc id="notify">
 
 ## 接口
@@ -17,7 +17,7 @@ export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
 const r = await ctx.notify.send({
   title: '需要人工复核',
   markdown: '## 详情\n...',              // 或 text: '纯文本'，二选一
-  targets: {                             // 可选，按渠道覆盖目标；缺省用各渠道的 defaultTarget
+  targets: {                             // 可选，按渠道给出目标，发送时只用当前渠道那一项；缺省用该渠道的 defaultTarget
     dingtalk: { chatId: 'cid...' },
     feishu: { chatId: 'oc_...' },
   },
@@ -25,35 +25,72 @@ const r = await ctx.notify.send({
     dingtalk: { userIds: ['...'] },
     feishu: { userIds: ['ou_...'] },
   },
-  idempotencyKey: 'evt_...',             // 透传给各渠道
+  idempotencyKey: 'evt_...',             // 透传给渠道
   traceId: 'evt_...',
   signal,
 })
-// r.results: Array<{ channel: 'dingtalk' | 'feishu', ok, results?, error? }>
+// r: { channel: 'dingtalk' | 'feishu', results: Array<{ ok, messageId?, error? }> }
 ```
 
-业务包只需要 `inject = ['notify']`。发到哪些渠道由本行的配置决定：
+业务包只需要 `inject = ['notify']`。发往哪个渠道由本行的配置决定：
 
 ```yaml
 - id: agent-kit-notify
   disabled: false
   config:
-    channels: [feishu, dingtalk]   # 按顺序；failover 时即尝试顺序
-    strategy: failover             # all：每个渠道都发；failover：第一个成功即停止
+    channel: feishu   # dingtalk 或 feishu；对应的渠道行需要启用
 ```
 
-运维要把通知从钉钉换到飞书，或者改成两边都发，只需在 dsh Web「设置 → Agent Kit → 通知渠道」里勾选，或重新运行 `setup`，不需要改业务代码，也不需要重新发布业务包。
+### 发送结果与错误
 
-### 发送策略
+- 同一时间只发往一个渠道，不会在失败时自动改发另一个渠道。
+- 发送完成时返回 `{ channel, results }`：`channel` 是实际发往的渠道，`results` 是该渠道的逐目标结果。多群时部分失败体现在 `results` 中，不抛错。
+- 当前渠道的行没有运行（未启用或启动失败）时，抛出 `NotifyError`，`code` 为 `channel_unavailable`，`details.channel` 为渠道名。
+- 渠道自己发送失败时，抛出渠道的错误，例如 `FeishuSendError` 的 `timeout`、`DingtalkSendError` 的 `exit_nonzero`；按 `code` 与 `retryable` 判断即可。
+- 渠道的重试、幂等与多目标行为不变，见 <a href={link('/docs/dingtalk')}>钉钉推送</a> 与 <a href={link('/docs/feishu')}>飞书推送</a>。
 
-| strategy | 行为 | send() 何时抛错 |
+### 切换渠道
+
+| 方式 | 何时生效 | 持续多久 |
 |---|---|---|
-| `all`（默认） | 并行发往 `channels` 中的每个渠道 | 所有渠道都失败时 |
-| `failover` | 按 `channels` 的顺序逐个尝试，第一个成功即停止 | 所有渠道都失败时 |
+| 修改配置的 `channel`（手动编辑 `cordis.patch.yml`，或 admin 包的设置页 / `setup`） | 保存后立即，原地生效 | 长期；覆盖此前 `use()` 的选择 |
+| `ctx.notify.use('feishu')` | 调用后立即 | 只在内存中；dsh 重启后回到配置值，期间修改配置时以新配置为准 |
 
-- 有渠道成功时 `send()` 正常返回，失败的渠道体现在 `results` 中，每项带渠道自己的错误（例如 `FeishuSendError` 的 `timeout`）。
-- 所有渠道都失败时抛出 `NotifyError`，`code` 为 `all_failed`，`details.results` 列出各渠道的错误码。
-- 各渠道的重试、幂等与多目标行为不变，见 <a href={link('/docs/dingtalk')}>钉钉推送</a> 与 <a href={link('/docs/feishu')}>飞书推送</a>。
+```ts
+ctx.notify.channel          // 当前生效的渠道：'dingtalk' | 'feishu'
+ctx.notify.use('dingtalk')  // 运行中切换；传入其他值抛出 NotifyError（code: invalid_channel）
+```
+
+要长期切换请改配置；`use()` 适合业务包自己的临时逻辑，例如当前渠道登录失效时先改用另一个渠道。
+
+### 登录状态与登录
+
+```ts
+const s = await ctx.notify.status()
+// {
+//   channel: 'feishu',
+//   source: 'config',                     // 'config'：来自配置；'runtime'：被 use() 切换过
+//   channels: {
+//     feishu: { channel: 'feishu', running: true, identity: 'user', online: false, detail: '…', checkedAt: 1758… },
+//     dingtalk: { channel: 'dingtalk', running: false, detail: 'agent-kit-dingtalk is not running' },
+//   },
+// }
+```
+
+- `status()` 对每个渠道：行在运行时，给出该渠道 `status()` 的实时结果（`ChannelStatus`）加 `running: true`；没有运行时给出 `{ channel, running: false, detail }`。
+- `login(channel?)` / `logout(channel?)` 转给当前渠道或指定的渠道，行为见 <a href={link('/docs/dingtalk#login')}>钉钉</a> 与 <a href={link('/docs/feishu#login')}>飞书</a> 的「登录状态与登录」。指定的渠道没有运行时抛出 `channel_unavailable`。
+
+`login()` 是设备流登录：拿到授权链接就返回，链接怎么交给要登录的人由业务包决定。例如发到运维群：
+
+```ts
+const s = await ctx.notify.login()                   // 当前渠道
+await postToOps(`请在 15 分钟内打开链接完成登录：${s.verificationUrl}`)
+const st = await s.completed                         // 授权完成后的状态；过期、拒绝或 s.cancel() 时 online 为 false
+```
+
+<Notice title="钉钉的登录是本机共享的" tone="warn">
+dws 的登录态属于整台机器上的这个系统用户：钉钉 `login()` 会替换本机当前的钉钉登录，`logout()` 会退出本机全部钉钉账号。
+</Notice>
 
 ### 渠道与生命周期
 
@@ -61,13 +98,12 @@ const r = await ctx.notify.send({
 
 现在的行为是：
 
-- 启用、停用或切换渠道只影响发送结果，不会重新加载 notify，也不会重新加载只 inject `notify` 的业务插件。设置页保存「通知渠道」卡片后立即改发新渠道。
-- 修改本行自己的 `channels` / `strategy` 时，notify 在原地换上新配置，不重启（dsh 默认会在配置变更时重启插件，进而重启所有依赖它的插件；notify 拦截了这次重启）。新配置不合法时保存被拒绝，旧配置继续生效。
-- `channels` 中某个渠道的行没有运行（未启用或启动失败）时，该渠道的结果为 `channel_unavailable`。
-- `health()`：所有渠道都不可用时为 `failed`；部分不可用，或最近一次发送有渠道失败时为 `degraded`。
+- 启用、停用渠道行只影响发送结果，不会重新加载 notify，也不会重新加载只 inject `notify` 的业务插件。
+- 修改本行自己的 `channel` 时，notify 在自己的 `internal/update` 钩子里原地换上新值，不重启（dsh 默认会在配置变更时重启插件，进而重启所有依赖它的插件；notify 拦截了这次重启）。新配置不合法时保存被拒绝，旧配置继续生效。
+- `health()`：当前渠道没有运行或自身为 `failed` 时为 `failed`；最近一次发送失败时为 `degraded`。
 
 <Notice title="渠道行要单独启用" tone="warn">
-notify 只负责分发，真正的发送由 `agent-kit-dingtalk` 与 `agent-kit-feishu` 完成，它们需要各自启用并配置好身份和默认目标。`doctor` 的 `agent-kit-notify.channel-<渠道>` 检查项会在 notify 指向一个未启用的渠道时失败；`setup` 也会提示。
+notify 只负责转发，真正的发送由 `agent-kit-dingtalk` 与 `agent-kit-feishu` 完成，所选渠道的行需要启用并配置好身份和默认目标。装了 admin 包时，`doctor` 的 `agent-kit-notify.channel` 检查项会在所选渠道的行未启用时失败；`setup` 也会提示。
 </Notice>
 
 ### 什么时候直接用 ctx.dingtalk 或 ctx.feishu

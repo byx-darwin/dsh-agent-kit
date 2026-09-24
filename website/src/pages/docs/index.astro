@@ -10,7 +10,7 @@ const base = import.meta.env.BASE_URL
 <Base title="文档" description="dsh-agent-kit 六个 Service 的接口、配置与错误码，以及配置引导、安全和通用约定。">
   <p class="eyebrow">文档</p>
   <h1>六个 Service，一套约定</h1>
-  <p class="lead">每个 Service 可以单独启用；业务包只 inject 用到的那几个。下面的约定对所有 Service 都成立。</p>
+  <p class="lead">每个 Service 可以单独启用；业务包只 inject 用到的那几个。六个 Service 都在 <code>@mc/dsh-agent-kit</code> 中，业务包只依赖这一个包；doctor、setup 与设置页在可选的 <code>@mc/dsh-agent-kit-admin</code> 中。下面的约定对所有 Service 都成立。</p>
 
   <div class="grid-2">
     {
@@ -23,7 +23,7 @@ const base = import.meta.env.BASE_URL
   <div class="grid-2 extra">
     <a class="link-card" href={withBasePath(base, '/docs/onboarding')}>
       <span class="name">配置引导</span>
-      <span class="summary">用 doctor 检查、用 setup 配置，或在 dsh Web 的设置页里操作。</span>
+      <span class="summary">可选的 @mc/dsh-agent-kit-admin：用 doctor 检查、用 setup 配置，或在 dsh Web 的设置页里操作。</span>
     </a>
     <a class="link-card" href={withBasePath(base, '/docs/security')}>
       <span class="name">安全</span>

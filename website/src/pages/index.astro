@@ -20,7 +20,7 @@ const patchExample = `- id: agent-kit-ws
 - id: agent-kit-notify
   disabled: false
   config:
-    channels: [feishu]`
+    channel: feishu`
 
 const pluginExample = `export const inject = ['agentWs', 'notify', 'agentTasks', 'jev']
 
@@ -45,7 +45,7 @@ export function apply(ctx: Context, config: Config) {
         signal,
       })
 
-      // 通知：不相符时告警；发到钉钉还是飞书由运维在设置页决定
+      // 通知：不相符时告警；发到钉钉还是飞书由 agent-kit-notify 的 channel 决定
       if (answers.wrong.noul >= 0.7) {
         await ctx.notify.send({ title: '需要人工复核', markdown: render(frame, draft), idempotencyKey: frame.id })
       }
@@ -96,7 +96,7 @@ export function apply(ctx: Context, config: Config) {
       六个 Service 在本包的 bundle 中以禁用状态注册。只有在 Profile 的 <code>cordis.patch.yml</code> 中启用的 Service 才会加载并校验配置；未启用的 Service 不影响其他部分。
     </p>
     <pre><code>{patchExample}</code></pre>
-    <p>也可以用 <code>setup</code> 交互式生成这段配置，或在 dsh Web 的设置页里直接勾选。</p>
+    <p>装了可选的运维工具 <code>@mc/dsh-agent-kit-admin</code> 时，也可以用 <code>setup</code> 交互式生成这段配置，或在 dsh Web 的设置页里直接勾选。</p>
   </section>
 
   <section class="narrow">
@@ -108,9 +108,10 @@ export function apply(ctx: Context, config: Config) {
 
   <section class="narrow">
     <h2>三步开始</h2>
-    <CopyCommand command="dsh plugin --profile my-agent add @mc/dsh-agent-kit" npm />
-    <CopyCommand command="npx @mc/dsh-agent-kit setup --profile my-agent" />
-    <CopyCommand command="npx @mc/dsh-agent-kit doctor --profile my-agent" />
+    <CopyCommand command="dsh plugin --profile my-agent add @mc/dsh-agent-kit @mc/dsh-agent-kit-admin" npm />
+    <CopyCommand command="npx @mc/dsh-agent-kit-admin setup --profile my-agent" />
+    <CopyCommand command="npx @mc/dsh-agent-kit-admin doctor --profile my-agent" />
+    <p><code>@mc/dsh-agent-kit-admin</code> 是可选的运维工具（setup、doctor 与设置页）；不装它时，直接编辑 <code>cordis.patch.yml</code> 即可。</p>
     <p><a href={withBasePath(base, '/quickstart')}>完整的快速开始</a></p>
   </section>
 </Base>
