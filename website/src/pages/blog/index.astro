@@ -1,0 +1,47 @@
+---
+import Base from '../../layouts/Base.astro'
+import { POSTS } from '../../data/blog'
+import { withBasePath } from '../../lib/paths'
+
+const base = import.meta.env.BASE_URL
+const posts = [...POSTS].sort((a, b) => b.date.localeCompare(a.date))
+---
+
+<Base title="博客" description="dsh-agent-kit 的教程与设计笔记。">
+  <p class="eyebrow">博客</p>
+  <h1>教程与设计笔记</h1>
+  {
+    posts.map((p) => (
+      <article class="post">
+        <p class="date">{p.date}</p>
+        <h2>
+          <a href={withBasePath(base, `/blog/${p.slug}/`)}>{p.title}</a>
+        </h2>
+        <p>{p.description}</p>
+      </article>
+    ))
+  }
+  <p class="rss"><a href={withBasePath(base, '/feed.xml')}>RSS 订阅</a></p>
+</Base>
+
+<style>
+  .post h2 {
+    margin-top: 0.2em;
+  }
+  .post h2 a {
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .post h2 a:hover {
+    color: var(--accent);
+  }
+  .date {
+    font-size: 13px;
+    color: var(--muted);
+    margin: 2em 0 0;
+  }
+  .rss {
+    margin-top: 3em;
+    font-size: 14px;
+  }
+</style>

@@ -1,0 +1,142 @@
+---
+title: 用 dsh 搭一个常驻 Agent Worker
+---
+import Base from '../../layouts/Base.astro'
+import Notice from '../../components/Notice.astro'
+import { blogPostingJsonLd } from '../../lib/jsonld'
+import { withBasePath } from '../../lib/paths'
+
+export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
+
+<Base title="用 dsh 搭一个常驻 Agent Worker" description="从一条 WebSocket 事件到一条钉钉告警：连接、委托、校验、推送四步，以及每一步为什么默认安全。" jsonLd={[blogPostingJsonLd('resident-agent-worker')]}>
+
+<p class="eyebrow">教程 · 2026-09-24</p>
+
+# 用 dsh 搭一个常驻 Agent Worker
+
+设想这样一个场景：业务系统通过 WebSocket 不断推送事件，大部分事件可以按规则处理，但有一部分需要「看懂了再说」——判断它属于哪一类、是不是异常。判断完成后，可疑的事件要推送到钉钉，让人来复核。
+
+这个 Worker 需要一直在线，需要调用 Claude Code 这样的 Agent，需要对 Agent 的结论再做一次校验，还需要往钉钉发消息。四件事都和业务无关，但每个项目都要重写一遍。下面用 dsh-agent-kit 把它们串起来，业务包里只剩下真正属于业务的代码。
+
+## 第零步：业务包的骨架
+
+业务包是一个普通的 dsh 插件。它把 dsh-agent-kit 声明为 peer 依赖，只 inject 用到的 Service：
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import { isKitError, noul, untrusted } from '@mc/dsh-agent-kit'
+
+export const name = 'my-agent'
+export const inject = ['agentWs', 'dingtalk', 'agentTasks', 'jev']
+
+export function apply(ctx: Context, config: Config) {
+  // 下面四步都写在这里
+}
+```
+
+四个 Service 在本包里默认禁用。用 `npx @mc/dsh-agent-kit setup` 勾选启用，或者在 Profile 的 `cordis.patch.yml` 里写上对应的几行。
+
+## 第一步：连接
+
+```ts
+const conn = ctx.agentWs.connect<Frame>({
+  url: config.url,
+  headers: async () => ({ 'X-Token': await getToken() }),
+  parse: parseFrame,
+  concurrency: 2,
+  onMessage: async (frame, { signal }) => {
+    // 第二到第四步
+  },
+  onError: (err, frame) => {
+    if (isKitError(err) && err.retryable) {
+      // 记录下来，交给对端系统重投
+    }
+  },
+})
+```
+
+几个默认行为值得一提：
+
+- **只允许 `wss://`**，不关闭证书校验，也不跟随重定向。鉴权头不会被重定向带到别的地方。
+- **`headers` 是函数**，每次重连前都会重新调用，所以会过期的令牌能自动刷新。
+- **断线自动重连**，指数退避加抖动；如果握手返回 401 / 403，说明是鉴权问题而不是网络问题，连接进入 `failed`，并触发 `agent-kit/service-failed` 事件，方便接入监控。
+- **有背压**：`concurrency` 控制同时处理的消息数，积压超过上限时暂停读取 socket，而不是无限制地堆在内存里。
+- **`parse` 抛错的帧会被丢弃**，日志里只记录长度与哈希，不会把可能含有敏感信息的原文写进日志。
+
+## 第二步：委托
+
+需要「看懂」的事件交给 Agent：
+
+```ts
+const draft = await ctx.agentTasks.run<Result>({
+  provider: 'claude-code',
+  title: `classify ${frame.id}`,
+  prompt: [CLASSIFY_INSTRUCTIONS, untrusted('event', frame.input)],
+  outputSchema: ResultSchema,
+  signal,
+  traceId: frame.id,
+})
+```
+
+这里有两道防线。
+
+第一道是 `untrusted()`。事件内容来自外部，可能夹带「忽略之前的指令」之类的文本。`untrusted()` 用随机生成的分隔标记把它包起来，并明确告诉 Agent：这里面是数据，不是指令。分隔标记每次都不同，外部数据没法伪造结束标记跳出去。
+
+第二道是权限。任务默认 `read-only`，每个任务在一个新建的空目录里运行，结束后删除。claude-code 这类 provider 没办法按任务过滤工具，本包就要求你在配置里如实声明它的权限上限；没有声明的，任务直接失败，而不是「默默地以更高权限运行」。
+
+`outputSchema` 让结果有类型：本包会从 Agent 的答案里取出 JSON，用 Ajv 按 Schema 校验，通过后 `draft.output` 的类型就是 `Result`。但请记住，**Schema 校验只保证形状**，不保证内容可信。触发副作用之前，业务包还要按自己的白名单检查：
+
+```ts
+if (!CATEGORIES_ALLOWLIST.has(draft.output.category)) throw new Error('unexpected category')
+```
+
+## 第三步：校验
+
+Agent 的结论再用 TypeSafe Jev 过一遍：
+
+```ts
+const { answers } = await ctx.jev.judge({
+  state: { input: frame.input, candidate: draft.output },
+  questions: {
+    wrong: noul('候选结果与输入证据不符', { true: '不符', false: '相符' }),
+  },
+  signal,
+  traceId: frame.id,
+})
+```
+
+`answers.wrong.noul` 是「不符」的概率，范围 0 到 1。Jev 的调用成本远低于再跑一次 Agent，适合做这种二次确认。`judge()` 有严格的总时长：SDK 自带的重试只限制单次尝试的时间，本包在外面再加了一层总超时，保证一次判断不会拖住整个消息处理。
+
+<Notice title="Key 放在哪里">
+TypeSafe Key 按「环境变量 → macOS 钥匙串 → dsh 凭据文件」的顺序读取。用 setup 或设置页保存时，macOS 默认存进钥匙串，Linux 与 Windows 存进 dsh 凭据文件。
+</Notice>
+
+## 第四步：推送
+
+最后，可疑的事件推到钉钉：
+
+```ts
+if (answers.wrong.noul >= 0.7) {
+  await ctx.dingtalk.send({
+    title: '需要人工复核',
+    markdown: renderAlert(frame, draft.output),
+    idempotencyKey: frame.id,
+    traceId: frame.id,
+  })
+}
+await conn.send({ id: frame.id, result: draft.output, verified: answers.wrong.noul < 0.7 })
+```
+
+钉钉消息通过 dws 命令行发出。本包不经过 shell 调用它，参数统一写成 `--key=value`，正文就算以 `-` 开头也不会被当成选项；子进程只继承一份很短的环境变量白名单，TypeSafe Key 之类的密钥不会传过去。
+
+`idempotencyKey` 在 user 身份下会传给 dws 做幂等，此时超时这类可重试的失败才会自动重试；其他情况一律不自动重试，宁可让业务包决定，也不要重复发送告警。
+
+## 上线之前
+
+- 运行 `npx @mc/dsh-agent-kit doctor`：它会检查 Node 与 dsh 版本、dws 是否登录、provider 是否安装、Key 从哪里来，未通过的项附上修复命令。
+- 打开 dsh Web 的「设置 → Agent Kit」：四个 Service 的运行状态、检查结果一目了然。
+- 把 `agent-kit/service-failed` 事件接到你的监控上：任何一个 Service 进入 `failed`，都能第一时间知道。
+
+业务包里写的，只剩下 `parseFrame`、`CLASSIFY_INSTRUCTIONS`、`renderAlert` 和那个 0.7 的阈值——这正是它该写的全部。接口细节见 <a href={link('/docs')}>文档</a>，接入方式见 <a href={link('/architecture')}>架构</a>。
+
+</Base>
