@@ -1,0 +1,201 @@
+---
+title: 用本地 Laya 替代 Jev：部署、切换与实测
+---
+import Base from '../../layouts/Base.astro'
+import Notice from '../../components/Notice.astro'
+import { blogPostingJsonLd } from '../../lib/jsonld'
+import { withBasePath } from '../../lib/paths'
+
+export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
+
+<Base title="用本地 Laya 替代 Jev：部署、切换与实测" description="把 ctx.jev 从 TypeSafe 云端切到本机部署的 Laya：两种部署方式、一行配置的切换、在 Apple M5 上的延迟实测，以及切换前必须做的对比。" jsonLd={[blogPostingJsonLd('local-laya')]}>
+
+<p class="eyebrow">教程 · 2026-09-25</p>
+
+# 用本地 Laya 替代 Jev：部署、切换与实测
+
+在 <a href={link('/blog/resident-agent-worker/')}>常驻 Agent Worker</a> 那篇里，Agent 的结论要再经过 `ctx.jev.judge()` 过一遍：问一句「候选结果与输入证据不符吗」，拿回一个 0 到 1 的概率。背后是 TypeSafe 托管的 Jev，需要一个 TypeSafe Key，每次判断都要往云端走一趟。
+
+大多数时候这没问题。但下面几种情况，你会希望判断在本机完成：
+
+- **数据不能出机器**：事件里有客户信息，哪怕只是做一次是非判断，也不希望发到第三方。
+- **量大**：每条消息都要判断，调用次数跟着消息量线性增长。
+- **离线或内网**：Worker 所在的机器根本连不上外网。
+- **延迟**：一次判断走一次公网，和在本机算一次，差着一到两个数量级。
+
+[Laya](https://huggingface.co/convaiinnovations/laya) 是一个开源的类型化判断模型，Apache-2.0 许可。它最重要的一点是：**HTTP 接口和 Jev 一样**，都是 `POST /v1/systemone`，请求和响应的形状相同。所以对 dsh-agent-kit 来说，替换它不需要新的 Service，只需要让 `ctx.jev` 把请求发到另一个地址。
+
+从这个版本开始，Jev 行多了一个 `provider` 配置，`typesafe`（默认）和 `laya` 二选一。业务代码一行不用改。
+
+## 第一步：把 Laya 跑起来
+
+有两种方式，按机器选。
+
+### 方式一：官方 laya-serve
+
+官方包自带 HTTP 服务，基于 PyTorch，适合有 CUDA 的 Linux 服务器：
+
+```bash
+pip install "laya[serve]"
+LAYA_API_KEY=<随机串> LAYA_DEVICE=cuda LAYA_PRELOAD=1 laya-serve
+```
+
+按官方说明，它通过环境变量配置：`LAYA_HOST`、`LAYA_PORT`、`LAYA_DEVICE`、`LAYA_PRELOAD`、`LAYA_MODELS`，以及 `LAYA_API_KEY`。
+
+<Notice title="先设 Key，再暴露端口">
+laya-serve 默认监听 `0.0.0.0:8000`，并且**没有设置 `LAYA_API_KEY` 时不做任何鉴权**。在服务器上部署时，要么设置 Key，要么用 `LAYA_HOST=127.0.0.1` 只监听本机，最好两者都做。
+</Notice>
+
+### 方式二：Apple Silicon 上用 laya-mlx
+
+在 Mac 上，社区移植的 [laya-mlx](https://github.com/mizorewww/laya-mlx)（`pip install laya-mlx`）用 Apple 的 MLX 跑 Laya，比走 PyTorch 轻得多。它目前只提供命令行（`predict` / `convert`），没有 HTTP 服务，不过自己包一层只要二十来行：
+
+```python
+# ~/.local/share/laya-mlx/serve.py
+import hmac, os, threading
+from pathlib import Path
+from fastapi import FastAPI, HTTPException, Request
+from laya_mlx import Agent
+
+MODEL = os.environ.get("LAYA_MODEL", "aac6fef/laya-multilingual-mlx")
+KEY = Path(os.environ["LAYA_API_KEY_FILE"]).read_text().strip()
+agent, lock = Agent(MODEL), threading.Lock()
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+@app.post("/v1/systemone")
+async def systemone(req: Request):
+    if not hmac.compare_digest(req.headers.get("authorization", ""), f"Bearer {KEY}"):
+        raise HTTPException(401, "unauthorized")
+    body = await req.json()
+    with lock:  # MLX 一次只跑一个请求
+        return agent.predict(body.get("state"), body["questions"])
+```
+
+用 uvicorn 起在本机端口上：
+
+```bash
+uvicorn serve:app --app-dir ~/.local/share/laya-mlx --host 127.0.0.1 --port 18765
+```
+
+想让它开机自启、挂了自动拉起，写一个 launchd 配置 `~/Library/LaunchAgents/ai.laya.mlx-serve.plist`，关键是这几项：
+
+```xml
+<key>ProgramArguments</key>
+<array>
+  <string>/Users/you/.local/share/laya-mlx/venv/bin/uvicorn</string>
+  <string>serve:app</string>
+  <string>--app-dir</string><string>/Users/you/.local/share/laya-mlx</string>
+  <string>--host</string><string>127.0.0.1</string>
+  <string>--port</string><string>18765</string>
+</array>
+<key>EnvironmentVariables</key>
+<dict>
+  <key>HF_HUB_OFFLINE</key><string>1</string>
+  <key>LAYA_API_KEY_FILE</key><string>/Users/you/.local/share/laya-mlx/api-key</string>
+</dict>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><true/>
+```
+
+然后 `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.laya.mlx-serve.plist`。我们杀掉进程试过，5 秒内会被重新拉起。
+
+几个细节：
+
+- **Key 放文件，不放 plist**。plist 通常谁都能读，Key 文件用 `chmod 600` 收紧。
+- **`HF_HUB_OFFLINE=1`**：模型下载好以后，启动时不再联网检查更新，离线也能起来。
+- **只绑 `127.0.0.1`**：Worker 和 Laya 在同一台机器上，没必要对外开端口。
+
+<Notice title="关于模型来源">
+上面用的 `aac6fef/laya-multilingual-mlx` 是社区转换的 MLX 权重，不是 `convaiinnovations` 官方仓库。长期使用时，建议用 `laya-mlx convert` 从官方权重自己转一份，并固定版本。
+</Notice>
+
+## 第二步：把 ctx.jev 指过去
+
+在 Profile 的 `cordis.patch.yml` 里，把 Jev 行改成：
+
+```yaml
+- id: agent-kit-jev
+  disabled: false
+  config:
+    provider: laya
+    baseURL: http://127.0.0.1:18765
+    # apiKeyRef: LAYA_API_KEY   # 默认就是它
+```
+
+再把 Laya 的 Key 存成 `LAYA_API_KEY`：设成环境变量，或者存进 dsh 凭据文件。用 admin 包的话，设置页的 Jev 卡片里选「本地 Laya」，填上地址，下面会出现 Laya Key 的输入框；`npx @mc/dsh-agent-kit-admin setup` 也会一步步问。
+
+业务代码保持原样：
+
+```ts
+const { answers } = await ctx.jev.judge({
+  state: { input: frame.input, candidate: draft.output },
+  questions: {
+    wrong: noul('候选结果与输入证据不符', { true: '不符', false: '相符' }),
+  },
+  signal,
+  traceId: frame.id,
+})
+```
+
+这一步有几处特意做的保护，值得说一下：
+
+- **选了 `laya`，就不碰 TypeSafe Key**。Service 不会去读环境变量、钥匙串或凭据文件里的 TypeSafe Key，更不会把它放进发往 Laya 的请求头。Laya 用自己的 Key，取不到就不带鉴权。
+- **选了 `typesafe`，`baseURL` 会被忽略**，并记一条警告。这样就不会因为配置里残留了一个地址，把 TypeSafe Key 发到别的主机上。
+- **错误信息说明是谁出的错**：`Laya API returned 503`、`Laya API rejected the API key`。Key 不对时，health 同样变成 `failed`，并触发 `agent-kit/service-failed`，监控不用改。
+- **`doctor` 换一套检查**：不再要求 TypeSafe Key，而是检查 Laya Key 是否配置（没配只提示），以及 `baseURL` 能不能连上（连不上直接失败，并告诉你该启动什么）。
+
+<Notice title="model 字段">
+SDK 每次都会带上 `model`。Laya 只认 `english`、`multilingual`、`typed-decisions` 三个名字，其他名字（包括默认的 `jev-latest`）按输入语言自动路由。想固定用某个 checkpoint，就把 `model` 配成对应的名字。
+</Notice>
+
+## 实测：快，但要先对比再切换
+
+测试环境是一台 Apple M5，用上面的 laya-mlx 服务加多语言模型，走 `ctx.jev` 同样的 HTTP 路径。每次请求带三道题：一道是非题、一道三选一、一道四档评分。
+
+| 指标 | 数值 |
+|---|---|
+| 延迟 p50 / p90 / p99（200 次，暖机后） | 13.9 / 14.8 / 15.5 ms |
+| 服务启动后的第一次请求 | 约 66 ms |
+| 服务进程常驻内存 | 约 1 GB |
+| 模型文件 | 约 1.3 GB |
+
+一次三道题的判断在 15 毫秒以内完成。这个量级下，就算每条消息都判断一次，也不会成为 Worker 的瓶颈。
+
+速度没问题，准确率要单独看。下面是几条输入的实际结果，其中两处需要注意：
+
+| 输入 | 三选一 | 「功能是否不可用」 |
+|---|---|---|
+| 登录页点击提交后白屏，所有用户都无法登录 | bug ✓ | 0.98 ✓ |
+| 希望导出报表时支持 CSV 格式 | feature ✓ | 0.06 ✓ |
+| 请问怎么修改绑定的手机号？ | question ✓ | 0.10 ✓ |
+| The checkout page returns 500 for every order | bug ✓ | **0.02 ✗** |
+
+**第一处：同一条输入，分类对了，是非题却错了。** 「结账页所有订单都返回 500」，三选一正确地判成 bug，但问「功能是否不可用」只给出 0.02。我们换了几种问法：英文的「Is the feature broken?」是 0.02，「Is this a bug report?」和「这是在报告一个故障吗」都在 0.15 左右，没有一种超过 0.5。这不是语言混用的问题，而是这条样本落在了模型的盲区里。
+
+**第二处：把候选答案一起放进 state 时，分类题会被带偏。** 输入是「登录页白屏、所有人无法登录」，再附上一个错误的候选答案「这是一个新功能需求」，三选一就跟着候选答案选了 feature，概率 0.97。但同一请求里，专门用来核对的那道题——「候选结果与输入证据不符」——给出了 0.76，把矛盾标了出来。
+
+这两处说明的是同一件事：**Laya 可以替代 Jev 的接口，但不能不经对比就替代它的判断。** 切换之前建议：
+
+1. **拿真实数据做一份带标注的题集**，几十到几百条，覆盖你实际会问的问题和容易出错的边界情况。
+2. **Jev 和 Laya 各跑一遍**。provider 只是一行配置，改完 `doctor` 一下就能切，对比成本很低。
+3. **按对比结果重新定阈值**。两个模型的概率刻度不一样，在 Jev 上 0.7 合适的阈值，换到 Laya 不一定合适。
+4. **问题要和用法匹配**：state 里放了候选答案时，用「候选与输入是否相符」这类核对题，不要让模型对混在一起的内容做分类。
+
+<Notice title="数据的适用范围">
+以上数字来自一台机器、一个模型、少量样本，这次也没有拿 Jev 跑同一批题做对照。它们能说明量级和需要注意的地方，不能代表 Laya 与 Jev 的整体准确率。
+</Notice>
+
+## 什么时候用哪个
+
+| 场景 | 建议 |
+|---|---|
+| 数据不能出机器、离线或内网 | Laya |
+| 每条消息都要判断、量很大 | Laya 做第一道筛选，拿不准的再交给 Jev 或人 |
+| 判断结果直接触发不可撤销的动作 | 先用题集对比；没有对比数据时继续用 Jev |
+| 没有 GPU、也不是 Apple Silicon 的机器 | Jev，或者单独找一台机器部署 Laya |
+
+切换本身只改配置：`provider: laya` 加一个 `baseURL`。真正要花时间的，是第三步的那份对比题集。
+
+配置项和错误码见 <a href={link('/docs/jev')}>Jev 判断</a>，setup 与设置页的操作见 <a href={link('/docs/onboarding')}>上手</a>。
+
+</Base>
