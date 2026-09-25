@@ -203,6 +203,7 @@ export const SERVICES: ServiceMeta[] = [
     notes: [
       'provider 为 typesafe（默认）时，TypeSafe Key 读取顺序：环境变量 TYPESAFE_API_KEY → macOS 钥匙串（默认 ai.typesafe.api-key）→ dsh 凭据文件 $DSH_HOME/.credentials.yaml。',
       'provider 为 laya 时必须配置 baseURL；Key 按 apiKeyRef（默认 LAYA_API_KEY）从环境变量或 dsh 凭据读取，取不到则不带鉴权；不会读取或发送 TypeSafe Key。',
+      'provider 为 laya 时按 contextTokens（默认 1024）检查截断：每道题的输入都占满窗口时记 warn 日志，结果带 truncated: true。',
       '两种 provider 都需要安装可选依赖 @typesafe-ai/sdk（Laya 与 Jev 接口相同，由 SDK 改 baseURL 发送）。',
     ],
     errors: [

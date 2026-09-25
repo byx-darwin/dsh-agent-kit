@@ -42,6 +42,8 @@ export function defaultAnswers(questions: Questions): Record<string, unknown> {
 export interface JevMock {
   readonly requests: JevMockRequest[]
   handler: JevMockHandler
+  /** 每次返回的 usage；设为 undefined 模拟服务不返回 usage。默认 `{ input_tokens: 1, output_tokens: 1 }`。 */
+  usage: JevUsage | undefined
   factory: JevClientFactory
   /** 把 JevService 的客户端工厂替换为本 mock；返回恢复函数。 */
   install(): () => void
@@ -53,13 +55,13 @@ export function createJevMock(handler: JevMockHandler = (req) => defaultAnswers(
   const mock: JevMock = {
     requests,
     handler,
+    usage: { input_tokens: 1, output_tokens: 1 },
     factory: async ({ model }) => {
       const client: JevClient = {
         systemOne: async (request, options = {}) => {
           requests.push(request)
           const answers = await mock.handler(request, options)
-          const usage: JevUsage = { input_tokens: 1, output_tokens: 1 }
-          return { model: request.model ?? model, answers, usage }
+          return { model: request.model ?? model, answers, ...(mock.usage ? { usage: mock.usage } : {}) }
         },
       }
       return client

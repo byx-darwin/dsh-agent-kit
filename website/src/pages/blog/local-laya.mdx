@@ -201,7 +201,7 @@ SDK 每次都会带上 `model`。Laya 只认 `english`、`multilingual`、`typed
 
 **第一，state 超出窗口会被静默截断。** Laya 多语言模型的窗口是 1024 token，choice 所有选项合计只有 256 token 的预算。生产口径的 state 约 5000 token，而域名和候选答案放在 16 个类别的口径之后，被整段截掉了，服务端却不报错。结果就是 Laya 根本没看到要判断的对象：选类时几乎全部落在排第一的类别上，核对题里正确和错误候选的分数完全相同，AUC 正好 0.5。
 
-有一个简单的信号可以发现这种情况：`judge()` 返回的 `usage.input_tokens` 如果正好等于窗口上限（这里是 1024），就说明输入被截断了。
+有一个简单的信号可以发现这种情况：`judge()` 返回的 `usage.input_tokens` 如果正好等于窗口上限（这里是 1024），就说明输入被截断了。现在 kit 会自动做这个检查：provider 为 laya 时按 `contextTokens` 判断，截断时记一条 warn 日志，结果带上 `truncated: true`。
 
 那把窗口调大行不行？编码器支持 8192 token，我们把 `max_len` 改成 8192，让完整的 state 能放进去（约 4400 token），再跑一遍生产口径：
 

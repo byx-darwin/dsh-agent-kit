@@ -108,8 +108,9 @@ describe('SettingsPage', () => {
     fireEvent.change(screen.getByLabelText(zh['jev.provider']!), { target: { value: 'laya' } })
     fireEvent.change(screen.getByLabelText(zh['jev.baseURL']!), { target: { value: 'http://127.0.0.1:18765' } })
     fireEvent.change(screen.getByLabelText(zh['jev.apiKeyRef']!), { target: { value: 'MY_LAYA' } })
+    fireEvent.change(screen.getByLabelText(zh['jev.contextTokens']!), { target: { value: '512' } })
     fireEvent.click(screen.getByRole('button', { name: `${zh.save} Jev 判断` }))
-    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-jev', true, { model: 'jev-latest', provider: 'laya', baseURL: 'http://127.0.0.1:18765', apiKeyRef: 'MY_LAYA' }, 'v1'))
+    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-jev', true, { model: 'jev-latest', provider: 'laya', baseURL: 'http://127.0.0.1:18765', apiKeyRef: 'MY_LAYA', contextTokens: 512 }, 'v1'))
   })
 
   it('shows the Laya key as a row secret instead of the TypeSafe key panel when saved as laya', async () => {

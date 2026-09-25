@@ -113,7 +113,7 @@ describe('JevService', () => {
 
   it('applies defaults, assembles the request and maps answers with types', async () => {
     const jev = await setup()
-    expect(jev().config).toEqual({ provider: 'typesafe', model: 'jev-latest', timeoutMs: 30_000 })
+    expect(jev().config).toEqual({ provider: 'typesafe', contextTokens: 1024, model: 'jev-latest', timeoutMs: 30_000 })
     mock.handler = () => ({
       wrong: { type: 'noul', noul: 0.2 },
       pick: { type: 'choice', choice: 'B', confidence: 0.9, probabilities: { A: 0.1, B: 0.9 } },
@@ -385,11 +385,44 @@ describe('JevService', () => {
       await expect(jev().judge({ state: 's', questions: { q: noul('x') } })).rejects.toThrow(/Laya API returned 503/)
     })
 
+    it('warns and flags the result when every question filled the context window', async () => {
+      const jev = await setup({ provider: 'laya', baseURL: 'http://127.0.0.1:18765' })
+      const questions = { a: noul('x'), b: noul('y') }
+      mock.usage = { input_tokens: 2048, output_tokens: 0 }
+      const r = await jev().judge({ state: 'long', questions, traceId: 'evt_9' })
+      expect(r.truncated).toBe(true)
+      expect(t.logs.some((l) => l.includes('input likely truncated') && l.includes('"traceId":"evt_9"') && l.includes('"window":1024') && l.includes('"input":2048'))).toBe(true)
+      expect(jev().health().counters.truncated).toBe(1)
+      mock.usage = { input_tokens: 2047, output_tokens: 0 }
+      expect((await jev().judge({ state: 's', questions })).truncated).toBeUndefined()
+      mock.usage = undefined
+      expect((await jev().judge({ state: 's', questions })).truncated).toBeUndefined()
+      expect(jev().health().counters).toMatchObject({ success: 3, truncated: 1 })
+    })
+
+    it('uses contextTokens for the truncation check', async () => {
+      const jev = await setup({ provider: 'laya', baseURL: 'http://127.0.0.1:18765', contextTokens: 512 })
+      mock.usage = { input_tokens: 512, output_tokens: 0 }
+      expect((await jev().judge({ state: 's', questions: { q: noul('x') } })).truncated).toBe(true)
+    })
+
+    it('rejects an out-of-range contextTokens', async () => {
+      await expect(t.root.plugin(JevService, { provider: 'laya', baseURL: 'http://127.0.0.1:18765', contextTokens: 16 } as never)).rejects.toThrow(/contextTokens/)
+    })
+
+    it('does not check truncation for provider typesafe', async () => {
+      const jev = await setup()
+      mock.usage = { input_tokens: 1_000_000, output_tokens: 1 }
+      expect((await jev().judge({ state: 's', questions: { q: noul('x') } })).truncated).toBeUndefined()
+      expect(jev().health().counters.truncated).toBe(0)
+    })
+
     it('ignores baseURL for provider typesafe with a warning', async () => {
-      await setup({ baseURL: 'http://127.0.0.1:18765' })
+      const jev = await setup({ baseURL: 'http://127.0.0.1:18765' })
       expect(seen).toMatchObject({ provider: 'typesafe', apiKey: 'ts-test-api-key-123' })
       expect(seen!.baseURL).toBeUndefined()
       expect(t.logs.some((l) => l.includes('baseURL is only used by provider laya'))).toBe(true)
+      expect(jev().health().counters.truncated).toBe(0)
     })
   })
 })
