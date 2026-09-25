@@ -8,8 +8,8 @@ export interface Post {
 export const POSTS: Post[] = [
   {
     slug: 'local-laya',
-    title: '用本地 Laya 替代 Jev：部署、切换与实测',
-    description: '把 ctx.jev 从 TypeSafe 云端切到本机部署的 Laya：两种部署方式、一行配置的切换、在 Apple M5 上的延迟实测，以及切换前必须做的对比。',
+    title: '用本地 Laya 替代 Jev：部署、切换与一次真实对比',
+    description: '把 ctx.jev 切到本机部署的 Laya 只需要一行配置；但在一个真实的 16 类域名分类任务上，Jev 准确率 86.5%，Laya 为 0%。部署方式、切换步骤、实测数据，以及什么时候该用哪个。',
     date: '2026-09-25',
   },
   {
