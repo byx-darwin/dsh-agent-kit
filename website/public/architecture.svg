@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" width="960" height="560" role="img" aria-labelledby="t d">
   <title id="t">dsh-agent-kit 架构</title>
-  <desc id="d">业务包通过 inject 使用 dsh-agent-kit 的六个 Service；dsh-agent-kit 运行在 dsh 之上，并连接业务系统、钉钉、飞书、Claude Code / Codex 与 TypeSafe API；通知渠道不直连外部系统，转发给当前渠道（钉钉或飞书中的一个）；设置页与 doctor / setup 在可选的 @mc/dsh-agent-kit-admin 包中。</desc>
+  <desc id="d">业务包通过 inject 使用 dsh-agent-kit 的六个 Service；dsh-agent-kit 运行在 dsh 之上，并连接业务系统、钉钉、飞书、Claude Code / Codex 与 TypeSafe API（或本地 Laya）；通知渠道不直连外部系统，转发给当前渠道（钉钉或飞书中的一个）；设置页与 doctor / setup 在可选的 @mc/dsh-agent-kit-admin 包中。</desc>
   <style>
     .serif { font-family: 'Noto Serif SC', 'Songti SC', serif; font-weight: 700; }
     .sans { font-family: 'Noto Sans SC', -apple-system, 'PingFang SC', sans-serif; }
@@ -20,7 +20,7 @@
     <rect x="40" y="296" width="220" height="34" rx="6" fill="#FFFFFF" stroke="#E3DCCD"/>
     <text x="54" y="318">Claude Code / Codex</text><text x="248" y="318" text-anchor="end" fill="#B4532A" font-size="12">伍</text>
     <rect x="40" y="336" width="220" height="34" rx="6" fill="#FFFFFF" stroke="#E3DCCD"/>
-    <text x="54" y="358">TypeSafe API</text><text x="248" y="358" text-anchor="end" fill="#B4532A" font-size="12">陆</text>
+    <text x="54" y="358">TypeSafe / 本地 Laya</text><text x="248" y="358" text-anchor="end" fill="#B4532A" font-size="12">陆</text>
   </g>
   <g stroke="#B4532A" stroke-width="1.2">
     <line x1="260" y1="193" x2="300" y2="193"/>

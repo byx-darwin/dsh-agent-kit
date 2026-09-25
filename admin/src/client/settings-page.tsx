@@ -148,7 +148,7 @@ export function SettingsPage({ api, t }: { api: AdminApi; t: T }) {
             onConflict={refreshAfterConflict}
             onSecretChanged={refreshAfterConflict}
           >
-            {s.id === 'agent-kit-jev' && <KeyPanel status={status} api={api} t={t} onChanged={load} />}
+            {s.id === 'agent-kit-jev' && (s.config as { provider?: string } | undefined)?.provider !== 'laya' && <KeyPanel status={status} api={api} t={t} onChanged={load} />}
             {s.id === 'agent-kit-dingtalk' && s.enabled && (s.config as { identity?: string } | undefined)?.identity !== 'webhook' && (
               <DingtalkAuthPanel api={api} t={t} writable={status.writable} onChanged={refreshAfterConflict} />
             )}

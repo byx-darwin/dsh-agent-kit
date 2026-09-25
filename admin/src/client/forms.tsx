@@ -171,8 +171,24 @@ function WsForm(p: FormProps) {
   )
 }
 
+/** Jev 与本地 Laya 二选一：选 laya 时填写服务地址与 Key 的 ref，TypeSafe Key 不再使用。 */
 function JevForm(p: FormProps) {
-  return <>{text(p, 'model', p.t('jev.model'))}</>
+  const provider = (p.config.provider as string | undefined) ?? 'typesafe'
+  return (
+    <>
+      <Field label={p.t('jev.provider')}>
+        {(id) => (
+          <select id={id} disabled={p.disabled} value={provider} onChange={(e) => p.onChange({ ...p.config, provider: e.target.value })}>
+            <option value="typesafe">{p.t('jev.provider.typesafe')}</option>
+            <option value="laya">{p.t('jev.provider.laya')}</option>
+          </select>
+        )}
+      </Field>
+      {provider === 'laya' && text(p, 'baseURL', p.t('jev.baseURL'))}
+      {provider === 'laya' && text(p, 'apiKeyRef', p.t('jev.apiKeyRef'))}
+      {text(p, 'model', p.t('jev.model'))}
+    </>
+  )
 }
 
 function getPath(config: Config, path: string): unknown {

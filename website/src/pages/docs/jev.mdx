@@ -4,7 +4,7 @@ title: Jev 判断
 import Base from '../../layouts/Base.astro'
 import ServiceDoc from '../../components/ServiceDoc.astro'
 
-<Base title="Jev 判断" description="ctx.jev：调用 TypeSafe Jev 对状态做 Choice / Noul / Score 类型化判断，返回概率；一次调用有严格的总时长。">
+<Base title="Jev 判断" description="ctx.jev：调用 TypeSafe Jev 或本地部署的 Laya，对状态做 Choice / Noul / Score 类型化判断，返回概率；一次调用有严格的总时长。">
 <ServiceDoc id="jev">
 
 ## 接口
@@ -37,10 +37,33 @@ if (answers.pick.confidence < 0.6) askHuman()
 
 问题构造函数由本包导出，与 SDK 的线上格式一致；没有启用 jev 的项目不需要安装 SDK。
 
+### Provider：Jev 与本地 Laya 二选一
+
+`provider` 决定请求发往哪里，业务代码里的 `ctx.jev.judge()` 与返回类型不变：
+
+| provider | 服务 | 需要 |
+|---|---|---|
+| `typesafe`（默认） | TypeSafe 托管的 Jev | TypeSafe API Key |
+| `laya` | 本地部署的 [Laya](https://huggingface.co/convaiinnovations/laya)，接口与 Jev 相同（`POST /v1/systemone`） | `baseURL`；Key 可选 |
+
+```yaml
+- id: agent-kit-jev
+  disabled: false
+  config:
+    provider: laya
+    baseURL: http://127.0.0.1:8000   # laya-serve 默认端口
+    apiKeyRef: LAYA_API_KEY          # 可选，默认即 LAYA_API_KEY
+```
+
+- `provider: laya` 时 `baseURL` 必填；Key 按 `apiKeyRef` 从环境变量或 dsh 凭据文件读取，取不到则不带鉴权发送。此时不读取、也不会发送 TypeSafe Key。
+- `provider: typesafe` 时 `baseURL` 被忽略并记一条警告，避免 TypeSafe Key 被发往其他地址。
+- `model` 仍会随请求发送。Laya 只认 `english` / `multilingual` / `typed-decisions`，其余名字（包括默认的 `jev-latest`）按输入语言自动路由。
+- Laya 在简单问题上与 Jev 接近，但整体准确率不同；切换前请用同一批问题对比结果与阈值。
+
 ### 依赖与 Key
 
-- 需要安装可选依赖 `@typesafe-ai/sdk`，只有启用 jev 时才需要。
-- TypeSafe API Key 按以下顺序读取，三处都取不到时 Service 启动失败：
+- 需要安装可选依赖 `@typesafe-ai/sdk`，只有启用 jev 时才需要；两种 provider 都用它发送请求。
+- `provider: typesafe` 时，TypeSafe API Key 按以下顺序读取，三处都取不到时 Service 启动失败：
   1. 环境变量 `TYPESAFE_API_KEY`。
   2. macOS 钥匙串（仅 macOS）：未配置 `keychainService` 时默认读取共享服务名 `ai.typesafe.api-key`，可与 gitflow-cli 共用；配置时按列表顺序尝试，空列表表示不读钥匙串。
   3. dsh 凭据文件 `$DSH_HOME/.credentials.yaml`，Linux 与 Windows 上保存 Key 的默认位置。
@@ -51,7 +74,7 @@ if (answers.pick.confidence < 0.6) askHuman()
 - `timeoutMs` 是一次 `judge()` 的总时长，包含 SDK 内部的重试；超时或 `signal` 中止时取消请求。
 - SDK 默认对 408、429、5xx 与连接错误最多重试 2 次，但它的超时只约束单次尝试，所以本包用自己的定时器保证总时长。
 - 创建 SDK 客户端时关闭其日志，避免在调试日志中输出请求体。
-- 返回 401 / 403 时 `health()` 置为 `failed` 并触发 `agent-kit/service-failed`，之后请求成功会自动恢复。
+- 返回 401 / 403 时 `health()` 置为 `failed` 并触发 `agent-kit/service-failed`，之后请求成功会自动恢复；两种 provider 相同。
 
 </ServiceDoc>
 </Base>

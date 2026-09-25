@@ -57,6 +57,23 @@ describe('AgentKitAdmin', () => {
     expect(await admin.clearSecret('credentials')).toEqual({ configured: false })
   })
 
+  it('exposes the Laya key ref as a jev row secret only when provider is laya', async () => {
+    const admin = await setup('127.0.0.1')
+    const jevRow = async () => (await admin.status()).services.find((x) => x.id === 'agent-kit-jev')!
+    expect((await jevRow()).secrets).toBeUndefined()
+    await expect(admin.setSecret('credentials', 'v', 'LAYA_API_KEY')).rejects.toThrow(/unknown secret ref/)
+    const { version } = await admin.status()
+    await admin.saveService('agent-kit-jev', true, { provider: 'laya', baseURL: 'http://127.0.0.1:9', apiKeyRef: 'MY_LAYA' }, version)
+    expect((await jevRow()).secrets).toEqual([{ label: 'Laya API Key', ref: 'MY_LAYA', configured: false }])
+    await expect(admin.setSecret('keychain' as never, 'v', 'MY_LAYA')).rejects.toThrow(/bad_request/)
+    expect(await admin.setSecret('credentials', 'laya-secret-1', 'MY_LAYA')).toEqual({ configured: true, source: 'credentials' })
+    const s = await admin.status()
+    expect(s.services.find((x) => x.id === 'agent-kit-jev')!.secrets).toEqual([{ label: 'Laya API Key', ref: 'MY_LAYA', configured: true, source: 'credentials' }])
+    expect(s.typesafeKey).toEqual({ configured: false })
+    expect(JSON.stringify(s)).not.toContain('laya-secret-1')
+    expect(await admin.clearSecret('credentials', 'MY_LAYA')).toEqual({ configured: false })
+  })
+
   it('rejects an unsupported key target as bad_request', async () => {
     const admin = await setup('127.0.0.1')
     await expect(admin.setSecret('keychain' as never, 'v')).rejects.toThrow(/bad_request/)

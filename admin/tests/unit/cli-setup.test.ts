@@ -39,6 +39,7 @@ describe('setup', () => {
       'chatId', // 默认目标类型
       'cidTest1', // 群 ID
       false, // 是否 dryRun
+      'typesafe', // Jev 服务
       'jev-latest', // Jev 模型
       'ts-secret-key', // Key（password）
       'credentials', // 保存位置（linux 只有 credentials，仍会确认一次）
@@ -66,9 +67,34 @@ describe('setup', () => {
 
   it('re-asks on invalid input and keeps existing keys', async () => {
     writeFileSync(join(home, '.credentials.yaml'), 'version: 1\nrefs:\n  TYPESAFE_API_KEY: old\n', { mode: 0o600 })
-    const answers = [['agent-kit-jev'], 'jev-latest', true /* 保留已有 Key */, true]
+    const answers = [['agent-kit-jev'], 'typesafe', 'jev-latest', true /* 保留已有 Key */, true]
     expect(await main(['setup', '--profile', 'kit'], io(), deps(answers))).toBe(0)
     expect(await readCredential('TYPESAFE_API_KEY', join(home, '.credentials.yaml'))).toBe('old')
+  })
+
+  it('configures jev with a local Laya server and saves the Laya key to the dsh credentials', async () => {
+    const probed: string[] = []
+    const answers = [
+      ['agent-kit-jev'],
+      'laya', // Jev 服务
+      'http://127.0.0.1:18765', // Laya 地址
+      'jev-latest', // 模型
+      true, // Laya 开启了鉴权，保存 Key
+      'laya-secret-key', // Key（password）
+      true, // 确认写入
+    ]
+    const d = deps(answers)
+    const code = await main(['setup', '--profile', 'kit'], io(), { ...d, checkOverrides: { ...d.checkOverrides, probeHttp: async (url: string) => (probed.push(url), true) } })
+    expect(code).toBe(0)
+    const text = readFileSync(patchFile, 'utf8')
+    expect(text).toMatch(/provider: laya/)
+    expect(text).toMatch(/baseURL: http:\/\/127\.0\.0\.1:18765/)
+    expect(text).not.toContain('keychainService')
+    expect(text).not.toContain('laya-secret-key')
+    expect(await readCredential('LAYA_API_KEY', join(home, '.credentials.yaml'))).toBe('laya-secret-key')
+    expect(await readCredential('TYPESAFE_API_KEY', join(home, '.credentials.yaml'))).toBeUndefined()
+    expect(probed).toEqual(['http://127.0.0.1:18765'])
+    expect(out.join('')).not.toContain('laya-secret-key')
   })
 
   it('offers dws login for a logged-out user identity', async () => {

@@ -90,6 +90,24 @@ describe('service checks', () => {
     const noSdk = await runChecks(ctx({ snapshot: enabled, resolveModule: (m) => m !== '@typesafe-ai/sdk' }))
     expect(byId(noSdk, 'agent-kit-jev.sdk')!.status).toBe('fail')
   })
+
+  it('checks the Laya key ref and reachability instead of the TypeSafe key for provider laya', async () => {
+    const laya = (config: Record<string, unknown>) => snapshot({ 'agent-kit-jev': { enabled: true, config: { provider: 'laya', baseURL: 'http://127.0.0.1:18765', ...config } } })
+    const probed: string[] = []
+    const up = async (url: string) => (probed.push(url), true)
+    const noKey = await runChecks(ctx({ snapshot: laya({}), probeHttp: up }))
+    expect(byId(noKey, 'agent-kit-jev.key')).toMatchObject({ title: 'Laya Key', status: 'warn', detail: expect.stringContaining('LAYA_API_KEY'), fix: expect.any(String) })
+    expect(byId(noKey, 'agent-kit-jev.reachable')).toMatchObject({ status: 'pass' })
+    expect(probed).toEqual(['http://127.0.0.1:18765'])
+    expect(noKey.ok).toBe(true)
+    const withKey = await runChecks(ctx({ snapshot: laya({ apiKeyRef: 'MY_LAYA' }), probeHttp: up, keyStore: { env: { MY_LAYA: 'laya-secret-1', TYPESAFE_API_KEY: 'ts' }, platform: 'linux', credentialsFile: '/nonexistent/.credentials.yaml' } }))
+    expect(byId(withKey, 'agent-kit-jev.key')).toMatchObject({ status: 'pass', detail: expect.stringContaining('MY_LAYA') })
+    expect(JSON.stringify(withKey)).not.toContain('laya-secret-1')
+    const down = await runChecks(ctx({ snapshot: laya({}), probeHttp: async () => false }))
+    expect(byId(down, 'agent-kit-jev.reachable')).toMatchObject({ status: 'fail', detail: expect.stringContaining('127.0.0.1:18765'), fix: expect.any(String) })
+    const noUrl = await runChecks(ctx({ snapshot: laya({ baseURL: undefined }), probeHttp: up }))
+    expect(byId(noUrl, 'agent-kit-jev.reachable')).toMatchObject({ status: 'fail', fix: expect.stringContaining('baseURL') })
+  })
 })
 
 describe('every fail/warn result carries a fix', () => {

@@ -2,7 +2,7 @@
 
 官网：https://byx-darwin.github.io/dsh-agent-kit/
 
-构建常驻 Agent Worker 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件工具包：WebSocket 接入、钉钉 / 飞书推送与渠道无关的通知、Claude Code / Codex 任务委托、TypeSafe Jev 校验。
+构建常驻 Agent Worker 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件工具包：WebSocket 接入、钉钉 / 飞书推送与渠道无关的通知、Claude Code / Codex 任务委托、TypeSafe Jev（或本地 Laya）校验。
 
 > **状态：已实现，待发布 `0.1.0`。** 接口以 [设计文档](docs/superpowers/specs/2026-09-23-dsh-agent-kit-design.md) 为准，首个版本发布前可能调整。
 
@@ -35,7 +35,7 @@
 | `ctx.feishu` | 通过飞书官方 CLI `lark-cli` 发送文本 / Markdown 消息，支持 `bot` / `user` 身份、群聊 / 单聊 / 多群、@ 人、幂等键和 `dryRun`；可查询身份状态，`user` 身份可发起设备流登录与退出 |
 | `ctx.notify` | 与渠道无关的通知：业务包只调用 `ctx.notify.send()`，同一时间发往一个渠道（钉钉或飞书）。渠道由配置决定，也可以在运行中用 `ctx.notify.use()` 切换，不需要改业务代码 |
 | `ctx.agentTasks` | 调用 dsh 已注册的 subagent provider（如 `claude-code`、`codex`）执行一次性任务：默认只读权限（无法由本包强制的 provider 需运维声明权限上限）、每个任务独立目录、类型化的 JSON Schema 输出、并发与排队上限 |
-| `ctx.jev` | 调用 TypeSafe Jev，返回 Choice / Noul / Score 的类型化判断和概率 |
+| `ctx.jev` | 调用 TypeSafe Jev 或本地部署的 Laya（二选一），返回 Choice / Noul / Score 的类型化判断和概率 |
 
 - 六个 Service 默认禁用，按需启用；未启用的 Service 不校验配置，也不影响其他 Service。
 - 每个 Service 提供 `health()`；进入 `failed` 时触发 `agent-kit/service-failed` 事件，便于接入外部监控。
@@ -75,7 +75,7 @@
 - 使用 `ctx.notify`：同时启用它要用到的渠道（`ctx.dingtalk` 或 `ctx.feishu`）
 - 本包运行时不会安装上述 CLI；可以手动安装，或用 admin 包的 `setup` 在你确认后安装（见「运维工具（可选）」）
 - 使用 `ctx.agentTasks`：安装 `@deepseek-ai/dsh-subagent-claude-code` 和/或 `@deepseek-ai/dsh-subagent-codex`（`ctx.subagents` 与子进程服务由 dsh 的 base bundle 提供），并完成 Claude Code / Codex 的原生登录（provider 会剔除名字含 KEY / TOKEN / SECRET / PASSWORD 的环境变量，依赖这类变量鉴权时需在 provider 的 Config `env` 中显式给出）
-- 使用 `ctx.jev`：安装 `@typesafe-ai/sdk`，并设置环境变量 `TYPESAFE_API_KEY`；macOS 上也可以用 `keychainService` 从钥匙串读取，推荐与 gitflow-cli 等工具共享的服务名 `ai.typesafe.api-key`（保存：`security add-generic-password -a "$USER" -s ai.typesafe.api-key -U -w`）
+- 使用 `ctx.jev`：安装 `@typesafe-ai/sdk`，并设置环境变量 `TYPESAFE_API_KEY`；macOS 上也可以用 `keychainService` 从钥匙串读取，推荐与 gitflow-cli 等工具共享的服务名 `ai.typesafe.api-key`（保存：`security add-generic-password -a "$USER" -s ai.typesafe.api-key -U -w`）。改用本地 Laya 时配置 `provider: laya` 与 `baseURL`，不需要 TypeSafe Key
 - 生产部署：Profile 进程由 systemd、pm2 等进程守护托管
 
 ## 安装
@@ -318,6 +318,11 @@ await ctx.plugin(FakeSubagentRuntime, { providers: [provider] }) // 或注册到
   disabled: false                              # 需要 @typesafe-ai/sdk 与环境变量 TYPESAFE_API_KEY
   config:
     keychainService: [ai.typesafe.api-key, gitflow-cli-typesafe]  # 可选：macOS 上未设置环境变量时按顺序从钥匙串读取；旧名仅用于迁移期
+# 或改用本地部署的 Laya（与上面二选一）：
+#   config:
+#     provider: laya
+#     baseURL: http://127.0.0.1:8000             # laya-serve 的地址
+#     apiKeyRef: LAYA_API_KEY                    # 可选：Laya 开启鉴权时从该环境变量 / dsh 凭据读取 Key
 ```
 
 按 id 修改 `config` 时整段替换；未给出的字段使用默认值。
@@ -329,7 +334,7 @@ await ctx.plugin(FakeSubagentRuntime, { providers: [provider] }) // 或注册到
 | `feishu` | `identity`（必填，`bot` / `user`）、`defaultTarget`、`profile`、`larkPath`、`timeoutMs`、`killGraceMs`、`retry.maxAttempts`、`preflightIntervalMs`、`dryRun` |
 | `notify` | `channel`（必填，`dingtalk` / `feishu`） |
 | `agentTasks` | `workspaceDir`（必填）、`defaultTimeoutMs`、`maxConcurrency`、`maxQueueSize`、`keepWorkdir`、`declaredPermissions`、`toolAllowlist` |
-| `jev` | `model`、`timeoutMs`、`keychainService`、`keychainAccount` |
+| `jev` | `provider`、`baseURL`、`apiKeyRef`、`model`、`timeoutMs`、`keychainService`、`keychainAccount` |
 
 - `agentTasks.declaredPermissions`：claude-code、codex 不支持按任务过滤工具，权限由 provider 实例自己的配置决定。运维在这里声明其实际权限上限（`read-only` / `workspace-write`）；未声明或上限高于任务请求的档位时，任务以 `unsupported_permissions` 失败。
 - `dingtalk` 的 `webhook` 身份只能把 token 作为命令行参数传给 dws（会出现在 `ps` 中），不推荐使用。

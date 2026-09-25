@@ -2,7 +2,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { JevService, classify, defaultClientFactory, type JevConfig } from '../../src/jev/service.js'
+import { JevService, classify, defaultClientFactory, type JevClientFactory, type JevConfig } from '../../src/jev/service.js'
 import { macosKeychain } from '../../src/secrets/keychain.js'
 import { SHARED_KEYCHAIN_SERVICE } from '../../src/secrets/typesafe-key.js'
 import { choice, noul, score } from '../../src/jev/types.js'
@@ -113,7 +113,7 @@ describe('JevService', () => {
 
   it('applies defaults, assembles the request and maps answers with types', async () => {
     const jev = await setup()
-    expect(jev().config).toEqual({ model: 'jev-latest', timeoutMs: 30_000 })
+    expect(jev().config).toEqual({ provider: 'typesafe', model: 'jev-latest', timeoutMs: 30_000 })
     mock.handler = () => ({
       wrong: { type: 'noul', noul: 0.2 },
       pick: { type: 'choice', choice: 'B', confidence: 0.9, probabilities: { A: 0.1, B: 0.9 } },
@@ -308,5 +308,88 @@ describe('JevService', () => {
     expect(client.defaultModel).toBe('jev-x')
     expect(client.timeout).toBe(1234)
     expect(client.logLevel).toBe('off')
+  })
+
+  it('passes baseURL to the SDK client', async () => {
+    const client = (await defaultClientFactory({ apiKey: 'k', model: 'm', timeoutMs: 1000, baseURL: 'http://127.0.0.1:18765/' })) as any
+    expect(client.baseURL).toBe('http://127.0.0.1:18765')
+  })
+
+  describe('provider laya', () => {
+    const savedLaya = process.env.LAYA_API_KEY
+    let seen: Parameters<JevClientFactory>[0] | undefined
+    let keychainReads = 0
+
+    beforeEach(() => {
+      seen = undefined
+      keychainReads = 0
+      delete process.env.LAYA_API_KEY
+      JevService.keyStore = {
+        platform: 'darwin',
+        keychain: { read: async () => (keychainReads++, 'keychain-typesafe-key'), write: async () => {}, remove: async () => {} },
+        credentialsFile: join(tmpdir(), `agent-kit-none-${process.pid}.yaml`),
+      }
+      const base = mock.factory
+      mock.factory = async (opts) => ((seen = opts), base(opts))
+      restore()
+      restore = mock.install()
+    })
+    afterEach(() => {
+      if (savedLaya === undefined) delete process.env.LAYA_API_KEY
+      else process.env.LAYA_API_KEY = savedLaya
+    })
+
+    it('requires baseURL', async () => {
+      await expect(t.root.plugin(JevService, { provider: 'laya' } as never)).rejects.toThrow(/baseURL/)
+    })
+
+    it.each(['ftp://x', 'not a url'])('rejects baseURL %s', async (baseURL) => {
+      await expect(t.root.plugin(JevService, { provider: 'laya', baseURL } as never)).rejects.toThrow(/baseURL/)
+    })
+
+    it('never reads or sends the TypeSafe key, and works without a Laya key', async () => {
+      const jev = await setup({ provider: 'laya', baseURL: 'http://127.0.0.1:18765' })
+      expect(keychainReads).toBe(0)
+      expect(seen).toMatchObject({ provider: 'laya', baseURL: 'http://127.0.0.1:18765', model: 'jev-latest' })
+      expect(seen!.apiKey).not.toBe('ts-test-api-key-123')
+      await jev().judge({ state: 's', questions: { q: noul('x') } })
+      expect(mock.requests).toHaveLength(1)
+      expect(t.logs.some((l) => l.includes('laya') && l.includes('no api key'))).toBe(true)
+    })
+
+    it('reads the Laya key from LAYA_API_KEY and redacts it', async () => {
+      process.env.LAYA_API_KEY = 'laya-local-key-456'
+      const jev = await setup({ provider: 'laya', baseURL: 'http://127.0.0.1:18765' })
+      expect(seen!.apiKey).toBe('laya-local-key-456')
+      mock.handler = () => {
+        throw jevHttpError(401, 'bad key laya-local-key-456')
+      }
+      const err = await jev().judge({ state: 's', questions: { q: noul('x') } }).catch((e: unknown) => e)
+      expect(err).toMatchObject({ code: 'unauthorized' })
+      expect(jev().health()).toMatchObject({ status: 'failed', detail: expect.stringContaining('Laya') })
+      expect(JSON.stringify((err as { toJSON(): unknown }).toJSON())).not.toContain('laya-local-key-456')
+      expect(t.logs.join('\n')).not.toContain('laya-local-key-456')
+    })
+
+    it('reads the Laya key from a custom apiKeyRef in the dsh credentials store', async () => {
+      t.root.provide('credentials', { resolve: async (ref: string) => (ref === 'MY_LAYA_KEY' ? { value: 'cred-laya-789', source: 'file' } : undefined) } as never)
+      await setup({ provider: 'laya', baseURL: 'http://127.0.0.1:18765', apiKeyRef: 'MY_LAYA_KEY' })
+      expect(seen!.apiKey).toBe('cred-laya-789')
+    })
+
+    it('labels errors with the provider name', async () => {
+      const jev = await setup({ provider: 'laya', baseURL: 'http://127.0.0.1:18765' })
+      mock.handler = () => {
+        throw jevHttpError(503)
+      }
+      await expect(jev().judge({ state: 's', questions: { q: noul('x') } })).rejects.toThrow(/Laya API returned 503/)
+    })
+
+    it('ignores baseURL for provider typesafe with a warning', async () => {
+      await setup({ baseURL: 'http://127.0.0.1:18765' })
+      expect(seen).toMatchObject({ provider: 'typesafe', apiKey: 'ts-test-api-key-123' })
+      expect(seen!.baseURL).toBeUndefined()
+      expect(t.logs.some((l) => l.includes('baseURL is only used by provider laya'))).toBe(true)
+    })
   })
 })

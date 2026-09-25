@@ -6,6 +6,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '未发布',
+    date: '2026-09-25',
+    items: [
+      'ctx.jev 可在 TypeSafe Jev 与本地部署的 Laya 之间二选一：新增 provider、baseURL、apiKeyRef 配置；选 laya 时不读取、也不发送 TypeSafe Key，业务代码不用改。',
+      'admin 包：设置页、setup 与 doctor 支持 Laya（服务地址、可选的 Laya Key、连接检查）。',
+    ],
+  },
+  {
     version: '0.1.0',
     date: '2026-09-24',
     items: [

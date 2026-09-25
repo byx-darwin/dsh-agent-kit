@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { diffLines } from 'diff'
 import { createCheckContext, runChecks } from '../checks/index.js'
 import { previewKitEntries, readKitEntries, writeKitEntries, type KitChanges, type KitId } from '../profile/index.js'
-import { SHARED_KEYCHAIN_SERVICE, defaultKeyTarget, describeTypesafeKey, saveTypesafeKey, type KeyStoreOptions, type KeyTarget } from '@mc/dsh-agent-kit/secrets'
+import { SHARED_KEYCHAIN_SERVICE, defaultKeyTarget, describeSecretRef, describeTypesafeKey, saveSecretRef, saveTypesafeKey, type KeyStoreOptions, type KeyTarget } from '@mc/dsh-agent-kit/secrets'
 import { CHANNEL_CLIS, installArgs, installCommand, type ChannelCliId } from '../clis.js'
 import { buildSendArgs } from '@mc/dsh-agent-kit/dingtalk'
 import { buildFeishuArgs } from '@mc/dsh-agent-kit/feishu'
@@ -248,8 +248,12 @@ async function configureAgentTasks(p: Prompter, current: Config): Promise<Config
 }
 
 async function configureJev(p: Prompter, current: Config, keyStore: KeyStoreOptions, io: CliIO): Promise<Config> {
+  const provider = await p.select(msg.JEV_PROVIDER_MESSAGE, msg.JEV_PROVIDER_CHOICES, (current.provider as 'typesafe' | 'laya') ?? 'typesafe')
+  if (provider === 'laya') return configureLaya(p, current, keyStore, io)
   const model = await p.input(msg.JEV_MODEL_MESSAGE, (current.model as string) ?? msg.JEV_MODEL_DEFAULT, nonEmpty)
-  const config: Config = { ...current, model }
+  const config: Config = { ...current, provider, model }
+  delete config.baseURL
+  delete config.apiKeyRef
   const platform = keyStore.platform ?? process.platform
   if (platform === 'darwin') config.keychainService = [SHARED_KEYCHAIN_SERVICE, 'gitflow-cli-typesafe']
   const existing = await describeTypesafeKey({ ...keyStore, keychainService: config.keychainService as string[] | undefined })
@@ -261,6 +265,22 @@ async function configureJev(p: Prompter, current: Config, keyStore: KeyStoreOpti
   const target = await p.select(msg.JEV_KEY_TARGET_MESSAGE, targets, defaultKeyTarget(platform))
   await saveTypesafeKey(target, key, { ...keyStore, keychainService: SHARED_KEYCHAIN_SERVICE })
   io.out(msg.jevKeySavedMessage(target))
+  return config
+}
+
+/** 本地 Laya：只写 provider / baseURL / model，Key 可选并只存 dsh 凭据文件；不碰 TypeSafe Key 与钥匙串配置。 */
+async function configureLaya(p: Prompter, current: Config, keyStore: KeyStoreOptions, io: CliIO): Promise<Config> {
+  const baseURL = await p.input(msg.LAYA_BASE_URL_MESSAGE, (current.baseURL as string) ?? msg.LAYA_BASE_URL_DEFAULT, (v) => (/^https?:\/\/\S+$/.test(v) && URL.canParse(v) ? true : msg.LAYA_BASE_URL_INVALID))
+  const model = await p.input(msg.JEV_MODEL_MESSAGE, (current.model as string) ?? msg.JEV_MODEL_DEFAULT, nonEmpty)
+  const config: Config = { ...current, provider: 'laya', baseURL, model }
+  delete config.keychainService
+  delete config.keychainAccount
+  const ref = (config.apiKeyRef as string | undefined) ?? 'LAYA_API_KEY'
+  const existing = await describeSecretRef(ref, keyStore)
+  if (existing.configured && (await p.confirm(msg.layaKeyFoundMessage(ref, existing.source!), true))) return config
+  if (!(await p.confirm(msg.layaKeyAskMessage(ref), false))) return config
+  await saveSecretRef(ref, await p.password(msg.LAYA_KEY_PASSWORD_MESSAGE), keyStore)
+  io.out(msg.layaKeySavedMessage(ref))
   return config
 }
 

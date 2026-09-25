@@ -170,6 +170,24 @@ export const AGENT_TASKS_PERMISSION_CHOICES = [
 
 // ---- jev ----
 
+export const JEV_PROVIDER_MESSAGE = 'Jev 判断使用哪个服务'
+export const JEV_PROVIDER_CHOICES = [
+  { value: 'typesafe' as const, name: 'TypeSafe Jev（云端，需要 TypeSafe API Key）' },
+  { value: 'laya' as const, name: '本地 Laya（laya-serve 等 Jev 兼容服务，不使用 TypeSafe Key）' },
+]
+export const LAYA_BASE_URL_MESSAGE = 'Laya 服务地址'
+export const LAYA_BASE_URL_DEFAULT = 'http://127.0.0.1:8000'
+export const LAYA_BASE_URL_INVALID = '请输入 http:// 或 https:// 开头的地址'
+export function layaKeyFoundMessage(ref: string, source: string): string {
+  return `已找到 Laya Key ${ref}（来源：${source}），保留？`
+}
+export function layaKeyAskMessage(ref: string): string {
+  return `Laya 服务开启了鉴权（LAYA_API_KEY）吗？是则把 Key 保存到 dsh 凭据文件的 ${ref}`
+}
+export const LAYA_KEY_PASSWORD_MESSAGE = 'Laya API Key（输入不回显）'
+export function layaKeySavedMessage(ref: string): string {
+  return `Laya Key 已保存到 dsh 凭据文件（${ref}）。\n`
+}
 export const JEV_MODEL_MESSAGE = 'Jev 模型'
 export const JEV_MODEL_DEFAULT = 'jev-latest'
 export function jevKeyFoundMessage(source: string): string {

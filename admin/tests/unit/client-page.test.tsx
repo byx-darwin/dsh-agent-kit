@@ -100,6 +100,28 @@ describe('SettingsPage', () => {
     expect(document.body.textContent).not.toContain('ts-secret')
   })
 
+  it('switches jev to Laya: shows baseURL / key ref fields and hides the TypeSafe key panel', async () => {
+    const api = fakeApi(status())
+    render(<SettingsPage api={api} t={t} />)
+    expect(await screen.findByLabelText(zh['jev.key']!)).toBeTruthy()
+    expect(screen.queryByLabelText(zh['jev.baseURL']!)).toBeNull()
+    fireEvent.change(screen.getByLabelText(zh['jev.provider']!), { target: { value: 'laya' } })
+    fireEvent.change(screen.getByLabelText(zh['jev.baseURL']!), { target: { value: 'http://127.0.0.1:18765' } })
+    fireEvent.change(screen.getByLabelText(zh['jev.apiKeyRef']!), { target: { value: 'MY_LAYA' } })
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} Jev 判断` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-jev', true, { model: 'jev-latest', provider: 'laya', baseURL: 'http://127.0.0.1:18765', apiKeyRef: 'MY_LAYA' }, 'v1'))
+  })
+
+  it('shows the Laya key as a row secret instead of the TypeSafe key panel when saved as laya', async () => {
+    const s = status()
+    s.services[3] = { ...s.services[3]!, config: { provider: 'laya', baseURL: 'http://127.0.0.1:18765' }, secrets: [{ label: 'Laya API Key', ref: 'LAYA_API_KEY', configured: false }] }
+    const api = fakeApi(s)
+    render(<SettingsPage api={api} t={t} />)
+    expect(await screen.findByLabelText(zh['jev.baseURL']!)).toBeTruthy()
+    expect(screen.queryByLabelText(zh['jev.key']!)).toBeNull()
+    expect(screen.getByText(/Laya API Key/)).toBeTruthy()
+  })
+
   it('disables editing when read-only', async () => {
     render(<SettingsPage api={fakeApi(status({ writable: false, readOnlyReason: 'dsh Web 未绑定 127.0.0.1' }))} t={t} />)
     expect(await screen.findByText(/未绑定 127\.0\.0\.1/)).toBeTruthy()

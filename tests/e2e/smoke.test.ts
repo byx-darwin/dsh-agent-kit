@@ -16,6 +16,7 @@ import { choice, noul } from '../../src/jev/types.js'
 //               provider 会从子进程环境中剔除名字含 KEY/TOKEN/SECRET/PASSWORD 的变量，若 Agent 依赖这类变量鉴权，
 //               用 AGENT_KIT_E2E_SUBAGENT_ENV=ANTHROPIC_BASE_URL,ANTHROPIC_AUTH_TOKEN 列出要经 provider Config.env 显式传入的变量名
 //   jev:        TYPESAFE_API_KEY，或在 macOS 上用 AGENT_KIT_E2E_JEV_KEYCHAIN_SERVICE 指定钥匙串服务名（例如 ai.typesafe.api-key，多个名字用逗号分隔）
+//   laya:       AGENT_KIT_E2E_LAYA_URL（本地 Laya 地址，例如 http://127.0.0.1:18765）；Laya 开启鉴权时另设 LAYA_API_KEY
 
 const env = process.env
 let root: Context
@@ -123,5 +124,22 @@ describe.skipIf(!env.TYPESAFE_API_KEY && !env.AGENT_KIT_E2E_JEV_KEYCHAIN_SERVICE
     })
     expect(answers.billing.noul).toBeGreaterThan(0.5)
     expect(['calm', 'upset']).toContain(answers.mood.choice)
+  })
+})
+
+describe.skipIf(!env.AGENT_KIT_E2E_LAYA_URL)('jev (real local Laya)', () => {
+  it('judges a trivial state through provider laya', async () => {
+    await root.plugin(JevService, { provider: 'laya', baseURL: env.AGENT_KIT_E2E_LAYA_URL! })
+    await new Promise<void>((resolve) => root.inject(['jev'], () => resolve()))
+    const { answers } = await root.get('jev')!.judge({
+      state: 'The customer says: I was charged twice for my order.',
+      questions: {
+        billing: noul('Is this about billing?'),
+        mood: choice('How does the customer feel?', { calm: null, upset: null }),
+      },
+    })
+    expect(answers.billing.noul).toBeGreaterThan(0.5)
+    expect(['calm', 'upset']).toContain(answers.mood.choice)
+    expect(root.get('jev')!.health().status).toBe('ok')
   })
 })
