@@ -58,7 +58,8 @@ if (answers.pick.confidence < 0.6) askHuman()
 - `provider: laya` 时 `baseURL` 必填；Key 按 `apiKeyRef` 从环境变量或 dsh 凭据文件读取，取不到则不带鉴权发送。此时不读取、也不会发送 TypeSafe Key。
 - `provider: typesafe` 时 `baseURL` 被忽略并记一条警告，避免 TypeSafe Key 被发往其他地址。
 - `model` 仍会随请求发送。Laya 只认 `english` / `multilingual` / `typed-decisions`，其余名字（包括默认的 `jev-latest`）按输入语言自动路由。
-- Laya 在简单问题上与 Jev 接近，但整体准确率不同；切换前请用同一批问题对比结果与阈值。
+- Laya 的上下文窗口很小（多语言模型 1024 token，英文模型 512），超出的 state 会被静默截断、不报错；`usage.input_tokens` 等于窗口上限即说明被截断。把要判断的内容放在 state 前面，并控制 state 长度。
+- Laya 在证据就在文本里的短判断上可用，但需要常识的判断（例如由域名判断业务）明显弱于 Jev；切换前请用同一批问题对比结果与阈值。
 
 ### 依赖与 Key
 
