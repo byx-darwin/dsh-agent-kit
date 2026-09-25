@@ -40,6 +40,10 @@
     "answer": "把钉钉或飞书设为 dryRun: true，并使用 @mc/dsh-agent-kit/testing 导出的本地 WebSocket 测试服务端、假 subagent provider、Jev mock、假 dws 脚本（createFakeDws）和假 lark-cli 脚本（createFakeLark）。"
   },
   {
+    "question": "没有 TypeSafe Key，能在本地跑 Jev 判断吗？",
+    "answer": "可以。把 Jev 行配置为 provider: laya，并给出 baseURL 指向本地部署的 Laya（例如 laya-serve，默认 http://127.0.0.1:8000）。Laya 与 Jev 接口相同，ctx.jev.judge() 用法不变；此时不需要 TypeSafe Key，也不会发送它。Laya 的准确率与 Jev 不同，切换前请用同一批问题对比结果与阈值。"
+  },
+  {
     "question": "可以和 gitflow-cli 共用 TypeSafe Key 吗？",
     "answer": "可以。两者在 macOS 上都读取钥匙串中服务名为 ai.typesafe.api-key 的条目。如果你的 Key 还在旧名 gitflow-cli-typesafe 下，可以复制一份到新名，或在 Jev 配置中写 keychainService: [ai.typesafe.api-key, gitflow-cli-typesafe]。"
   },

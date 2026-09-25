@@ -8,5 +8,5 @@ export const SITE = {
   author: { name: '皮哥不写PPT', url: 'https://byx-darwin.github.io/' },
   tagline: '让业务包只写业务。',
   positioning:
-    '构建常驻 Agent Worker 的 DeepSeek Harness 插件工具包：WebSocket 接入、钉钉 / 飞书推送与渠道无关的通知、Claude Code / Codex 任务委托、TypeSafe Jev 校验，默认安全，按需启用。',
+    '构建常驻 Agent Worker 的 DeepSeek Harness 插件工具包：WebSocket 接入、钉钉 / 飞书推送与渠道无关的通知、Claude Code / Codex 任务委托、TypeSafe Jev 或本地 Laya 校验，默认安全，按需启用。',
 } as const
