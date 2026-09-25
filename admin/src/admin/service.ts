@@ -107,6 +107,12 @@ function jevKeychainReadOptions(config: Record<string, unknown> | undefined): Je
   }
 }
 
+/** jev 行选 laya 时读取 Laya Key 的 ref（与 JevService 的默认值一致）；选 typesafe 时为 undefined。 */
+function layaKeyRef(config: Record<string, unknown> | undefined): string | undefined {
+  const c = (config ?? {}) as { provider?: string; apiKeyRef?: string }
+  return c.provider === 'laya' ? (c.apiKeyRef ?? 'LAYA_API_KEY') : undefined
+}
+
 /**
  * 同上，但供 `setSecret`/`clearSecret` 写入/清除单个钥匙串条目时使用：数组形式的
  * `keychainService` 取第一个（约定的“首选”服务名），因为写入/清除只能针对一个具体的服务名。
@@ -348,6 +354,9 @@ export class AgentKitAdmin extends TypertRemoteService {
     const report = await runChecks(await createCheckContext(profile, { snapshot, keyStore: this.keyStore }), registered)
     const reason = this.readOnlyReason(profile)
     const jevConfig = (snapshot.entries['agent-kit-jev'].config ?? {}) as JevKeychainFields
+    // 选 laya 时，Laya Key 作为 jev 行的密钥展示，复用业务行的密钥面板（只存凭据文件）
+    const layaRef = layaKeyRef(snapshot.entries['agent-kit-jev'].config)
+    const layaSecrets = layaRef ? [{ label: 'Laya API Key', ref: layaRef, ...(await describeSecretRef(layaRef, this.keyStore)) }] : undefined
     return {
       profile: profile.name,
       patchReload: profile.patchReload,
@@ -366,6 +375,7 @@ export class AgentKitAdmin extends TypertRemoteService {
             phase: phaseOf(entry),
             health: health ? { status: health.status, detail: health.detail } : null,
             config: snapshot.entries[meta.id].config,
+            ...(meta.id === 'agent-kit-jev' && layaSecrets ? { secrets: layaSecrets } : {}),
             ...this.dependents(registered.entries, meta.id),
           }
         }),
@@ -412,6 +422,7 @@ export class AgentKitAdmin extends TypertRemoteService {
   private async registeredRef(target: KeyTarget, ref: string): Promise<void> {
     if (target !== 'credentials') failWith('bad_request', `secret ${ref} can only be stored in the credentials file`)
     const profile = await this.writable()
+    if (ref === layaKeyRef((await readKitEntries(profile.patchFile)).entries['agent-kit-jev'].config)) return
     const { entries } = await collectEntries(profile, this.registry.values())
     if (!entries.some(({ entry, state }) => entrySecretRefs(entry, state.config).some((s) => s.ref === ref))) failWith('bad_request', `unknown secret ref ${ref}`)
   }
