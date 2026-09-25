@@ -23,6 +23,8 @@ export interface JevConfig {
   baseURL?: string
   /** provider 为 laya 时读取 Key 的 ref，默认 `LAYA_API_KEY`；取不到则不带鉴权。 */
   apiKeyRef?: string
+  /** provider 为 laya 时模型的上下文窗口（token），用于截断告警；多语言模型 1024，英文模型 512。 */
+  contextTokens: number
   model: string
   timeoutMs: number
   /** macOS 钥匙串中保存 API Key 的服务名（可给多个，按顺序尝试）；仅在未设置 TYPESAFE_API_KEY 时读取。 */
@@ -39,6 +41,7 @@ export const JevConfig: z<ConfigInput<JevConfig>, JevConfig> = z.object({
   provider: z.union(['typesafe', 'laya'] as const).default('typesafe').description('typesafe：TypeSafe 托管的 Jev；laya：本地部署的 Laya'),
   baseURL: z.string().pattern(/^https?:\/\/\S+$/).description('Laya 服务地址，provider 为 laya 时必填'),
   apiKeyRef: z.string().pattern(/^[A-Za-z_][A-Za-z0-9_]*$/).description('Laya Key 的 ref（环境变量名 / dsh 凭据键），默认 LAYA_API_KEY'),
+  contextTokens: z.natural().step(1).min(64).max(65_536).default(1024).description('Laya 模型的上下文窗口（token），用于截断告警；多语言模型 1024，英文模型 512'),
   model: z.string().default('jev-latest').description('SDK 支持的模型名'),
   timeoutMs: z.natural().step(1).min(1000).max(300_000).default(30_000).description('一次 judge() 的总时长，包含 SDK 内部重试'),
   keychainService: z
@@ -69,12 +72,16 @@ export interface JudgeResult<Q extends Questions> {
   model: string
   answers: Answers<Q>
   usage?: JevUsage
+  /** 仅 provider 为 laya：每道题的输入都占满了上下文窗口，state 很可能被截断，判断不可信。 */
+  truncated?: true
 }
 
 export interface JevCounters {
   success: number
   failure: number
   failuresByCode: Partial<Record<JevErrorCode, number>>
+  /** provider 为 laya 时判定为输入被截断的次数。 */
+  truncated: number
 }
 
 /** SDK 客户端中本包用到的部分，便于测试替换。 */
@@ -120,7 +127,7 @@ export class JevService extends KitService<JevCounters> {
   private apiKey?: string
   private client?: JevClient
   private readonly controller = new AbortController()
-  private readonly counters: JevCounters = { success: 0, failure: 0, failuresByCode: {} }
+  private readonly counters: JevCounters = { success: 0, failure: 0, failuresByCode: {}, truncated: 0 }
 
   constructor(ctx: Context, config: JevConfig) {
     super(ctx, 'jev')
@@ -194,7 +201,18 @@ export class JevService extends KitService<JevCounters> {
       this.counters.success++
       this.clearFailed()
       this.logger.info('jev judge ok', { traceId, durationMs: Date.now() - started, questions: Object.keys(options.questions).length })
-      return { model: result.model, answers: result.answers as Answers<Q>, ...(result.usage ? { usage: result.usage } : {}) }
+      const truncated = this.isTruncated(result.usage, Object.keys(options.questions).length)
+      if (truncated) {
+        this.counters.truncated++
+        this.logger.warn('laya input likely truncated; the judgement may not see the whole state', {
+          traceId,
+          // 字段名避开 token，否则会被日志脱敏
+          input: result.usage!.input_tokens,
+          questions: Object.keys(options.questions).length,
+          window: this.config.contextTokens,
+        })
+      }
+      return { model: result.model, answers: result.answers as Answers<Q>, ...(result.usage ? { usage: result.usage } : {}), ...(truncated ? { truncated: true as const } : {}) }
     } catch (e) {
       let err: JevError
       if (timeout.signal.aborted) err = new JevError('unavailable', `judge timed out after ${this.config.timeoutMs}ms`)
@@ -205,6 +223,15 @@ export class JevService extends KitService<JevCounters> {
     } finally {
       clearTimeout(timer)
     }
+  }
+
+  /**
+   * Laya 按题分别编码 `[问题与选项][state]`，超出窗口的 state 从尾部静默截断，usage 是各题输入之和。
+   * 每道题都占满窗口时总和不小于「题数 × 窗口」，据此判定截断；只有部分题被截断时查不出来。
+   */
+  private isTruncated(usage: JevUsage | undefined, questions: number): boolean {
+    if (this.config.provider !== 'laya' || !usage || questions === 0) return false
+    return usage.input_tokens >= questions * this.config.contextTokens
   }
 
   private fail(err: JevError, traceId?: string): JevError {

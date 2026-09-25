@@ -186,6 +186,7 @@ function JevForm(p: FormProps) {
       </Field>
       {provider === 'laya' && text(p, 'baseURL', p.t('jev.baseURL'))}
       {provider === 'laya' && text(p, 'apiKeyRef', p.t('jev.apiKeyRef'))}
+      {provider === 'laya' && text(p, 'contextTokens', p.t('jev.contextTokens'), 'number')}
       {text(p, 'model', p.t('jev.model'))}
     </>
   )

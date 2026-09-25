@@ -11,6 +11,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       'ctx.jev 可在 TypeSafe Jev 与本地部署的 Laya 之间二选一：新增 provider、baseURL、apiKeyRef 配置；选 laya 时不读取、也不发送 TypeSafe Key，业务代码不用改。',
       'admin 包：设置页、setup 与 doctor 支持 Laya（服务地址、可选的 Laya Key、连接检查）。',
+      'Laya 截断告警：新增 contextTokens 配置，输入占满上下文窗口时记 warn 日志，judge() 结果带 truncated: true，health() 计数器 truncated 加一。',
     ],
   },
   {
