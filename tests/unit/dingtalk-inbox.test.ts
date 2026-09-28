@@ -135,8 +135,10 @@ describe('DingTalk @-message inbox', () => {
     await store.add({ eventId: 'e1', conversationId: 'cidA', content: '密'.repeat(300) })
     const restarted = new DingtalkUnmatchedStore(file, async () => undefined, (e) => { errors.push(e) })
     expect(await restarted.list()).toMatchObject([{ eventId: 'e1', conversationId: 'cidA', preview: '密'.repeat(240) }])
-    expect(statSync(file).mode & 0o777).toBe(0o600)
-    expect(statSync(join(dws.dir, 'private')).mode & 0o777).toBe(0o700)
+    if (process.platform !== 'win32') {
+      expect(statSync(file).mode & 0o777).toBe(0o600)
+      expect(statSync(join(dws.dir, 'private')).mode & 0o777).toBe(0o700)
+    }
     expect(errors).toEqual([])
   })
 

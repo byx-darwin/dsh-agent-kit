@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -218,11 +219,11 @@ describe('AgentTasksService', () => {
     }
     const { svc } = await setup()
     const result = await svc().run({ provider: 'fake', title: 'edit code', prompt: 'edit', permissions: 'workspace-write', worktree: { repository: repo } })
-    expect(result.worktree).toMatchObject({ repository: realpathSync(repo), branch: expect.stringMatching(/^agent-kit\/task-/) })
+    expect(result.worktree).toMatchObject({ repository: await realpath(repo), branch: expect.stringMatching(/^agent-kit\/task-/) })
     expect(readFileSync(join(result.worktree!.path, 'change.txt'), 'utf8')).toBe('agent edit\n')
     expect(readFileSync(join(repo, 'README.md'), 'utf8')).toBe('original\n')
     expect(existsSync(join(repo, 'change.txt'))).toBe(false)
-    expect(statSync(result.worktree!.path).mode & 0o777).toBe(0o700)
+    if (process.platform !== 'win32') expect(statSync(result.worktree!.path).mode & 0o777).toBe(0o700)
     expect(provider.requests[0]!.parent.session.header.cwd).toBe(result.worktree!.path)
   })
 
