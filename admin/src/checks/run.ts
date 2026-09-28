@@ -1,9 +1,9 @@
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { KIT_ENTRIES, readKitEntries, type ProfileInfo } from '../profile/index.js'
-import { BASE_ENV_WHITELIST, pickEnv, runProcess } from '@mc/dsh-agent-kit'
-import { resolveExecutable } from '@mc/dsh-agent-kit'
-import { DWS_ENV_WHITELIST } from '@mc/dsh-agent-kit/dingtalk'
+import { BASE_ENV_WHITELIST, pickEnv, runProcess } from '@baoyx/dsh-agent-kit'
+import { resolveExecutable } from '@baoyx/dsh-agent-kit'
+import { DWS_ENV_WHITELIST } from '@baoyx/dsh-agent-kit/dingtalk'
 import type { RegisteredEntry } from '../admin/entry.js'
 import { agentTasksChecks } from './agent-tasks.js'
 import { commonChecks } from './common.js'
@@ -66,7 +66,7 @@ export async function runChecks(ctx: CheckContext, registered?: RegisteredChecks
       title: `${meta.title} 配置`,
       status: validated.ok ? 'pass' : 'fail',
       detail: validated.ok ? '配置有效' : validated.errors.map((e) => `${e.path}: ${e.message}`).join('; '),
-      ...(validated.ok ? {} : { fix: `运行 npx @mc/dsh-agent-kit-admin setup 或在设置页修改 ${meta.title} 配置` }),
+      ...(validated.ok ? {} : { fix: `运行 npx @baoyx/dsh-agent-kit-admin setup 或在设置页修改 ${meta.title} 配置` }),
     })
     const extra = SERVICE_CHECKS[meta.id]
     if (extra) results.push(...(await extra(ctx)))

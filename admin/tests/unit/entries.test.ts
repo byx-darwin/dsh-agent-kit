@@ -34,7 +34,7 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'dsh-home-'))
   profileDir = join(home, 'profiles', 'kit')
   mkdirSync(profileDir, { recursive: true })
-  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@mc/dsh-agent-kit', '@acme/biz'], patchReload: 'live' } } }))
+  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@baoyx/dsh-agent-kit', '@acme/biz'], patchReload: 'live' } } }))
   writeFileSync(join(profileDir, 'cordis.patch.yml'), '')
 })
 afterEach(() => rmSync(home, { recursive: true, force: true }))

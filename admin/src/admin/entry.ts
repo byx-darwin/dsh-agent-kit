@@ -1,8 +1,8 @@
 import type { CheckContext, CheckResult } from '../checks/types.js'
-import type { ServiceHealth } from '@mc/dsh-agent-kit'
+import type { ServiceHealth } from '@baoyx/dsh-agent-kit'
 import { KIT_ENTRIES, type FieldError, type KitId, type ValidateResult } from '../profile/kit-entries.js'
 import type { KitEntryState } from '../profile/patch-file.js'
-import { isSecretRef } from '@mc/dsh-agent-kit/secrets'
+import { isSecretRef } from '@baoyx/dsh-agent-kit/secrets'
 
 /**
  * 业务包登记到本包设置页、`agentKitAdmin`、`doctor` 与密钥管理的一行 loader 配置（issue #1）。
@@ -81,7 +81,7 @@ export function assertEntry(entry: unknown): asserts entry is AgentKitEntry {
   }
   if (!e || typeof e !== 'object') throw new TypeError('agent-kit entry must be an object')
   if (typeof e.id !== 'string' || !/^[\w.-]+$/.test(e.id)) fail('id must be a loader row id (letters, digits, _ . -)')
-  if (RESERVED_IDS.has(e.id!)) fail('id is reserved by @mc/dsh-agent-kit')
+  if (RESERVED_IDS.has(e.id!)) fail('id is reserved by @baoyx/dsh-agent-kit')
   if (typeof e.label !== 'string' || !e.label.trim()) fail('label is required')
   for (const key of ['schema', 'validate', 'health', 'checks'] as const) {
     if (e[key] !== undefined && typeof e[key] !== 'function') fail(`${key} must be a function`)

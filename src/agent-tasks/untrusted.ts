@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 
-const UNTRUSTED = Symbol.for('@mc/dsh-agent-kit/untrusted')
+const UNTRUSTED = Symbol.for('@baoyx/dsh-agent-kit/untrusted')
 
 export interface UntrustedBlock {
   readonly [UNTRUSTED]: true

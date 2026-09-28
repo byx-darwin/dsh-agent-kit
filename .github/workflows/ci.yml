@@ -29,7 +29,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm run test:coverage
-      # 可选运维包 @mc/dsh-agent-kit-admin：依赖从根目录 node_modules 解析
+      # 可选运维包 @baoyx/dsh-agent-kit-admin：依赖从根目录 node_modules 解析
       - run: npm run typecheck
         working-directory: admin
       - run: npm run build

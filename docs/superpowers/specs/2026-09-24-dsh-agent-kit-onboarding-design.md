@@ -1,4 +1,4 @@
-# @mc/dsh-agent-kit 配置引导设计：doctor、setup 与 Web 设置页
+# @baoyx/dsh-agent-kit 配置引导设计：doctor、setup 与 Web 设置页
 
 - 日期：2026-09-24
 - 状态：已实施（2026-09-24 完成 `doctor`/`setup`/`admin`/`client` 全部代码与真实 dsh Web 走查核实，见文末「核实结论」）
@@ -6,7 +6,7 @@
 
 ## 背景
 
-`@mc/dsh-agent-kit` 打包后分发给第三方（主要是在自己电脑上开发调试的业务包开发者），他们目前只能通过 README 和规格文档了解需要设置什么：Profile 中启用哪些 Service、各自的配置、dws 登录、TypeSafe Key、subagent provider 与权限声明。配错时 Service 虽然会以明确的错误启动失败，但缺少事前引导。
+`@baoyx/dsh-agent-kit` 打包后分发给第三方（主要是在自己电脑上开发调试的业务包开发者），他们目前只能通过 README 和规格文档了解需要设置什么：Profile 中启用哪些 Service、各自的配置、dws 登录、TypeSafe Key、subagent provider 与权限声明。配错时 Service 虽然会以明确的错误启动失败，但缺少事前引导。
 
 本设计新增三种配置引导方式：
 
@@ -66,8 +66,8 @@ TypeSafe Key 的读取顺序（三平台一致）：
 dsh 的启动器不允许插件添加子命令，因此以本包自带的可执行文件提供：
 
 ```sh
-npx @mc/dsh-agent-kit doctor [--profile <名字>] [--json]
-npx @mc/dsh-agent-kit setup  [--profile <名字>]
+npx @baoyx/dsh-agent-kit doctor [--profile <名字>] [--json]
+npx @baoyx/dsh-agent-kit setup  [--profile <名字>]
 ```
 
 它直接定位 `$DSH_HOME/profiles/<名字>/`（`DSH_HOME` 默认为用户主目录下的 `.dsh`，路径处理兼容三平台），不需要启动 dsh。未指定 `--profile` 时，若只有一个 Profile 安装了本包则直接使用，否则让用户选择。
@@ -123,7 +123,7 @@ src/
 
 - `doctor`：逐项输出状态与修复命令；`--json` 输出 `{ profile, results: [...] }`；有 `fail` 时退出码为 1。
 - `setup`：
-  1. 选择 Profile；本包不在 bundle 列表中时，提示 `dsh plugin --profile <名字> add @mc/dsh-agent-kit` 并退出。
+  1. 选择 Profile；本包不在 bundle 列表中时，提示 `dsh plugin --profile <名字> add @baoyx/dsh-agent-kit` 并退出。
   2. 多选要启用的 Service，已启用的默认勾选。
   3. 逐个配置，当前值作为默认值：
      - dingtalk：选择身份；user 身份未登录时询问是否运行 `dws auth login`；默认目标可按群名搜索（`dws chat` 搜索）后选择或直接输入 ID；可选「发送一条测试消息给我自己」。
@@ -136,7 +136,7 @@ src/
 
 ### admin/
 
-- `patch.yml` 新增一行常驻行（无 `disabled`）：`- id: agent-kit, name: '@mc/dsh-agent-kit'`。dsh 只从名字恰好等于包名且启用的行加载前端模块，因此本包根入口导出一个服务端 `apply`，挂载 `AgentKitAdmin`；前端部分由 `package.json` 的 `exports["./client"]` 与 `dsh.client` 声明。
+- `patch.yml` 新增一行常驻行（无 `disabled`）：`- id: agent-kit, name: '@baoyx/dsh-agent-kit'`。dsh 只从名字恰好等于包名且启用的行加载前端模块，因此本包根入口导出一个服务端 `apply`，挂载 `AgentKitAdmin`；前端部分由 `package.json` 的 `exports["./client"]` 与 `dsh.client` 声明。
 - `AgentKitAdmin extends TypertRemoteService`，服务键 `agentKitAdmin`，依赖 `loader`，可选依赖 `credentials`：
   - `status()`：四个 Service 的启用状态、loader 中的运行阶段、运行中 Service 的 `health()`、当前配置（不含密钥）、doctor 结果、密钥描述、patch 文件版本、`patchReload` 模式、当前是否允许写入。
   - `saveService(id, enabled, config, expectedVersion)`：经 `profile/` 写入，返回新版本或按字段的校验错误、冲突错误。

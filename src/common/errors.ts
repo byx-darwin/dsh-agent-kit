@@ -2,7 +2,7 @@ import { redact, redactValue } from './redact.js'
 
 export type ServiceName = 'agentWs' | 'dingtalk' | 'notify' | 'agentTasks' | 'jev' | 'kit'
 
-const KIT_ERROR = Symbol.for('@mc/dsh-agent-kit/KitError')
+const KIT_ERROR = Symbol.for('@baoyx/dsh-agent-kit/KitError')
 
 export interface KitErrorOptions {
   retryable?: boolean

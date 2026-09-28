@@ -1,4 +1,4 @@
-import { describeSecretRef, describeTypesafeKey } from '@mc/dsh-agent-kit/secrets'
+import { describeSecretRef, describeTypesafeKey } from '@baoyx/dsh-agent-kit/secrets'
 import type { Check, CheckResult } from './types.js'
 
 type JevCheckConfig = { provider?: 'typesafe' | 'laya'; baseURL?: string; apiKeyRef?: string; keychainService?: string | string[]; keychainAccount?: string }
@@ -34,7 +34,7 @@ export const jevChecks: Check = async (ctx) => {
       title: 'TypeSafe Key',
       status: key.configured ? 'pass' : 'fail',
       detail: key.configured ? `来源：${key.source}` : '环境变量、钥匙串与 dsh 凭据中都没有找到',
-      ...(key.configured ? {} : { fix: 'npx @mc/dsh-agent-kit-admin setup（或设置环境变量 TYPESAFE_API_KEY）' }),
+      ...(key.configured ? {} : { fix: 'npx @baoyx/dsh-agent-kit-admin setup（或设置环境变量 TYPESAFE_API_KEY）' }),
     },
   ]
 }

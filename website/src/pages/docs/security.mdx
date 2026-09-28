@@ -51,7 +51,7 @@ import Notice from '../../components/Notice.astro'
 
 ## 配置写入
 
-写入 `cordis.patch.yml` 的只有可选的 `@mc/dsh-agent-kit-admin`；基础包不修改它。
+写入 `cordis.patch.yml` 的只有可选的 `@baoyx/dsh-agent-kit-admin`；基础包不修改它。
 
 - `setup` 只修改 Profile 目录下 `cordis.patch.yml` 中 `agent-kit-*` 的几行，保留注释与其他内容；遇到含 `!!js` 表达式的行拒绝修改。
 - admin 包的 Web 设置页写入接口只在 dsh Web 绑定 `127.0.0.1` 时开放；绑定其他地址或没有加载 Web 服务时一律只读。

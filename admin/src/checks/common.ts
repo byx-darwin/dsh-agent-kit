@@ -25,8 +25,8 @@ export const commonChecks: Check = (ctx) => {
       scope: 'common',
       title: '本包已加入 Profile',
       status: profile.hasKit ? 'pass' : 'fail',
-      detail: profile.hasKit ? `Profile ${profile.name} 已包含 @mc/dsh-agent-kit` : `Profile ${profile.name} 未安装 @mc/dsh-agent-kit`,
-      ...(profile.hasKit ? {} : { fix: `dsh plugin --profile ${profile.name} add @mc/dsh-agent-kit @mc/dsh-agent-kit-admin` }),
+      detail: profile.hasKit ? `Profile ${profile.name} 已包含 @baoyx/dsh-agent-kit` : `Profile ${profile.name} 未安装 @baoyx/dsh-agent-kit`,
+      ...(profile.hasKit ? {} : { fix: `dsh plugin --profile ${profile.name} add @baoyx/dsh-agent-kit @baoyx/dsh-agent-kit-admin` }),
     },
     {
       id: 'patch-reload',

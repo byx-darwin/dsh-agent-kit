@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { redact, runProcess } from '@mc/dsh-agent-kit'
+import { redact, runProcess } from '@baoyx/dsh-agent-kit'
 
 /**
  * 设置页里钉钉的登录状态与登录 / 退出（dws auth）。登录用设备码流程（`dws auth login --device`）：页面

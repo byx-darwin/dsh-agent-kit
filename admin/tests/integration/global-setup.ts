@@ -10,8 +10,8 @@ export default function setup() {
   const tsc = join(root, 'node_modules/typescript/bin/tsc')
   execFileSync(process.execPath, [tsc, '-p', join(root, 'tsconfig.build.json')], { stdio: 'inherit' })
   execFileSync(process.execPath, [tsc, '-p', join(admin, 'tsconfig.build.json')], { stdio: 'inherit' })
-  link(join(root, 'node_modules/@mc/dsh-agent-kit'), root, '../..')
-  link(join(root, 'node_modules/@mc/dsh-agent-kit-admin'), admin, '../../admin')
+  link(join(root, 'node_modules/@baoyx/dsh-agent-kit'), root, '../..')
+  link(join(root, 'node_modules/@baoyx/dsh-agent-kit-admin'), admin, '../../admin')
 }
 
 function link(path: string, target: string, relative: string): void {

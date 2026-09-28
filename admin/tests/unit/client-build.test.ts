@@ -10,7 +10,7 @@ describe('client bundle', () => {
     execFileSync(process.execPath, [resolve(ROOT, 'scripts/build-client.mjs')], { cwd: ROOT })
     const text = readFileSync(resolve(ROOT, 'lib/client.js'), 'utf8')
     expect(text.startsWith('window.__ModuleLoader__.load({')).toBe(true)
-    expect(text).toContain('id: "@mc/dsh-agent-kit-admin"')
+    expect(text).toContain('id: "@baoyx/dsh-agent-kit-admin"')
     expect(text).toContain('require("react")')
     expect(text).not.toMatch(/function createElement|react\.production/)
     // 模拟 dsh 前端加载：factory 返回 apply 与 inject

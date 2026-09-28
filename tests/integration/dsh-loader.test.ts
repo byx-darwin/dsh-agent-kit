@@ -10,7 +10,7 @@ import { createJevMock } from '../../src/testing/jev-mock.js'
 import { startTestWsServer, type TestWsServer } from '../../src/testing/ws-server.js'
 import { until } from '../helpers.js'
 
-// 在真实 dsh loader 中加载本包 bundle 的 patch.yml（通过 node_modules/@mc/dsh-agent-kit 软链指向已构建的 lib/）。
+// 在真实 dsh loader 中加载本包 bundle 的 patch.yml（通过 node_modules/@baoyx/dsh-agent-kit 软链指向已构建的 lib/）。
 const ROOT = resolve(import.meta.dirname, '../..')
 const BUNDLE_PATCHES = loadOverlayPatches('agent-kit-test', join(ROOT, 'patch.yml'))
 
@@ -41,7 +41,7 @@ afterEach(async () => {
 })
 
 async function start(profilePatches: Patch[]) {
-  // cordis.yml 所在目录作为 bare 模块名的解析基准，这里用仓库根目录，使 @mc/dsh-agent-kit 通过软链解析
+  // cordis.yml 所在目录作为 bare 模块名的解析基准，这里用仓库根目录，使 @baoyx/dsh-agent-kit 通过软链解析
   const configPath = join(ROOT, '.tmp', `cordis-${Date.now()}-${Math.random().toString(36).slice(2)}.yml`)
   mkdirSync(join(ROOT, '.tmp'), { recursive: true })
   writeFileSync(configPath, '[]\n')
@@ -61,11 +61,11 @@ describe('bundle patch.yml in a real dsh loader', () => {
     for (const name of ['agentWs', 'dingtalk', 'notify', 'agentTasks', 'jev']) expect(c.get(name)).toBeUndefined()
     const ids = BUNDLE_PATCHES.flatMap((p: any) => p.insert ?? []).map((e: any) => [e.id, e.name, e.disabled])
     expect(ids).toEqual([
-      ['agent-kit-ws', '@mc/dsh-agent-kit/ws', true],
-      ['agent-kit-dingtalk', '@mc/dsh-agent-kit/dingtalk', true],
-      ['agent-kit-notify', '@mc/dsh-agent-kit/notify', true],
-      ['agent-kit-agent-tasks', '@mc/dsh-agent-kit/agent-tasks', true],
-      ['agent-kit-jev', '@mc/dsh-agent-kit/jev', true],
+      ['agent-kit-ws', '@baoyx/dsh-agent-kit/ws', true],
+      ['agent-kit-dingtalk', '@baoyx/dsh-agent-kit/dingtalk', true],
+      ['agent-kit-notify', '@baoyx/dsh-agent-kit/notify', true],
+      ['agent-kit-agent-tasks', '@baoyx/dsh-agent-kit/agent-tasks', true],
+      ['agent-kit-jev', '@baoyx/dsh-agent-kit/jev', true],
     ])
   })
 

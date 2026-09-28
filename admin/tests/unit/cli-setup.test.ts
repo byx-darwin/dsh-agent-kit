@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { main } from '../../src/cli/main.js'
 import { scriptedPrompter } from '../../src/cli/prompter.js'
-import { readCredential } from '@mc/dsh-agent-kit/secrets'
+import { readCredential } from '@baoyx/dsh-agent-kit/secrets'
 
 let home: string
 let patchFile: string
@@ -15,7 +15,7 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'dsh-home-'))
   const dir = join(home, 'profiles', 'kit')
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@mc/dsh-agent-kit'], patchReload: 'live' } } }))
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@baoyx/dsh-agent-kit'], patchReload: 'live' } } }))
   patchFile = join(dir, 'cordis.patch.yml')
   writeFileSync(patchFile, '# mine\n')
   out = []

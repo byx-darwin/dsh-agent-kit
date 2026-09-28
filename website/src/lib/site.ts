@@ -3,8 +3,8 @@ export const SITE = {
   name: 'dsh-agent-kit',
   url: 'https://byx-darwin.github.io/dsh-agent-kit',
   repo: 'https://github.com/byx-darwin/dsh-agent-kit',
-  npm: '@mc/dsh-agent-kit',
-  npmUrl: 'https://www.npmjs.com/package/@mc/dsh-agent-kit',
+  npm: '@baoyx/dsh-agent-kit',
+  npmUrl: 'https://www.npmjs.com/package/@baoyx/dsh-agent-kit',
   author: { name: '皮哥不写PPT', url: 'https://byx-darwin.github.io/' },
   tagline: '让业务包只写业务。',
   positioning:

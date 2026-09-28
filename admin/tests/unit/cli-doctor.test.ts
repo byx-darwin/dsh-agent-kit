@@ -12,7 +12,7 @@ const io = () => ({ out: (t: string) => void out.push(t), err: (t: string) => vo
 function profile(name: string, withKit: boolean, patch = '') {
   const dir = join(home, 'profiles', name)
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: withKit ? ['@mc/dsh-agent-kit'] : [], patchReload: 'live' } } }))
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: withKit ? ['@baoyx/dsh-agent-kit'] : [], patchReload: 'live' } } }))
   writeFileSync(join(dir, 'cordis.patch.yml'), patch)
 }
 
@@ -65,7 +65,7 @@ describe('doctor with registered entries (issue #1)', () => {
   it('lists checks from a business package manifest with scope equal to the entry id', async () => {
     profile('kit', true, '- id: biz-row\n  config:\n    url: wss://x\n')
     const dir = join(home, 'profiles', 'kit')
-    writeFileSync(join(dir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@mc/dsh-agent-kit', '@acme/biz'], patchReload: 'live' } } }))
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@baoyx/dsh-agent-kit', '@acme/biz'], patchReload: 'live' } } }))
     const pkg = join(dir, 'node_modules', '@acme', 'biz')
     mkdirSync(pkg, { recursive: true })
     writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@acme/biz', dsh: { agentKit: { entries: ['./entry.mjs'] } } }))

@@ -1,4 +1,4 @@
-# @mc/dsh-agent-kit bundle 默认 patch 层。
+# @baoyx/dsh-agent-kit bundle 默认 patch 层。
 # 各 Service 均以禁用状态注册；禁用的行不会被 import，也不会校验配置。
 # 在 Profile 的 cordis.patch.yml 中按 id 启用并给出配置，例如：
 #
@@ -12,17 +12,17 @@
 
 - insert:
     - id: agent-kit-ws
-      name: '@mc/dsh-agent-kit/ws'
+      name: '@baoyx/dsh-agent-kit/ws'
       disabled: true
     - id: agent-kit-dingtalk
-      name: '@mc/dsh-agent-kit/dingtalk'
+      name: '@baoyx/dsh-agent-kit/dingtalk'
       disabled: true
     - id: agent-kit-notify
-      name: '@mc/dsh-agent-kit/notify'
+      name: '@baoyx/dsh-agent-kit/notify'
       disabled: true
     - id: agent-kit-agent-tasks
-      name: '@mc/dsh-agent-kit/agent-tasks'
+      name: '@baoyx/dsh-agent-kit/agent-tasks'
       disabled: true
     - id: agent-kit-jev
-      name: '@mc/dsh-agent-kit/jev'
+      name: '@baoyx/dsh-agent-kit/jev'
       disabled: true

@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { createFakeDws } from '@mc/dsh-agent-kit/testing'
+import { createFakeDws } from '@baoyx/dsh-agent-kit/testing'
 import { AgentKitAdmin } from '../../src/admin/service.js'
-import { SHARED_KEYCHAIN_SERVICE, type Keychain } from '@mc/dsh-agent-kit/secrets'
+import { SHARED_KEYCHAIN_SERVICE, type Keychain } from '@baoyx/dsh-agent-kit/secrets'
 
 let home: string
 let profileDir: string
@@ -15,7 +15,7 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'dsh-home-'))
   profileDir = join(home, 'profiles', 'kit')
   mkdirSync(profileDir, { recursive: true })
-  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@mc/dsh-agent-kit'], patchReload: 'live' } } }))
+  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@baoyx/dsh-agent-kit'], patchReload: 'live' } } }))
   writeFileSync(join(profileDir, 'cordis.patch.yml'), '- id: agent-kit-ws\n  disabled: false\n')
   root = new Context()
 })

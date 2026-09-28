@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { resolveDshHome } from '@mc/dsh-agent-kit'
+import { resolveDshHome } from '@baoyx/dsh-agent-kit'
 import { ProfileError } from './profile-error.js'
 
 export { resolveDshHome }
@@ -14,8 +14,8 @@ export interface ProfileInfo {
   hasKit: boolean
 }
 
-export const KIT_PACKAGE = '@mc/dsh-agent-kit'
-export const ADMIN_PACKAGE = '@mc/dsh-agent-kit-admin'
+export const KIT_PACKAGE = '@baoyx/dsh-agent-kit'
+export const ADMIN_PACKAGE = '@baoyx/dsh-agent-kit-admin'
 
 export async function listProfiles(home = resolveDshHome()): Promise<string[]> {
   try {

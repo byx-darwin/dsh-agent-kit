@@ -101,7 +101,7 @@ export class AdminError extends Error {
   }
 }
 
-const PKG = '@mc/dsh-agent-kit-admin'
+const PKG = '@baoyx/dsh-agent-kit-admin'
 const passthrough = { parse: (v: unknown) => v }
 /**
  * 参数 codec 同时满足两代 dsh（issue #3）：0.1.5 的网关客户端直接调用 `codec.schema.parse()`；

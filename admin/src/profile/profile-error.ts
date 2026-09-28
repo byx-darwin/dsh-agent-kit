@@ -1,4 +1,4 @@
-import { KitError } from '@mc/dsh-agent-kit'
+import { KitError } from '@baoyx/dsh-agent-kit'
 import type { FieldError } from './kit-entries.js'
 
 export type ProfileErrorCode = 'conflict' | 'invalid_config' | 'unsupported_yaml' | 'parse_error' | 'profile_not_found'

@@ -3,9 +3,9 @@ import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { createCheckContext, runChecks, type CheckResult } from '../checks/index.js'
-import { isKitError } from '@mc/dsh-agent-kit'
-import { redact } from '@mc/dsh-agent-kit'
-import type { DingtalkRecipientKind, DingtalkRecipientSearchResult, DingtalkUnmatchedMessage, ServiceHealth } from '@mc/dsh-agent-kit'
+import { isKitError } from '@baoyx/dsh-agent-kit'
+import { redact } from '@baoyx/dsh-agent-kit'
+import type { DingtalkRecipientKind, DingtalkRecipientSearchResult, DingtalkUnmatchedMessage, ServiceHealth } from '@baoyx/dsh-agent-kit'
 import { KIT_ENTRIES, locateProfile, readKitEntries, writeKitEntries, writePatchEntries, type KitId, type ProfileInfo } from '../profile/index.js'
 import {
   clearSecretRef,
@@ -19,11 +19,11 @@ import {
   type KeyStoreOptions,
   type KeyTarget,
   type SecretRefSource,
-} from '@mc/dsh-agent-kit/secrets'
+} from '@baoyx/dsh-agent-kit/secrets'
 import { assertEntry, entrySecretRefs, validateEntryConfig, type AgentKitEntry, type EntryField, type RegisteredEntry } from './entry.js'
 import { collectEntries } from './registry.js'
 import { DeviceLogin, logout, readAuthStatus, type DingtalkAuthStatus, type DingtalkLoginState } from './dingtalk-auth.js'
-import { resolveExecutable } from '@mc/dsh-agent-kit'
+import { resolveExecutable } from '@baoyx/dsh-agent-kit'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

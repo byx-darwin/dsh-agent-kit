@@ -26,10 +26,10 @@ export const CHANGELOG: ChangelogEntry[] = [
       '五个 Service：ctx.agentWs（WebSocket 客户端）、ctx.dingtalk（钉钉 user 推送）、ctx.notify（通知转发至钉钉）、ctx.agentTasks（Agent 任务）、ctx.jev（Jev 判断），默认禁用、按需启用。',
       '统一的 KitError 错误模型、health() 健康状态与 agent-kit/service-failed 事件、日志统一脱敏。',
       '钉钉 user 登录状态与设备流登录：status()、login()、logout()；ctx.notify.status() / login() / logout() 转给钉钉。',
-      '两个包：@mc/dsh-agent-kit 是给业务包用的库；可选的 @mc/dsh-agent-kit-admin 提供 doctor 检查、setup 交互式配置、dsh Web「设置 → Agent Kit」页与业务包设置入口的登记。',
+      '两个包：@baoyx/dsh-agent-kit 是给业务包用的库；可选的 @baoyx/dsh-agent-kit-admin 提供 doctor 检查、setup 交互式配置、dsh Web「设置 → Agent Kit」页与业务包设置入口的登记。',
       'TypeSafe Key 可来自环境变量、macOS 钥匙串（ai.typesafe.api-key）或 dsh 凭据文件。',
       'Linux、macOS、Windows 三平台 CI 通过。',
-      '@mc/dsh-agent-kit/testing：本地 WebSocket 测试服务端、假 subagent provider、Jev mock、假 dws。',
+      '@baoyx/dsh-agent-kit/testing：本地 WebSocket 测试服务端、假 subagent provider、Jev mock、假 dws。',
     ],
   },
 ]

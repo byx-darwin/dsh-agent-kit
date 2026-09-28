@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { AgentKitEntry } from '../../src/admin/entry.js'
 import { AgentKitAdmin } from '../../src/admin/service.js'
-import { readCredential } from '@mc/dsh-agent-kit/secrets'
+import { readCredential } from '@baoyx/dsh-agent-kit/secrets'
 
 let home: string
 let profileDir: string
@@ -28,7 +28,7 @@ beforeEach(() => {
   mkdirSync(profileDir, { recursive: true })
   patchFile = join(profileDir, 'cordis.patch.yml')
   credentialsFile = join(home, '.credentials.yaml')
-  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@mc/dsh-agent-kit'], patchReload: 'live' } } }))
+  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@baoyx/dsh-agent-kit'], patchReload: 'live' } } }))
   writeFileSync(patchFile, `- id: agent-kit-dingtalk\n  disabled: false\n  config: { identity: user,  timeoutMs: 15000 }\n${BUSINESS_ROW}`)
   loaderEntries = [
     { id: 'agent-kit-dingtalk', disabled: false, fiber: { state: 2 } },
@@ -125,7 +125,7 @@ describe('AgentKitAdmin registered entries (issue #1)', () => {
     mkdirSync(pkg, { recursive: true })
     writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@acme/biz', dsh: { agentKit: { entries: ['./entry.mjs'] } } }))
     writeFileSync(join(pkg, 'entry.mjs'), "export default { id: 'biz-row', label: '业务', fields: [{ path: 'url', label: 'URL' }], validate: (c) => (String(c.url).startsWith('wss://') ? [] : [{ path: 'url', message: 'wss only' }]) }")
-    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@mc/dsh-agent-kit', '@acme/biz'], patchReload: 'live' } } }))
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@baoyx/dsh-agent-kit', '@acme/biz'], patchReload: 'live' } } }))
     writeFileSync(patchFile, "- id: biz-row\n  disabled: true\n  config:\n    url: 'http://x'\n")
     loaderEntries = [{ id: 'biz-row', disabled: true, fiber: { state: 3 } }]
     const admin = await setup()

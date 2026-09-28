@@ -12,7 +12,7 @@ const remainingServices = SERVICES.filter((s) => s.id !== 'agentWs')
 <Base title="文档" description="dsh-agent-kit 五类能力的接口、配置与错误码，以及配置引导、安全和通用约定。">
   <p class="eyebrow">文档</p>
   <h1>五类能力，一套约定</h1>
-  <p class="lead">底层的五个 Service 都在 <code>@mc/dsh-agent-kit</code> 中。钉钉仅支持已登录的 user 身份；业务包通常只 inject <code>notify</code>。doctor、setup 与设置页在可选的 <code>@mc/dsh-agent-kit-admin</code> 中。</p>
+  <p class="lead">底层的五个 Service 都在 <code>@baoyx/dsh-agent-kit</code> 中。钉钉仅支持已登录的 user 身份；业务包通常只 inject <code>notify</code>。doctor、setup 与设置页在可选的 <code>@baoyx/dsh-agent-kit-admin</code> 中。</p>
 
   <div class="grid-2">
     <ServiceCard numeral={agentWs.numeral} verb={agentWs.verb} name={`${agentWs.name} · ${agentWs.context}`} summary={agentWs.summary} href={`/docs/${agentWs.slug}`} />
@@ -24,7 +24,7 @@ const remainingServices = SERVICES.filter((s) => s.id !== 'agentWs')
   <div class="grid-2 extra">
     <a class="link-card" href={withBasePath(base, '/docs/onboarding')}>
       <span class="name">配置引导</span>
-      <span class="summary">可选的 @mc/dsh-agent-kit-admin：用 doctor 检查、用 setup 配置，或在 dsh Web 的设置页里操作。</span>
+      <span class="summary">可选的 @baoyx/dsh-agent-kit-admin：用 doctor 检查、用 setup 配置，或在 dsh Web 的设置页里操作。</span>
     </a>
     <a class="link-card" href={withBasePath(base, '/docs/security')}>
       <span class="name">安全</span>
@@ -40,7 +40,7 @@ const remainingServices = SERVICES.filter((s) => s.id !== 'agentWs')
     业务包用 <code>isKitError(e)</code> 和 <code>code</code> 判断错误，不依赖 <code>instanceof</code>，这样即使出现多份模块实例也能正确判断。
     配置或环境变量非法时抛出 <code>ConfigError</code>（<code>code: invalid_config</code>），对应 Service 启动失败。
   </p>
-  <pre><code>{`import { isKitError } from '@mc/dsh-agent-kit'
+  <pre><code>{`import { isKitError } from '@baoyx/dsh-agent-kit'
 
 onError: (err, frame) => {
   if (isKitError(err) && err.retryable) {
@@ -64,7 +64,7 @@ onError: (err, frame) => {
 
   <h3>本地开发与测试</h3>
   <p>
-    <code>@mc/dsh-agent-kit/testing</code> 导出本地 WebSocket 测试服务端、假 subagent provider、Jev mock 和假 dws 脚本（<code>createFakeDws</code>），业务包可以在没有 dws 与 Agent 登录态的环境下开发和测试；钉钉推送也可以设为 <code>dryRun</code>。
+    <code>@baoyx/dsh-agent-kit/testing</code> 导出本地 WebSocket 测试服务端、假 subagent provider、Jev mock 和假 dws 脚本（<code>createFakeDws</code>），业务包可以在没有 dws 与 Agent 登录态的环境下开发和测试；钉钉推送也可以设为 <code>dryRun</code>。
   </p>
 </Base>
 

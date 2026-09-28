@@ -1,5 +1,5 @@
 {
-  "name": "@mc/dsh-agent-kit",
+  "name": "@baoyx/dsh-agent-kit",
   "version": "0.2.0",
   "description": "DeepSeek Harness services for resident agent workers: WebSocket, DingTalk user messaging and @-message routing, notifications, agent tasks, TypeSafe Jev",
   "license": "MIT",

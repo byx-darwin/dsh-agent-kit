@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { DeviceLogin, logout, parseAuthStatus, parseDeviceFailure, parseDeviceLogin, readAuthStatus } from '../../src/admin/dingtalk-auth.js'
-import { createFakeDws } from '@mc/dsh-agent-kit/testing'
+import { createFakeDws } from '@baoyx/dsh-agent-kit/testing'
 
 // dws v1.0.62 `auth login --device` 的真实输出（链接中的一次性参数已替换）
 const DEVICE_OUTPUT = `● Step 1: Requesting device authorization code...

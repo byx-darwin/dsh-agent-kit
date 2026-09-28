@@ -1,4 +1,4 @@
-# @mc/dsh-agent-kit 设计
+# @baoyx/dsh-agent-kit 设计
 
 - 日期：2026-09-23
 - 状态：已实施（第三版：合入第一轮多角色评审意见，并按「实施前核实结论」调整设计，见文末「核实结论」与「评审记录」）
@@ -7,7 +7,7 @@
 
 多个项目都需要一个常驻的 Agent Worker：通过 WebSocket 连接业务系统接收事件，把告警推送到钉钉，把需要智能判断的任务交给 Claude Code、Codex 等 Agent 处理，并用 TypeSafe Jev 对结果做校验。这些能力与具体业务无关，每个项目重复实现既浪费又难以维护。
 
-`@mc/dsh-agent-kit` 把这四项能力打包成一组 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）插件 Service。各项目的业务逻辑放在各自的业务包中，业务包通过 Cordis `inject` 使用本包提供的 Service。
+`@baoyx/dsh-agent-kit` 把这四项能力打包成一组 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）插件 Service。各项目的业务逻辑放在各自的业务包中，业务包通过 Cordis `inject` 使用本包提供的 Service。
 
 ## 目标
 
@@ -35,7 +35,7 @@
 │  业务包（各项目私有，例如 @<org>/dsh-agent-<project>）      │
 │        │ inject                                           │
 │        ▼                                                  │
-│  @mc/dsh-agent-kit（四个 Service 各自独立注册、单独启用）    │
+│  @baoyx/dsh-agent-kit（四个 Service 各自独立注册、单独启用）    │
 │    ├─ ctx.agentWs     WebSocket 客户端                     │
 │    ├─ ctx.dingtalk    钉钉推送（调用 dws CLI）              │
 │    ├─ ctx.agentTasks  Agent 任务（基于 ctx.subagents）      │
@@ -47,14 +47,14 @@
 └───────────────────────────────────────────────────────────┘
 ```
 
-本包是一个 npm 包，内部每个 Service 一个目录，各自以子路径导出（`@mc/dsh-agent-kit/ws`、`/dingtalk`、`/agent-tasks`、`/jev`）并独立注册。`patch.yml` 中四个 Service 默认以**禁用**状态注册（`disabled: true`，loader 不会 import 禁用行的模块），Profile 按需启用；只有启用的 Service 在加载时校验配置与环境变量。业务包只 inject 用到的 Service。
+本包是一个 npm 包，内部每个 Service 一个目录，各自以子路径导出（`@baoyx/dsh-agent-kit/ws`、`/dingtalk`、`/agent-tasks`、`/jev`）并独立注册。`patch.yml` 中四个 Service 默认以**禁用**状态注册（`disabled: true`，loader 不会 import 禁用行的模块），Profile 按需启用；只有启用的 Service 在加载时校验配置与环境变量。业务包只 inject 用到的 Service。
 
 | loader 行 id | 模块 | Context 属性 | 依赖的其他 Service |
 |---|---|---|---|
-| `agent-kit-ws` | `@mc/dsh-agent-kit/ws` | `ctx.agentWs` | 无 |
-| `agent-kit-dingtalk` | `@mc/dsh-agent-kit/dingtalk` | `ctx.dingtalk` | 无 |
-| `agent-kit-agent-tasks` | `@mc/dsh-agent-kit/agent-tasks` | `ctx.agentTasks` | `subagents`（dsh-subagent） |
-| `agent-kit-jev` | `@mc/dsh-agent-kit/jev` | `ctx.jev` | 无 |
+| `agent-kit-ws` | `@baoyx/dsh-agent-kit/ws` | `ctx.agentWs` | 无 |
+| `agent-kit-dingtalk` | `@baoyx/dsh-agent-kit/dingtalk` | `ctx.dingtalk` | 无 |
+| `agent-kit-agent-tasks` | `@baoyx/dsh-agent-kit/agent-tasks` | `ctx.agentTasks` | `subagents`（dsh-subagent） |
+| `agent-kit-jev` | `@baoyx/dsh-agent-kit/jev` | `ctx.jev` | 无 |
 
 在 Profile 的 `cordis.patch.yml` 中按 id 启用，例如：
 
@@ -331,7 +331,7 @@ Config：
 
 ```text
 dsh-agent-kit/
-  package.json            # name: @mc/dsh-agent-kit，type: module，dsh.bundle.patch，files 白名单，子路径 exports
+  package.json            # name: @baoyx/dsh-agent-kit，type: module，dsh.bundle.patch，files 白名单，子路径 exports
   bin/dsh-agent-kit.mjs    # cli/main.ts 的可执行入口
   src/
     index.ts              # 导出全部 Service、KitError、untrusted()、Jev 问题构造函数与类型
@@ -343,7 +343,7 @@ dsh-agent-kit/
     cli/                  # `dsh-agent-kit doctor` / `setup` 的命令行实现与交互式 prompter
     admin/                # AgentKitAdmin：dsh Web 设置页的服务端远程方法（status/saveService/setSecret/clearSecret）
     client/               # dsh Web 设置页的前端模块（settings-page.tsx、service-card.tsx 等），构建为独立产物
-    testing/              # 以 @mc/dsh-agent-kit/testing 导出
+    testing/              # 以 @baoyx/dsh-agent-kit/testing 导出
   fixtures/fake-dws.mjs   # 假 dws 脚本（随包发布，供 testing 使用）
   patch.yml               # bundle 默认 patch 层：以禁用状态注册四个 Service，并常驻注册 admin/client 入口
   scripts/build-client.mjs # 用 esbuild 把 src/client 打包为 dsh 前端模块外包装产物
@@ -354,7 +354,7 @@ dsh-agent-kit/
 
 - `@deepseek-ai/cordis`（`4.0.2`）、`@deepseek-ai/schemastery`（`^3.18.2`）与 `@deepseek-ai/dsh-typert-protocol`（精确版本 `0.1.5-rc.3`，与目标 dsh 版本对齐）均为 `peerDependencies`（同时保留在 `devDependencies` 供本仓库开发使用），不放进 `dependencies`，避免装出重复实例、破坏 Context 类型扩展或 `RemoteError`/`TypertRemoteService` 的实例判等。`@typesafe-ai/sdk` 为可选 peer。本包不 import `@deepseek-ai/dsh-subagent`，而是按其结构定义所需的类型，避免强制依赖并避免与其 Context 类型扩展冲突。
 - ESM、TypeScript `strict: true`；注册都通过 `ctx.effect()` / `ctx.on()`。
-- `@mc/dsh-agent-kit/testing` 导出（业务包可以用它们在没有 dws / Agent 登录态的环境下开发和测试）：
+- `@baoyx/dsh-agent-kit/testing` 导出（业务包可以用它们在没有 dws / Agent 登录态的环境下开发和测试）：
   - `startTestWsServer()`：本机随机端口的 WebSocket 服务端，可模拟握手拒绝（`rejectNext(401)`）、关闭自动 pong、广播帧，并记录握手头与收到的帧。
   - `FakeSubagentProvider`（结构与 dsh-subagent 的 provider 一致，可注册到真实 `ctx.subagents`）与 `FakeSubagentRuntime`（没有 dsh-subagent 时提供最小的 `ctx.subagents`）。
   - `createJevMock()`：替换 JevService 的 SDK 客户端，默认按问题生成确定的答案；`jevHttpError(status)` 模拟 HTTP 错误。
@@ -389,7 +389,7 @@ dsh-agent-kit/
 
 ```sh
 dsh --profile <name> --from-default-profile web
-dsh plugin --profile <name> add @mc/dsh-agent-kit <业务包> \
+dsh plugin --profile <name> add @baoyx/dsh-agent-kit <业务包> \
   @deepseek-ai/dsh-subagent-claude-code@0.1.5-rc.3 \
   @deepseek-ai/dsh-subagent-codex@0.1.5-rc.3
 ```
@@ -423,7 +423,7 @@ dsh plugin --profile <name> add @mc/dsh-agent-kit <业务包> \
 - 安全：Agent 默认只读，每个任务使用独立目录；新增 `untrusted()`，Agent 输出视为不可信；子进程只继承环境变量白名单；dws 通过 `execFile` 调用，参数使用 `--key=value` 形式；强制 `wss://`；统一脱敏；为帧大小、待处理消息数、排队长度设上限；约束 Web 界面的绑定地址。
 - 运维：新增 `failed` 状态、`health()` 与 `agent-kit/service-failed` 事件；fatal 断开后可慢速重试；连接稳定后重置退避；新增背压与 `queue_full`；明确子进程终止规则；定期检查 dws 登录态；明确 Session 保留期、部署与回滚要求。
 - 架构：四个 Service 默认禁用、单独启用；`agentTasks` 优先使用 provider 原生结构化输出；dsh/cordis 改为精确版本的 peer 依赖，`@typesafe-ai/sdk` 改为可选 peer；错误判断改为基于 `code`；补充拆包条件与 3 项待核实。
-- 接入体验：新增统一的 `KitError`（含 `retryable`）；新增 `onMessage` 的并发、错误与中止语义；新增泛型 `parse` 与 `run<T>`；连接句柄增加 `state`、`close()`、`whenOpen()`；`headers` 支持传函数；钉钉支持单聊、多群、@ 和逐目标结果；新增 `dryRun` 与 `@mc/dsh-agent-kit/testing`；Jev 新增 `signal`，`timeoutMs` 明确为总时长。
+- 接入体验：新增统一的 `KitError`（含 `retryable`）；新增 `onMessage` 的并发、错误与中止语义；新增泛型 `parse` 与 `run<T>`；连接句柄增加 `state`、`close()`、`whenOpen()`；`headers` 支持传函数；钉钉支持单聊、多群、@ 和逐目标结果；新增 `dryRun` 与 `@baoyx/dsh-agent-kit/testing`；Jev 新增 `signal`，`timeoutMs` 明确为总时长。
 - 测试：所有 Config 字段写明默认值与取值范围；测试表补齐缺口；明确 JSON 提取的边界规则；引入假时钟和覆盖率门槛；新增集成测试、fixture 契约测试和夜间端到端测试。
 - 暂不采纳：备用告警通道（列为非目标，通过健康状态与事件暴露）；`withRetry` helper 与业务包脚手架（等第二个项目出现时再评估，第一版靠 `retryable` 字段支持调用方自行重试）；A2UI 卡片消息（第一版只支持文本与 Markdown）。
 

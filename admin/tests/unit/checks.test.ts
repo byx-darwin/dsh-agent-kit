@@ -12,7 +12,7 @@ function snapshot(entries: Partial<KitSnapshot['entries']>): KitSnapshot {
 
 function ctx(over: Partial<CheckContext> = {}): CheckContext {
   return {
-    profile: { name: 'kit', dir: '/p', patchFile: '/p/cordis.patch.yml', bundles: ['@deepseek-ai/dsh-base', '@mc/dsh-agent-kit'], patchReload: 'live', hasKit: true },
+    profile: { name: 'kit', dir: '/p', patchFile: '/p/cordis.patch.yml', bundles: ['@deepseek-ai/dsh-base', '@baoyx/dsh-agent-kit'], patchReload: 'live', hasKit: true },
     snapshot: snapshot({}),
     env: {},
     platform: 'darwin',
@@ -39,7 +39,7 @@ describe('common checks', () => {
   it('fails on old node, missing bundle, and warns on startup reload', async () => {
     const r = await runChecks(ctx({ nodeVersion: '20.10.0', profile: { ...ctx().profile, hasKit: false, patchReload: 'startup' } }))
     expect(byId(r, 'node')!.status).toBe('fail')
-    expect(byId(r, 'bundle')).toMatchObject({ status: 'fail', fix: expect.stringContaining('dsh plugin --profile kit add @mc/dsh-agent-kit') })
+    expect(byId(r, 'bundle')).toMatchObject({ status: 'fail', fix: expect.stringContaining('dsh plugin --profile kit add @baoyx/dsh-agent-kit') })
     expect(byId(r, 'patch-reload')!.status).toBe('warn')
     expect(r.ok).toBe(false)
   })

@@ -8,11 +8,11 @@ const businessPackage = `{
   "type": "module",
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
-    "@mc/dsh-agent-kit": "^0.2.0"
+    "@baoyx/dsh-agent-kit": "^0.2.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
-    "@mc/dsh-agent-kit": "^0.2.0"
+    "@baoyx/dsh-agent-kit": "^0.2.0"
   },
   "dsh": { "bundle": { "patch": "./patch.yml" } }
 }`
@@ -31,7 +31,7 @@ const enable = `# Profile 的 cordis.patch.yml
     <p class="eyebrow">架构</p>
     <h1>一个库，五类能力，一层 dsh</h1>
     <p class="lead">
-      <code>@mc/dsh-agent-kit</code> 是一组 DeepSeek Harness（dsh）插件 Service。它向业务包提供五类能力，由五个 Service 实现。钉钉仅支持已登录的 user 身份；业务包通常只 inject <code>notify</code>，自己只写协议、路由、模板和流程。
+      <code>@baoyx/dsh-agent-kit</code> 是一组 DeepSeek Harness（dsh）插件 Service。它向业务包提供五类能力，由五个 Service 实现。钉钉仅支持已登录的 user 身份；业务包通常只 inject <code>notify</code>，自己只写协议、路由、模板和流程。
     </p>
   </div>
 
@@ -43,12 +43,12 @@ const enable = `# Profile 的 cordis.patch.yml
       <table>
         <thead><tr><th>包</th><th>作用</th><th>谁依赖它</th></tr></thead>
         <tbody>
-          <tr><td><code>@mc/dsh-agent-kit</code></td><td>五类能力（由五个 Service 实现），以及 <code>/ws</code>、<code>/dingtalk</code>、<code>/notify</code>、<code>/agent-tasks</code>、<code>/jev</code>、<code>/secrets</code>、<code>/testing</code> 子路径。没有命令行，也没有设置页</td><td>业务包（peer 依赖）</td></tr>
-          <tr><td><code>@mc/dsh-agent-kit-admin</code></td><td>可选的运维工具：<code>dsh-agent-kit doctor</code> / <code>setup</code> 命令行、dsh Web「设置 → Agent Kit」页、<code>agentKitAdmin</code> 服务与业务包设置入口的登记（<code>@mc/dsh-agent-kit-admin/entry</code>）</td><td>运维按需加入 Profile；业务包不依赖它</td></tr>
+          <tr><td><code>@baoyx/dsh-agent-kit</code></td><td>五类能力（由五个 Service 实现），以及 <code>/ws</code>、<code>/dingtalk</code>、<code>/notify</code>、<code>/agent-tasks</code>、<code>/jev</code>、<code>/secrets</code>、<code>/testing</code> 子路径。没有命令行，也没有设置页</td><td>业务包（peer 依赖）</td></tr>
+          <tr><td><code>@baoyx/dsh-agent-kit-admin</code></td><td>可选的运维工具：<code>dsh-agent-kit doctor</code> / <code>setup</code> 命令行、dsh Web「设置 → Agent Kit」页、<code>agentKitAdmin</code> 服务与业务包设置入口的登记（<code>@baoyx/dsh-agent-kit-admin/entry</code>）</td><td>运维按需加入 Profile；业务包不依赖它</td></tr>
         </tbody>
       </table>
     </div>
-    <pre><code>dsh plugin --profile my-agent add @mc/dsh-agent-kit @mc/dsh-agent-kit-admin</code></pre>
+    <pre><code>dsh plugin --profile my-agent add @baoyx/dsh-agent-kit @baoyx/dsh-agent-kit-admin</code></pre>
 
     <h2>bundle 与 patch 层</h2>
     <p>
@@ -62,13 +62,13 @@ const enable = `# Profile 的 cordis.patch.yml
             SERVICES.map((s) => (
               <tr>
                 <td><code>{s.kitId}</code></td>
-                <td><code>@mc/dsh-agent-kit/{s.slug === 'agent-ws' ? 'ws' : s.slug}</code></td>
+                <td><code>@baoyx/dsh-agent-kit/{s.slug === 'agent-ws' ? 'ws' : s.slug}</code></td>
                 <td><code>{s.context}</code></td>
                 <td>禁用</td>
               </tr>
             ))
           }
-          <tr><td><code>agent-kit-admin</code></td><td><code>@mc/dsh-agent-kit-admin</code></td><td><code>ctx.agentKitAdmin</code></td><td>常驻（仅装了 admin 包时）</td></tr>
+          <tr><td><code>agent-kit-admin</code></td><td><code>@baoyx/dsh-agent-kit-admin</code></td><td><code>ctx.agentKitAdmin</code></td><td>常驻（仅装了 admin 包时）</td></tr>
         </tbody>
       </table>
     </div>
@@ -81,7 +81,7 @@ const enable = `# Profile 的 cordis.patch.yml
     </p>
 
     <h2>业务包如何接入</h2>
-    <p>业务包把 <code>@mc/dsh-agent-kit</code> 声明为 peer 依赖，保证一个 Profile 中只加载一份实例；开发期可以用 <code>link:</code> 指向本包的本地 checkout。业务包不需要依赖 admin 包；只有要把自己的配置登记到设置页时，才从 <code>@mc/dsh-agent-kit-admin/entry</code> 导入 <code>defineEntry</code>（放进 devDependencies 即可），运行时调用 <code>ctx.agentKitAdmin.registerEntry()</code> 的插件则要求 Profile 中装有 admin 包。</p>
+    <p>业务包把 <code>@baoyx/dsh-agent-kit</code> 声明为 peer 依赖，保证一个 Profile 中只加载一份实例；开发期可以用 <code>link:</code> 指向本包的本地 checkout。业务包不需要依赖 admin 包；只有要把自己的配置登记到设置页时，才从 <code>@baoyx/dsh-agent-kit-admin/entry</code> 导入 <code>defineEntry</code>（放进 devDependencies 即可），运行时调用 <code>ctx.agentKitAdmin.registerEntry()</code> 的插件则要求 Profile 中装有 admin 包。</p>
     <pre><code>{businessPackage}</code></pre>
     <p>
       业务包的插件只 inject 用到的 Service，例如 <code>export const inject = ['agentWs', 'notify']</code>。Service 注册的连接、定时器、子进程都随业务包插件的生命周期释放。
@@ -94,7 +94,7 @@ const enable = `# Profile 的 cordis.patch.yml
     <ul>
       <li><code>@deepseek-ai/cordis</code>、<code>@deepseek-ai/schemastery</code>、<code>@deepseek-ai/dsh-typert-protocol</code> 是 peer 依赖，版本与目标 dsh 对齐。dsh 会把它自己的依赖提供给 Profile，peer 声明保证只有一份实例；放进 dependencies 会装出第二份，破坏 Context 类型扩展和远程方法标记。</li>
       <li><code>@typesafe-ai/sdk</code> 是可选 peer 依赖，只有启用 Jev 时才需要安装。</li>
-      <li>基础包自己的运行时依赖是 <code>ws</code>、<code>ajv</code>、<code>yaml</code> 与 <code>@deepseek-ai/dsh-atomic-write</code>；admin 包另外依赖 <code>@inquirer/prompts</code>、<code>diff</code>、<code>yaml</code>，并把 <code>@mc/dsh-agent-kit</code> 声明为 peer 依赖。</li>
+      <li>基础包自己的运行时依赖是 <code>ws</code>、<code>ajv</code>、<code>yaml</code> 与 <code>@deepseek-ai/dsh-atomic-write</code>；admin 包另外依赖 <code>@inquirer/prompts</code>、<code>diff</code>、<code>yaml</code>，并把 <code>@baoyx/dsh-agent-kit</code> 声明为 peer 依赖。</li>
     </ul>
 
     <h2>配置从哪里来</h2>

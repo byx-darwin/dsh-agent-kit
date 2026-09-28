@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让第三方无需阅读文档即可配置并验证 `@mc/dsh-agent-kit`：命令行 `doctor` 检查、`setup` 交互式配置、dsh Web 界面中的「Agent Kit」设置页。
+**Goal:** 让第三方无需阅读文档即可配置并验证 `@baoyx/dsh-agent-kit`：命令行 `doctor` 检查、`setup` 交互式配置、dsh Web 界面中的「Agent Kit」设置页。
 
 **Architecture:** 配置唯一来源是 Profile 的 `cordis.patch.yml` 中 `agent-kit-*` 行，由纯 Node 的 `profile/` 模块读写（保留注释、原子写入、版本冲突检测）。TypeSafe Key 由 `secrets/` 按「环境变量 → macOS 钥匙串 → dsh 凭据文件」读取。`checks/` 提供结构化检查项，供 `cli/`（doctor、setup）与服务端 `admin/`（`AgentKitAdmin`，dsh 远程服务）共用；`client/` 是 React 设置页，构建为 dsh 前端模块。
 
@@ -80,7 +80,7 @@ bin/dsh-agent-kit.mjs     可执行入口，加载 lib/cli/main.js
 - Test: `tests/unit/client-build.test.ts`
 
 **Interfaces:**
-- Produces: 根入口 `export const name = 'agent-kit'`、`export const inject`、`export function apply(ctx)`；前端 `lib/client.js` 以 `window.__ModuleLoader__.load({ id: '@mc/dsh-agent-kit', factory })` 注册；`npm run build` 同时产出服务端与前端。
+- Produces: 根入口 `export const name = 'agent-kit'`、`export const inject`、`export function apply(ctx)`；前端 `lib/client.js` 以 `window.__ModuleLoader__.load({ id: '@baoyx/dsh-agent-kit', factory })` 注册；`npm run build` 同时产出服务端与前端。
 
 - [ ] **Step 1: 安装依赖**
 
@@ -107,7 +107,7 @@ describe('client bundle', () => {
     execFileSync(process.execPath, [resolve(ROOT, 'scripts/build-client.mjs')], { cwd: ROOT })
     const text = readFileSync(resolve(ROOT, 'lib/client.js'), 'utf8')
     expect(text.startsWith('window.__ModuleLoader__.load({')).toBe(true)
-    expect(text).toContain('id: "@mc/dsh-agent-kit"')
+    expect(text).toContain('id: "@baoyx/dsh-agent-kit"')
     expect(text).toContain('require("react")')
     expect(text).not.toMatch(/function createElement|react\.production/)
     // 模拟 dsh 前端加载：factory 返回 apply 与 inject
@@ -221,7 +221,7 @@ const result = await build({
 const body = result.outputFiles[0].text
 const wrapped = [
   'window.__ModuleLoader__.load({',
-  '\tid: "@mc/dsh-agent-kit",',
+  '\tid: "@baoyx/dsh-agent-kit",',
   '\tfactory: (require) => {',
   '\t\tvar module = { exports: {} };',
   '\t\tvar exports = module.exports;',
@@ -260,7 +260,7 @@ export { name, inject, apply } from './admin/plugin.js'
 
 ```yaml
     - id: agent-kit
-      name: '@mc/dsh-agent-kit'
+      name: '@baoyx/dsh-agent-kit'
 ```
 
 `package.json` 修改：`exports` 增加 `"./client": { "default": "./lib/client.js" }`；`dsh` 增加 `"client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-ui-settings", "@deepseek-ai/dsh-client-locale"] }`；`scripts.build` 改为 `"tsc -p tsconfig.build.json && node scripts/build-client.mjs"`。`tsconfig.json` / `tsconfig.build.json` 增加 `"jsx": "react-jsx"`，`lib` 增加 `"DOM"`；`tsconfig.build.json` 的 `exclude` 增加 `"src/client"`（前端由 esbuild 构建，不产出到 lib/client/）。
@@ -277,7 +277,7 @@ npm run build && npm pack
 export DSH_HOME="$(mktemp -d)"
 npx -y @deepseek-ai/dsh@0.1.5-rc.3 --profile kit --from-default-profile web --no-open &
 # 等待启动日志出现地址后 Ctrl+C，再安装本包
-npx -y @deepseek-ai/dsh@0.1.5-rc.3 plugin --profile kit add "$PWD/mc-dsh-agent-kit-0.1.0.tgz"
+npx -y @deepseek-ai/dsh@0.1.5-rc.3 plugin --profile kit add "$PWD/baoyx-dsh-agent-kit-0.1.0.tgz"
 npx -y @deepseek-ai/dsh@0.1.5-rc.3 --profile kit --no-open
 ```
 
@@ -344,7 +344,7 @@ beforeEach(() => {
   mkdirSync(profileDir, { recursive: true })
   patchFile = join(profileDir, 'cordis.patch.yml')
   writeFileSync(patchFile, ORIGINAL)
-  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@mc/dsh-agent-kit'], patchReload: 'live' } } }))
+  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@baoyx/dsh-agent-kit'], patchReload: 'live' } } }))
   mkdirSync(join(home, 'profiles', 'other'))
   writeFileSync(join(home, 'profiles', 'other', 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }))
 })
@@ -509,10 +509,10 @@ function validator(schema: Schema, extra?: (value: never) => void): (config: unk
 }
 
 export const KIT_ENTRIES: readonly KitEntryMeta[] = [
-  { id: 'agent-kit-ws', service: 'agentWs', module: '@mc/dsh-agent-kit/ws', title: 'WebSocket', validate: validator(WsConfig as unknown as Schema, assertWsConfig) },
-  { id: 'agent-kit-dingtalk', service: 'dingtalk', module: '@mc/dsh-agent-kit/dingtalk', title: '钉钉', validate: validator(DingtalkConfig as unknown as Schema, validateDingtalk) },
-  { id: 'agent-kit-agent-tasks', service: 'agentTasks', module: '@mc/dsh-agent-kit/agent-tasks', title: 'Agent 任务', validate: validator(AgentTasksConfig as unknown as Schema) },
-  { id: 'agent-kit-jev', service: 'jev', module: '@mc/dsh-agent-kit/jev', title: 'Jev 判断', validate: validator(JevConfig as unknown as Schema) },
+  { id: 'agent-kit-ws', service: 'agentWs', module: '@baoyx/dsh-agent-kit/ws', title: 'WebSocket', validate: validator(WsConfig as unknown as Schema, assertWsConfig) },
+  { id: 'agent-kit-dingtalk', service: 'dingtalk', module: '@baoyx/dsh-agent-kit/dingtalk', title: '钉钉', validate: validator(DingtalkConfig as unknown as Schema, validateDingtalk) },
+  { id: 'agent-kit-agent-tasks', service: 'agentTasks', module: '@baoyx/dsh-agent-kit/agent-tasks', title: 'Agent 任务', validate: validator(AgentTasksConfig as unknown as Schema) },
+  { id: 'agent-kit-jev', service: 'jev', module: '@baoyx/dsh-agent-kit/jev', title: 'Jev 判断', validate: validator(JevConfig as unknown as Schema) },
 ]
 
 /** 与 DingtalkService 构造函数一致的身份组合校验（不依赖环境变量与 dws）。 */
@@ -546,7 +546,7 @@ export interface ProfileInfo {
   hasKit: boolean
 }
 
-export const KIT_PACKAGE = '@mc/dsh-agent-kit'
+export const KIT_PACKAGE = '@baoyx/dsh-agent-kit'
 
 /** 与 dsh 一致：DSH_HOME 非空时使用它，否则为 <home>/.dsh；支持 ~ 前缀。 */
 export function resolveDshHome(env: NodeJS.ProcessEnv = process.env): string {
@@ -1251,7 +1251,7 @@ function snapshot(entries: Partial<KitSnapshot['entries']>): KitSnapshot {
 
 function ctx(over: Partial<CheckContext> = {}): CheckContext {
   return {
-    profile: { name: 'kit', dir: '/p', patchFile: '/p/cordis.patch.yml', bundles: ['@deepseek-ai/dsh-base', '@mc/dsh-agent-kit'], patchReload: 'live', hasKit: true },
+    profile: { name: 'kit', dir: '/p', patchFile: '/p/cordis.patch.yml', bundles: ['@deepseek-ai/dsh-base', '@baoyx/dsh-agent-kit'], patchReload: 'live', hasKit: true },
     snapshot: snapshot({}),
     env: {},
     platform: 'darwin',
@@ -1278,7 +1278,7 @@ describe('common checks', () => {
   it('fails on old node, missing bundle, and warns on startup reload', async () => {
     const r = await runChecks(ctx({ nodeVersion: '20.10.0', profile: { ...ctx().profile, hasKit: false, patchReload: 'startup' } }))
     expect(byId(r, 'node')!.status).toBe('fail')
-    expect(byId(r, 'bundle')).toMatchObject({ status: 'fail', fix: expect.stringContaining('dsh plugin --profile kit add @mc/dsh-agent-kit') })
+    expect(byId(r, 'bundle')).toMatchObject({ status: 'fail', fix: expect.stringContaining('dsh plugin --profile kit add @baoyx/dsh-agent-kit') })
     expect(byId(r, 'patch-reload')!.status).toBe('warn')
     expect(r.ok).toBe(false)
   })
@@ -1388,8 +1388,8 @@ export const commonChecks: Check = (ctx) => {
       scope: 'common',
       title: '本包已加入 Profile',
       status: profile.hasKit ? 'pass' : 'fail',
-      detail: profile.hasKit ? `Profile ${profile.name} 已包含 @mc/dsh-agent-kit` : `Profile ${profile.name} 未安装 @mc/dsh-agent-kit`,
-      ...(profile.hasKit ? {} : { fix: `dsh plugin --profile ${profile.name} add @mc/dsh-agent-kit` }),
+      detail: profile.hasKit ? `Profile ${profile.name} 已包含 @baoyx/dsh-agent-kit` : `Profile ${profile.name} 未安装 @baoyx/dsh-agent-kit`,
+      ...(profile.hasKit ? {} : { fix: `dsh plugin --profile ${profile.name} add @baoyx/dsh-agent-kit` }),
     },
     {
       id: 'patch-reload',
@@ -1497,7 +1497,7 @@ export const jevChecks: Check = async (ctx) => {
       title: 'TypeSafe Key',
       status: key.configured ? 'pass' : 'fail',
       detail: key.configured ? `来源：${key.source}` : '环境变量、钥匙串与 dsh 凭据中都没有找到',
-      ...(key.configured ? {} : { fix: 'npx @mc/dsh-agent-kit setup（或设置环境变量 TYPESAFE_API_KEY）' }),
+      ...(key.configured ? {} : { fix: 'npx @baoyx/dsh-agent-kit setup（或设置环境变量 TYPESAFE_API_KEY）' }),
     },
   ]
 }
@@ -1623,7 +1623,7 @@ const io = () => ({ out: (t: string) => void out.push(t), err: (t: string) => vo
 function profile(name: string, withKit: boolean, patch = '') {
   const dir = join(home, 'profiles', name)
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: withKit ? ['@mc/dsh-agent-kit'] : [], patchReload: 'live' } } }))
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: withKit ? ['@baoyx/dsh-agent-kit'] : [], patchReload: 'live' } } }))
   writeFileSync(join(dir, 'cordis.patch.yml'), patch)
 }
 
@@ -1741,7 +1741,7 @@ export async function pickProfile(home: string, requested: string | undefined): 
     if (p?.hasKit) withKit.push(p)
   }
   if (withKit.length === 1) return withKit[0]!
-  if (withKit.length === 0) throw new UsageError(`在 ${home} 中没有安装 @mc/dsh-agent-kit 的 Profile；请用 --profile 指定，或先运行 dsh plugin --profile <名字> add @mc/dsh-agent-kit\n`)
+  if (withKit.length === 0) throw new UsageError(`在 ${home} 中没有安装 @baoyx/dsh-agent-kit 的 Profile；请用 --profile 指定，或先运行 dsh plugin --profile <名字> add @baoyx/dsh-agent-kit\n`)
   throw new UsageError(`有多个 Profile 安装了本包，请用 --profile 指定：${withKit.map((p) => p.name).join(', ')}\n`)
 }
 
@@ -1841,7 +1841,7 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'dsh-home-'))
   const dir = join(home, 'profiles', 'kit')
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@mc/dsh-agent-kit'], patchReload: 'live' } } }))
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@baoyx/dsh-agent-kit'], patchReload: 'live' } } }))
   patchFile = join(dir, 'cordis.patch.yml')
   writeFileSync(patchFile, '# mine\n')
   out = []
@@ -2130,7 +2130,7 @@ export async function runSetup(opts: { home: string; profileName?: string; io: C
   const keyStore = deps.keyStore ?? {}
   const profile = await pickProfile(opts.home, opts.profileName)
   if (!profile.hasKit) {
-    io.err(`Profile ${profile.name} 未安装本包，请先运行：dsh plugin --profile ${profile.name} add @mc/dsh-agent-kit\n`)
+    io.err(`Profile ${profile.name} 未安装本包，请先运行：dsh plugin --profile ${profile.name} add @baoyx/dsh-agent-kit\n`)
     return 1
   }
   const snap = await readKitEntries(profile.patchFile)
@@ -2188,7 +2188,7 @@ export async function pickProfile(home: string, requested: string | undefined, p
     if (p?.hasKit) withKit.push(p)
   }
   if (withKit.length === 1) return withKit[0]!
-  if (withKit.length === 0) throw new UsageError(`在 ${home} 中没有安装 @mc/dsh-agent-kit 的 Profile；请用 --profile 指定，或先运行 dsh plugin --profile <名字> add @mc/dsh-agent-kit\n`)
+  if (withKit.length === 0) throw new UsageError(`在 ${home} 中没有安装 @baoyx/dsh-agent-kit 的 Profile；请用 --profile 指定，或先运行 dsh plugin --profile <名字> add @baoyx/dsh-agent-kit\n`)
   if (prompter) {
     const name = await prompter.select('选择 Profile', withKit.map((p) => ({ value: p.name, name: p.name })))
     return withKit.find((p) => p.name === name)!
@@ -2258,7 +2258,7 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'dsh-home-'))
   profileDir = join(home, 'profiles', 'kit')
   mkdirSync(profileDir, { recursive: true })
-  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@mc/dsh-agent-kit'], patchReload: 'live' } } }))
+  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@baoyx/dsh-agent-kit'], patchReload: 'live' } } }))
   writeFileSync(join(profileDir, 'cordis.patch.yml'), '- id: agent-kit-ws\n  disabled: false\n')
   root = new Context()
 })
@@ -2687,7 +2687,7 @@ export class AdminError extends Error {
   }
 }
 
-const PKG = '@mc/dsh-agent-kit'
+const PKG = '@baoyx/dsh-agent-kit'
 const json = { mode: 'strict', typeSymbol: `${PKG}#json`, schema: { parse: (v: unknown) => v } }
 const method = (name: string, params: string[]) => ({
   id: `${PKG}#agentKitAdmin/${name}`,
@@ -3120,7 +3120,7 @@ Expected: 全部通过；覆盖率不低于行 80%、分支 70%。
 ```bash
 npm pack
 export DSH_HOME="$(mktemp -d)"
-npx -y @deepseek-ai/dsh@0.1.5-rc.3 plugin --profile kit add "$PWD/mc-dsh-agent-kit-0.1.0.tgz"
+npx -y @deepseek-ai/dsh@0.1.5-rc.3 plugin --profile kit add "$PWD/baoyx-dsh-agent-kit-0.1.0.tgz"
 node bin/dsh-agent-kit.mjs doctor --profile kit
 npx -y @deepseek-ai/dsh@0.1.5-rc.3 --profile kit --no-open
 ```
@@ -3138,7 +3138,7 @@ Run: `node bin/dsh-agent-kit.mjs setup --profile kit`，按提示启用 jev 并�
 
 - [ ] **Step 4: 更新文档**
 
-- README 新增「快速配置」一节：`npx @mc/dsh-agent-kit setup`、`doctor`、Web 设置页入口与只读条件、三平台密钥保存位置。
+- README 新增「快速配置」一节：`npx @baoyx/dsh-agent-kit setup`、`doctor`、Web 设置页入口与只读条件、三平台密钥保存位置。
 - 两份规格按上面的 Files 说明更新，并把 Task 1 Step 7、Task 8 Step 5 的实际核实结果写入 onboarding 规格的「核实结论」。
 
 - [ ] **Step 5: Commit（经用户同意后）**

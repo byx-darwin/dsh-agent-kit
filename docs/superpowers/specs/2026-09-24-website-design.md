@@ -6,7 +6,7 @@
 
 ## 背景与目标
 
-`@mc/dsh-agent-kit` 需要一个面向第三方开发者的官网，介绍它能做什么、如何安装配置、每个 Service 的接口与配置，以及与 dsh 的关系。工程做法参考同作者的 gitflow-cli 官网（Astro 静态站 + GitHub Pages + `llms.txt` + JSON-LD + 一致性测试），视觉采用全新的「编辑部长文」风格。
+`@baoyx/dsh-agent-kit` 需要一个面向第三方开发者的官网，介绍它能做什么、如何安装配置、每个 Service 的接口与配置，以及与 dsh 的关系。工程做法参考同作者的 gitflow-cli 官网（Astro 静态站 + GitHub Pages + `llms.txt` + JSON-LD + 一致性测试），视觉采用全新的「编辑部长文」风格。
 
 目标：
 
@@ -26,7 +26,7 @@
 | 路径 | 页面 | 主要内容 |
 |---|---|---|
 | `/` | 首页 | 观点句「让业务包只写业务」；四件事（壹 连接 agentWs、贰 推送 dingtalk、叁 委托 agentTasks、肆 校验 jev）各一段；默认安全与按需启用；一段业务包代码示例；指向快速开始 |
-| `/quickstart` | 快速开始 | 安装 dsh 与本包 → `npx @mc/dsh-agent-kit setup` → `doctor` → Web 设置页；三平台密钥存储位置 |
+| `/quickstart` | 快速开始 | 安装 dsh 与本包 → `npx @baoyx/dsh-agent-kit setup` → `doctor` → Web 设置页；三平台密钥存储位置 |
 | `/docs` | 文档总览 | 四个 Service 与配置引导的入口 |
 | `/docs/agent-ws`、`/docs/dingtalk`、`/docs/agent-tasks`、`/docs/jev` | 各 Service | 接口示例、配置项表（生成）、错误码与是否可重试、关键行为 |
 | `/docs/onboarding` | 配置引导 | `doctor`、`setup`、Web 设置页，只读条件 |

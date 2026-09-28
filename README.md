@@ -15,14 +15,14 @@
 3. 把需要语义判断的任务交给 Claude Code、Codex 等 Agent 处理；
 4. 用 [TypeSafe Jev](https://docs.typesafe.ai/) 对 Agent 的结果做低成本校验，不通过时升级或转人工。
 
-这四项能力与业务无关。`@mc/dsh-agent-kit` 把它们实现为一组 DeepSeek Harness（dsh）插件 Service，项目只需在自己的**业务包**里编写协议、路由、模板和流程。
+这四项能力与业务无关。`@baoyx/dsh-agent-kit` 把它们实现为一组 DeepSeek Harness（dsh）插件 Service，项目只需在自己的**业务包**里编写协议、路由、模板和流程。
 
 ## 两个包
 
 | 包 | 目录 | 作用 |
 |---|---|---|
-| `@mc/dsh-agent-kit` | 仓库根目录 | 给业务包用的库：五个 Service 与测试工具。业务包只依赖它 |
-| `@mc/dsh-agent-kit-admin` | [`admin/`](admin/README.md) | 可选的运维工具：`dsh-agent-kit doctor` / `setup` 命令行、dsh Web「设置 → Agent Kit」页、业务包设置入口的登记。见下文「运维工具（可选）」 |
+| `@baoyx/dsh-agent-kit` | 仓库根目录 | 给业务包用的库：五个 Service 与测试工具。业务包只依赖它 |
+| `@baoyx/dsh-agent-kit-admin` | [`admin/`](admin/README.md) | 可选的运维工具：`dsh-agent-kit doctor` / `setup` 命令行、dsh Web「设置 → Agent Kit」页、业务包设置入口的登记。见下文「运维工具（可选）」 |
 
 不装 admin 包时，五个 Service 照常工作，配置直接写在 Profile 的 `cordis.patch.yml` 中。
 
@@ -40,7 +40,7 @@
 - 每个 Service 提供 `health()`；进入 `failed` 时触发 `agent-kit/service-failed` 事件，便于接入外部监控。
 - 所有错误都是 `KitError`，带 `code` 与 `retryable`，调用方据此决定是否重试。
 
-导入路径：根入口 `@mc/dsh-agent-kit` 导出全部 Service 类、配置、错误类型与工具函数；另有子路径 `@mc/dsh-agent-kit/ws`、`/dingtalk`、`/notify`、`/agent-tasks`、`/jev`、`/secrets` 和 `/testing`。
+导入路径：根入口 `@baoyx/dsh-agent-kit` 导出全部 Service 类、配置、错误类型与工具函数；另有子路径 `@baoyx/dsh-agent-kit/ws`、`/dingtalk`、`/notify`、`/agent-tasks`、`/jev`、`/secrets` 和 `/testing`。
 
 ## 架构
 
@@ -49,14 +49,14 @@
 │  你的业务包（协议、路由、模板、流程）              │
 │        │ inject                                 │
 │        ▼                                        │
-│  @mc/dsh-agent-kit（各 Service 单独启用）         │
+│  @baoyx/dsh-agent-kit（各 Service 单独启用）         │
 │    agentWs · dingtalk · notify · agentTasks · jev│
 │        │                                        │
 │        ▼                                        │
 │  dsh：subagent-claude-code / subagent-codex、    │
 │       子进程管理、Session 持久化、Web 界面        │
 │                                                 │
-│  （可选）@mc/dsh-agent-kit-admin：设置页与 CLI    │
+│  （可选）@baoyx/dsh-agent-kit-admin：设置页与 CLI    │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -85,13 +85,13 @@ dsh --profile my-agent --from-default-profile web
 
 # 安装本包、Agent provider 和你的业务包
 # subagent 包必须显式指定版本：其 latest 标签目前指向 0.0.1-rc.1，与 dsh 不匹配
-dsh plugin --profile my-agent add @mc/dsh-agent-kit \
+dsh plugin --profile my-agent add @baoyx/dsh-agent-kit \
   @deepseek-ai/dsh-subagent-claude-code@0.1.5-rc.3 \
   @deepseek-ai/dsh-subagent-codex@0.1.5-rc.3
 dsh plugin --profile my-agent add ./my-business-plugin-0.1.0.tgz
 
 # 可选：运维工具（doctor / setup 命令行与 Web 设置页）
-dsh plugin --profile my-agent add @mc/dsh-agent-kit-admin
+dsh plugin --profile my-agent add @baoyx/dsh-agent-kit-admin
 
 # 在 Profile 的 cordis.patch.yml 中启用需要的 Service（见下文「配置」）
 
@@ -109,11 +109,11 @@ dsh --profile my-agent --no-open
   "type": "module",
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
-    "@mc/dsh-agent-kit": "^0.2.0"
+    "@baoyx/dsh-agent-kit": "^0.2.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
-    "@mc/dsh-agent-kit": "^0.2.0"
+    "@baoyx/dsh-agent-kit": "^0.2.0"
   },
   "dsh": { "bundle": { "patch": "./patch.yml" } }
 }
@@ -125,7 +125,7 @@ dsh --profile my-agent --no-open
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
-import { choice, isKitError, noul, untrusted } from '@mc/dsh-agent-kit'
+import { choice, isKitError, noul, untrusted } from '@baoyx/dsh-agent-kit'
 
 export const name = 'my-agent'
 export const inject = ['agentWs', 'notify', 'agentTasks', 'jev']
@@ -243,7 +243,7 @@ export async function apply(ctx: Context) {
 
 ### 本地开发与测试
 
-没有 `dws` 或 Agent 登录态时，可以把钉钉设为 `dryRun: true`，并使用 `@mc/dsh-agent-kit/testing` 导出的假 dws、本地 WebSocket 服务端、假 provider 与 Jev mock。
+没有 `dws` 或 Agent 登录态时，可以把钉钉设为 `dryRun: true`，并使用 `@baoyx/dsh-agent-kit/testing` 导出的假 dws、本地 WebSocket 服务端、假 provider 与 Jev mock。
 
 完整接口、错误码与配置默认值见 [官网文档](https://byx-darwin.github.io/dsh-agent-kit/docs/)。
 
@@ -315,12 +315,12 @@ TypeSafe Key（`TYPESAFE_API_KEY`）按以下优先级解析，三个平台的�
 - dsh Web 界面中保存了完整的 prompt 与输出，只应绑定 `127.0.0.1` 或放在鉴权代理之后。
 - 发送给 Claude Code、Codex、TypeSafe 的内容由业务包决定，请在业务包中做数据最小化。
 
-## 运维工具（可选）：`@mc/dsh-agent-kit-admin`
+## 运维工具（可选）：`@baoyx/dsh-agent-kit-admin`
 
-[`@mc/dsh-agent-kit-admin`](admin/README.md) 提供配置引导与运维界面。它读写的仍然是 Profile 的 `cordis.patch.yml`，不装它不影响任何 Service。业务包不需要依赖它（只有用到下文的运行时登记时，Profile 里才必须有它）。
+[`@baoyx/dsh-agent-kit-admin`](admin/README.md) 提供配置引导与运维界面。它读写的仍然是 Profile 的 `cordis.patch.yml`，不装它不影响任何 Service。业务包不需要依赖它（只有用到下文的运行时登记时，Profile 里才必须有它）。
 
 ```sh
-dsh plugin --profile my-agent add @mc/dsh-agent-kit @mc/dsh-agent-kit-admin
+dsh plugin --profile my-agent add @baoyx/dsh-agent-kit @baoyx/dsh-agent-kit-admin
 ```
 
 admin 包以常驻行 `agent-kit-admin` 注册（`ctx.agentKitAdmin`，即设置页调用的服务端接口），并让 dsh 发现它的前端模块；它不连接任何外部服务，也不影响基础包各行的启停。
@@ -331,10 +331,10 @@ admin 包自带 CLI `dsh-agent-kit`（随包安装到 `node_modules/.bin`），�
 
 ```sh
 # 交互式生成/修改 cordis.patch.yml（带 diff 预览，需确认后才写入）
-npx @mc/dsh-agent-kit-admin setup --profile my-agent
+npx @baoyx/dsh-agent-kit-admin setup --profile my-agent
 
 # 体检：Node 版本、dws 安装与登录态、Agent provider、TypeSafe Key 等是否满足已启用 Service 的要求
-npx @mc/dsh-agent-kit-admin doctor --profile my-agent
+npx @baoyx/dsh-agent-kit-admin doctor --profile my-agent
 ```
 
 `setup` 的流程：选择 Profile → 勾选要启用的 Service → 安装缺少的 dws → 逐个配置 → 预览 diff 并确认写入 → 自动运行 `doctor`。
@@ -343,7 +343,7 @@ npx @mc/dsh-agent-kit-admin doctor --profile my-agent
 - 钉钉：固定 `user` 身份；未登录时可以拉起 `dws auth login`，可配置默认目标与 `dryRun`。
 - 通知：固定发往钉钉，钉钉行未启用时会提示。
 
-`setup` 只会修改 Profile 目录下的 `cordis.patch.yml`；`doctor` 只读，不修改任何文件，`--json` 输出机器可读的体检报告，可接入 CI。`doctor` 的 `agent-kit-notify.channel` 检查在所选渠道的行未启用时失败。两者都会在 `$DSH_HOME/profiles` 下扫描带有基础包（bundles 里含 `@mc/dsh-agent-kit`）的 Profile；只有一个候选时自动选中，有多个时需要 `--profile` 指定。
+`setup` 只会修改 Profile 目录下的 `cordis.patch.yml`；`doctor` 只读，不修改任何文件，`--json` 输出机器可读的体检报告，可接入 CI。`doctor` 的 `agent-kit-notify.channel` 检查在所选渠道的行未启用时失败。两者都会在 `$DSH_HOME/profiles` 下扫描带有基础包（bundles 里含 `@baoyx/dsh-agent-kit`）的 Profile；只有一个候选时自动选中，有多个时需要 `--profile` 指定。
 
 ### 设置页
 
@@ -369,11 +369,11 @@ Profile 中装了 admin 包并启动后，dsh Web「设置 → Agent Kit」里�
 }
 ```
 
-清单模块必须无副作用（不要在顶层连接网络、读取环境），默认导出一个或一组条目。条目类型与 `defineEntry`（只做类型推断，原样返回参数）从 `@mc/dsh-agent-kit-admin/entry` 导入，业务包把 admin 包加到 `devDependencies` 即可：
+清单模块必须无副作用（不要在顶层连接网络、读取环境），默认导出一个或一组条目。条目类型与 `defineEntry`（只做类型推断，原样返回参数）从 `@baoyx/dsh-agent-kit-admin/entry` 导入，业务包把 admin 包加到 `devDependencies` 即可：
 
 ```ts
 // src/agent-kit-entry.ts
-import { defineEntry } from '@mc/dsh-agent-kit-admin/entry'
+import { defineEntry } from '@baoyx/dsh-agent-kit-admin/entry'
 import { Config } from './config.js' // Schemastery schema
 
 export default defineEntry({
@@ -411,7 +411,7 @@ export function apply(ctx: Context) {
 
 - 保存业务行与基础包的行共用同一套版本冲突检测；只替换被保存的那一行，其他行的文本逐字节不变。
 - 校验失败时返回 `invalid_config` 和按字段的错误（`path` 为 `<行 id>.<字段>`），与基础包自己的行一致。
-- 业务行的密钥只写入 dsh 凭据文件（`$DSH_HOME/.credentials.yaml`），插件运行时用 `ctx.credentials.resolve(ref)` 或基础包导出的 `resolveSecretRef(ref)`（`@mc/dsh-agent-kit` 或 `@mc/dsh-agent-kit/secrets`）读取（环境变量优先）。
+- 业务行的密钥只写入 dsh 凭据文件（`$DSH_HOME/.credentials.yaml`），插件运行时用 `ctx.credentials.resolve(ref)` 或基础包导出的 `resolveSecretRef(ref)`（`@baoyx/dsh-agent-kit` 或 `@baoyx/dsh-agent-kit/secrets`）读取（环境变量优先）。
 - 业务行被停用时照常检查：配置错误记为警告，不让 `doctor` 因一个未启用的行失败；启用后记为失败。
 
 ## 路线图
@@ -420,7 +420,7 @@ export function apply(ctx: Context) {
 - [x] 四个 Service 的首个实现与测试
 - [x] 钉钉 user 推送与通知（`ctx.dingtalk`、`ctx.notify`）
 - [x] 渠道登录状态与设备流登录（`status()` / `login()` / `logout()`）
-- [x] 运维工具拆分为可选的 `@mc/dsh-agent-kit-admin`
+- [x] 运维工具拆分为可选的 `@baoyx/dsh-agent-kit-admin`
 - [ ] 发布 `0.2.0` 到 npm
 - [ ] 通用的「Agent 执行 → Jev 校验 → 升级」级联 helper
 - [ ] 钉钉卡片消息

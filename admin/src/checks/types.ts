@@ -1,4 +1,4 @@
-import type { KeyStoreOptions } from '@mc/dsh-agent-kit/secrets'
+import type { KeyStoreOptions } from '@baoyx/dsh-agent-kit/secrets'
 import type { KitId, KitSnapshot, ProfileInfo } from '../profile/index.js'
 
 export type CheckStatus = 'pass' | 'warn' | 'fail' | 'skip'

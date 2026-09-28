@@ -15,7 +15,7 @@ export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
 # 用 dsh 搭一个常驻 Agent Worker
 
 <Notice title="更新说明">
-本文写于 2026-09-24，示例已按 2026-09-28 的接口更新。`doctor`、`setup` 与设置页在可选包 `@mc/dsh-agent-kit-admin`；群内 @ 消息的接收、未命中记录及代码任务另见 <a href={link('/blog/dingtalk-group-routing/')}>这次的变更说明</a>。
+本文写于 2026-09-24，示例已按 2026-09-28 的接口更新。`doctor`、`setup` 与设置页在可选包 `@baoyx/dsh-agent-kit-admin`；群内 @ 消息的接收、未命中记录及代码任务另见 <a href={link('/blog/dingtalk-group-routing/')}>这次的变更说明</a>。
 </Notice>
 
 设想这样一个场景：业务系统通过 WebSocket 不断推送事件，大部分事件可以按规则处理，但有一部分需要「看懂了再说」——判断它属于哪一类、是不是异常。判断完成后，可疑的事件要推送到钉钉，让人来复核。
@@ -28,7 +28,7 @@ export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
-import { isKitError, noul, untrusted } from '@mc/dsh-agent-kit'
+import { isKitError, noul, untrusted } from '@baoyx/dsh-agent-kit'
 
 export const name = 'my-agent'
 export const inject = ['agentWs', 'notify', 'agentTasks', 'jev']
@@ -38,7 +38,7 @@ export function apply(ctx: Context, config: Config) {
 }
 ```
 
-这四个业务包用到的 Service 默认禁用；通知还需要启用钉钉 Service。用 `npx @mc/dsh-agent-kit-admin setup` 勾选启用，或者在 Profile 的 `cordis.patch.yml` 里写上对应的几行。
+这四个业务包用到的 Service 默认禁用；通知还需要启用钉钉 Service。用 `npx @baoyx/dsh-agent-kit-admin setup` 勾选启用，或者在 Profile 的 `cordis.patch.yml` 里写上对应的几行。
 
 ## 第一步：连接
 
@@ -140,7 +140,7 @@ await conn.send({ id: frame.id, result: draft.output, verified: answers.wrong.no
 
 ## 上线之前
 
-- 运行 `npx @mc/dsh-agent-kit-admin doctor`：它会检查 Node 与 dsh 版本、dws 是否登录、provider 是否安装、Key 从哪里来，未通过的项附上修复命令。
+- 运行 `npx @baoyx/dsh-agent-kit-admin doctor`：它会检查 Node 与 dsh 版本、dws 是否登录、provider 是否安装、Key 从哪里来，未通过的项附上修复命令。
 - 打开 dsh Web 的「设置 → Agent Kit」：已展示的 Service 和业务插件卡片的运行状态、检查结果一目了然；通知 Service 卡片不在页面中显示。
 - 把 `agent-kit/service-failed` 事件接到你的监控上：任何一个 Service 进入 `failed`，都能第一时间知道。
 

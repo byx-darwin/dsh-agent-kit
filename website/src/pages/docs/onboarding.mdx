@@ -6,15 +6,15 @@ import CopyCommand from '../../components/CopyCommand.astro'
 import Notice from '../../components/Notice.astro'
 import Figure from '../../components/Figure.astro'
 
-<Base title="配置引导" description="可选的运维工具 @mc/dsh-agent-kit-admin：用 doctor 检查、用 setup 交互式配置，或在 dsh Web 的设置页里查看状态、启停 Service、修改配置与保存密钥。">
+<Base title="配置引导" description="可选的运维工具 @baoyx/dsh-agent-kit-admin：用 doctor 检查、用 setup 交互式配置，或在 dsh Web 的设置页里查看状态、启停 Service、修改配置与保存密钥。">
 
 <p class="eyebrow">配置引导</p>
 
 # doctor、setup 与设置页
 
-本页介绍的都来自可选的运维工具 **`@mc/dsh-agent-kit-admin`**，不在基础包 `@mc/dsh-agent-kit` 中。业务包不需要依赖它；不装它时，五类能力照常工作，直接编辑 `cordis.patch.yml` 即可。需要时把它加入 Profile：
+本页介绍的都来自可选的运维工具 **`@baoyx/dsh-agent-kit-admin`**，不在基础包 `@baoyx/dsh-agent-kit` 中。业务包不需要依赖它；不装它时，五类能力照常工作，直接编辑 `cordis.patch.yml` 即可。需要时把它加入 Profile：
 
-<CopyCommand command="dsh plugin --profile my-agent add @mc/dsh-agent-kit @mc/dsh-agent-kit-admin" npm />
+<CopyCommand command="dsh plugin --profile my-agent add @baoyx/dsh-agent-kit @baoyx/dsh-agent-kit-admin" npm />
 
 admin 包以常驻行 `agent-kit-admin` 注册（`ctx.agentKitAdmin`，即设置页调用的服务端接口），不影响基础包各行的启停。
 
@@ -22,7 +22,7 @@ admin 包以常驻行 `agent-kit-admin` 注册（`ctx.agentKitAdmin`，即设置
 
 ## doctor：检查
 
-<CopyCommand command="npx @mc/dsh-agent-kit-admin doctor --profile my-agent" />
+<CopyCommand command="npx @baoyx/dsh-agent-kit-admin doctor --profile my-agent" />
 
 - 只读，不修改任何文件，也不需要启动 dsh。
 - 只检查已启用 Service 需要的项，每项显示通过、警告、失败或跳过，未通过的项附一条修复命令。
@@ -32,9 +32,9 @@ admin 包以常驻行 `agent-kit-admin` 注册（`ctx.agentKitAdmin`，即设置
 
 ## setup：交互式配置
 
-<CopyCommand command="npx @mc/dsh-agent-kit-admin setup --profile my-agent" />
+<CopyCommand command="npx @baoyx/dsh-agent-kit-admin setup --profile my-agent" />
 
-1. 选择 Profile。Profile 没装基础包时，会提示要执行的 `dsh plugin --profile <名字> add @mc/dsh-agent-kit @mc/dsh-agent-kit-admin`。
+1. 选择 Profile。Profile 没装基础包时，会提示要执行的 `dsh plugin --profile <名字> add @baoyx/dsh-agent-kit @baoyx/dsh-agent-kit-admin`。
 2. 多选要启用的 Service，已启用的默认勾选。
 3. 安装缺少的 dws：启用了钉钉、而 `dws` 不在 `PATH` 中时，展示将要运行的安装命令并请你确认。跳过或安装失败时只打印手动命令。
 4. 逐个配置，当前值作为默认值：
@@ -73,7 +73,7 @@ Profile 中装了 admin 包时，启动后进入 dsh Web 的「设置 → Agent 
 业务包可以把自己的 loader 行登记进来：设置页多出一张同样的卡片（启用开关、运行状态、检查结果、配置表单和密钥），`doctor` 也会列出它的检查，`scope` 为该行的 id。
 
 - 登记方式有两种：在业务包 `package.json` 的 `dsh.agentKit.entries` 里声明无副作用的清单模块；或在插件里调用 `ctx.agentKitAdmin.registerEntry(...)`。推荐用清单——业务插件没启用、配置有误或启动失败时，卡片和检查照样出现，而这正是最需要它们的时候。
-- 条目类型与 `defineEntry` 从 `@mc/dsh-agent-kit-admin/entry` 导入（`defineEntry` 只做类型推断，业务包把 admin 包放进 devDependencies 即可）。运行时登记的插件要 inject `agentKitAdmin`，因此 Profile 中必须装有 admin 包。
+- 条目类型与 `defineEntry` 从 `@baoyx/dsh-agent-kit-admin/entry` 导入（`defineEntry` 只做类型推断，业务包把 admin 包放进 devDependencies 即可）。运行时登记的插件要 inject `agentKitAdmin`，因此 Profile 中必须装有 admin 包。
 - 保存任何一行，只替换那一行的文本；其他行（包括注释和格式）逐字节不变，并与基础包的行共用冲突检测。
 - 业务行的密钥只写入 dsh 凭据文件；密钥名可以取自配置（例如 `tokenEnv`），保存新配置后跟随新名字。
 - 业务行可登记 `kind: 'dingtalk-target'` 字段：按名称搜索当前 dws 账号可见的群或个人，人工选择后只保存稳定 ID。钉钉卡片的群消息接收路由与此发送目标互不绑定。

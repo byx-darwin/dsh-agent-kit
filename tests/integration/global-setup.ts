@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 export default function setup() {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
   execFileSync(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'), '-p', join(root, 'tsconfig.build.json')], { stdio: 'inherit' })
-  const link = join(root, 'node_modules/@mc/dsh-agent-kit')
+  const link = join(root, 'node_modules/@baoyx/dsh-agent-kit')
   mkdirSync(dirname(link), { recursive: true })
   if (!existsSync(link) && !isSymlink(link)) {
     // Windows 的目录 symlink 需要开发者模式/管理员权限；junction 不需要，

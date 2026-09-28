@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 假 dws：供 @mc/dsh-agent-kit/testing 与本包测试使用，输出结构来自录制的真实 dws 输出（tests/fixtures/dws）。
+// 假 dws：供 @baoyx/dsh-agent-kit/testing 与本包测试使用，输出结构来自录制的真实 dws 输出（tests/fixtures/dws）。
 // 场景从 $DWS_CONFIG_DIR/fake-dws.json 读取（DWS_CONFIG_DIR 在子进程环境变量白名单中），
 // 每次调用的参数追加写入 $DWS_CONFIG_DIR/calls.jsonl。
 //

@@ -3,7 +3,7 @@ import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { KIT_ENTRIES, listProfiles, locateProfile, previewKitEntries, readKitEntries, readPatchEntries, resolveDshHome, writeKitEntries, writePatchEntries, type EntryValidator } from '../../src/profile/index.js'
-import { isKitError } from '@mc/dsh-agent-kit'
+import { isKitError } from '@baoyx/dsh-agent-kit'
 
 let home: string
 let profileDir: string
@@ -27,7 +27,7 @@ beforeEach(() => {
   mkdirSync(profileDir, { recursive: true })
   patchFile = join(profileDir, 'cordis.patch.yml')
   writeFileSync(patchFile, ORIGINAL)
-  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@mc/dsh-agent-kit'], patchReload: 'live' } } }))
+  writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@baoyx/dsh-agent-kit'], patchReload: 'live' } } }))
   mkdirSync(join(home, 'profiles', 'other'))
   writeFileSync(join(home, 'profiles', 'other', 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }))
 })

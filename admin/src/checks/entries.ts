@@ -1,5 +1,5 @@
 import { validateEntryConfig, type EntryCheckResult, type RegisteredEntry } from '../admin/entry.js'
-import { redact } from '@mc/dsh-agent-kit'
+import { redact } from '@baoyx/dsh-agent-kit'
 import type { CheckContext, CheckResult } from './types.js'
 
 /**

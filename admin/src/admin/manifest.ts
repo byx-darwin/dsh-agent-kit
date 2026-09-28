@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { CheckResult } from '../checks/types.js'
-import { redact } from '@mc/dsh-agent-kit'
+import { redact } from '@baoyx/dsh-agent-kit'
 import { KIT_PACKAGE, type ProfileInfo } from '../profile/locate.js'
 import { assertEntry, type AgentKitEntry } from './entry.js'
 

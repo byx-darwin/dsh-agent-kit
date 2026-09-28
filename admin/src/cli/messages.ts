@@ -5,7 +5,7 @@ export const USAGE = `用法：
 export const ICON = { pass: '✓', warn: '!', fail: '✗', skip: '-' } as const
 
 export function noProfile(home: string): string {
-  return `在 ${home} 中没有安装 @mc/dsh-agent-kit 的 Profile；请用 --profile 指定，或先运行 dsh plugin --profile <名字> add @mc/dsh-agent-kit @mc/dsh-agent-kit-admin\n`
+  return `在 ${home} 中没有安装 @baoyx/dsh-agent-kit 的 Profile；请用 --profile 指定，或先运行 dsh plugin --profile <名字> add @baoyx/dsh-agent-kit @baoyx/dsh-agent-kit-admin\n`
 }
 
 export function multipleProfiles(names: string[]): string {
@@ -34,7 +34,7 @@ export const SOME_CHECKS_FAILED = '存在未通过的检查项，请按提示修
 // ---- setup ----
 
 export function profileMissingKit(name: string): string {
-  return `Profile ${name} 未安装本包，请先运行：dsh plugin --profile ${name} add @mc/dsh-agent-kit @mc/dsh-agent-kit-admin\n`
+  return `Profile ${name} 未安装本包，请先运行：dsh plugin --profile ${name} add @baoyx/dsh-agent-kit @baoyx/dsh-agent-kit-admin\n`
 }
 
 export const SELECT_PROFILE_MESSAGE = '选择 Profile'

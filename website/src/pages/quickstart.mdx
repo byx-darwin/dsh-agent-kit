@@ -9,7 +9,7 @@ import { withBasePath } from '../lib/paths'
 
 export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
 
-<Base title="快速开始" description="安装 dsh 与本包；可选安装运维工具 @mc/dsh-agent-kit-admin，用 setup 完成配置、用 doctor 验证，或在 dsh Web 的设置页里操作。">
+<Base title="快速开始" description="安装 dsh 与本包；可选安装运维工具 @baoyx/dsh-agent-kit-admin，用 setup 完成配置、用 doctor 验证，或在 dsh Web 的设置页里操作。">
 
 <p class="eyebrow">快速开始</p>
 
@@ -17,7 +17,7 @@ export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
 
 本页带你走完：准备环境 → 安装 → 用 `setup` 配置 → 用 `doctor` 验证 → 在 Web 设置页查看状态。每一步都可以单独回头重来。
 
-`setup`、`doctor` 与设置页来自可选的运维工具 `@mc/dsh-agent-kit-admin`。不装它也可以：五类能力的实现都在 `@mc/dsh-agent-kit` 中，直接编辑 Profile 的 `cordis.patch.yml` 启用并配置即可（见各 Service 文档的「配置」一节）。
+`setup`、`doctor` 与设置页来自可选的运维工具 `@baoyx/dsh-agent-kit-admin`。不装它也可以：五类能力的实现都在 `@baoyx/dsh-agent-kit` 中，直接编辑 Profile 的 `cordis.patch.yml` 启用并配置即可（见各 Service 文档的「配置」一节）。
 
 ## 环境要求
 
@@ -41,7 +41,7 @@ dsh --profile my-agent --from-default-profile web
 
 再把本包和 Agent provider 装进这个 Profile。subagent 包必须显式指定版本：它们的 `latest` 标签目前指向 `0.0.1-rc.1`，与 dsh 不匹配。
 
-<CopyCommand command="dsh plugin --profile my-agent add @mc/dsh-agent-kit @deepseek-ai/dsh-subagent-claude-code@0.1.5-rc.3" npm />
+<CopyCommand command="dsh plugin --profile my-agent add @baoyx/dsh-agent-kit @deepseek-ai/dsh-subagent-claude-code@0.1.5-rc.3" npm />
 
 最后装上你自己的业务包：
 
@@ -51,17 +51,17 @@ dsh plugin --profile my-agent add ./my-business-plugin-0.1.0.tgz
 
 如果要用下面的 `setup`、`doctor` 与设置页，再装上可选的运维工具：
 
-<CopyCommand command="dsh plugin --profile my-agent add @mc/dsh-agent-kit-admin" npm />
+<CopyCommand command="dsh plugin --profile my-agent add @baoyx/dsh-agent-kit-admin" npm />
 
 ## 用 setup 配置
 
 `setup` 是 admin 包自带的交互式配置工具，不需要启动 dsh：
 
-<CopyCommand command="npx @mc/dsh-agent-kit-admin setup --profile my-agent" />
+<CopyCommand command="npx @baoyx/dsh-agent-kit-admin setup --profile my-agent" />
 
 它会依次：
 
-1. **选择 Profile**：在 `$DSH_HOME/profiles` 下查找装了 `@mc/dsh-agent-kit` 的 Profile；只有一个时自动选中，有多个时让你选。
+1. **选择 Profile**：在 `$DSH_HOME/profiles` 下查找装了 `@baoyx/dsh-agent-kit` 的 Profile；只有一个时自动选中，有多个时让你选。
 2. **选择要启用的 Service**：已启用的默认勾选。
 3. **安装缺少的 dws**：启用了钉钉、而 `dws` 不在 `PATH` 中时，展示 `npm i -g dingtalk-workspace-cli@1.0.62` 并请你确认。
 4. **逐个配置**：当前值作为默认值。钉钉固定为 `user` 身份，可以按群名搜索群，未登录时可以拉起 `dws auth login`；通知固定发往钉钉；Agent 任务需要声明权限上限；Jev 的 Key 输入时不回显。
@@ -74,14 +74,14 @@ dsh plugin --profile my-agent add ./my-business-plugin-0.1.0.tgz
 
 `doctor` 只读，不修改任何文件。它只检查已启用 Service 需要的项，每个未通过的项都附一条修复命令：
 
-<CopyCommand command="npx @mc/dsh-agent-kit-admin doctor --profile my-agent" />
+<CopyCommand command="npx @baoyx/dsh-agent-kit-admin doctor --profile my-agent" />
 
 ```text
 Profile: my-agent
 
 [通用]
   ✓ Node.js 版本：当前 24.8.0，需要 ^22.19 或 >=24
-  ✓ 本包已加入 Profile：Profile my-agent 已包含 @mc/dsh-agent-kit
+  ✓ 本包已加入 Profile：Profile my-agent 已包含 @baoyx/dsh-agent-kit
   ✓ 配置修改即时生效：patchReload: live
 [dingtalk]
   ✓ 钉钉 配置：配置有效

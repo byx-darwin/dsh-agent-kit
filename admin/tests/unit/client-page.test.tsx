@@ -431,7 +431,7 @@ describe('AGENT_KIT_REMOTE descriptors (issue #3)', () => {
       for (const p of d.parameters) {
         const codec = p.codec as { mode: string; typeSymbol: string; schema: { parse(v: unknown): unknown }; create(): { parse(v: unknown): unknown } }
         expect(codec.mode).toBe('strict')
-        expect(codec.typeSymbol).toBe(`@mc/dsh-agent-kit-admin#agentKitAdmin/${d.method}:${p.name}`)
+        expect(codec.typeSymbol).toBe(`@baoyx/dsh-agent-kit-admin#agentKitAdmin/${d.method}:${p.name}`)
         // 0.1.5：codec.schema.parse；0.1.7：codec.create().parse
         expect(codec.schema.parse({ a: 1 })).toEqual({ a: 1 })
         expect(codec.create().parse('x')).toBe('x')
