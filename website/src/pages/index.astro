@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro'
 import ServiceCard from '../components/ServiceCard.astro'
+import ChannelChoiceCard from '../components/ChannelChoiceCard.astro'
 import CopyCommand from '../components/CopyCommand.astro'
 import { SITE } from '../lib/site'
 import { SERVICES } from '../data/services'
@@ -9,6 +10,8 @@ import { withBasePath } from '../lib/paths'
 import { softwareJsonLd } from '../lib/jsonld'
 
 const base = import.meta.env.BASE_URL
+const agentWs = SERVICES.find((s) => s.id === 'agentWs')!
+const remainingServices = SERVICES.filter((s) => !['agentWs', 'dingtalk', 'feishu'].includes(s.id))
 
 const patchExample = `- id: agent-kit-ws
   disabled: false
@@ -69,10 +72,13 @@ export function apply(ctx: Context, config: Config) {
   </section>
 
   <section>
-    <h2>六个 Service</h2>
+    <h2>五类能力</h2>
+    <p>底层由六个 Cordis Service 实现；其中钉钉与飞书是同一个“渠道适配”位置的两种实现，通知配置时二选一。</p>
     <div class="grid-2">
+      <ServiceCard numeral={agentWs.numeral} verb={agentWs.verb} name={`${agentWs.name} · ${agentWs.context}`} summary={agentWs.summary} href={`/docs/${agentWs.slug}`} />
+      <ChannelChoiceCard />
       {
-        SERVICES.map((s) => (
+        remainingServices.map((s) => (
           <ServiceCard numeral={s.numeral} verb={s.verb} name={`${s.name} · ${s.context}`} summary={s.summary} href={`/docs/${s.slug}`} />
         ))
       }
@@ -93,7 +99,7 @@ export function apply(ctx: Context, config: Config) {
   <section class="narrow">
     <h2>按需启用</h2>
     <p>
-      六个 Service 在本包的 bundle 中以禁用状态注册。只有在 Profile 的 <code>cordis.patch.yml</code> 中启用的 Service 才会加载并校验配置；未启用的 Service 不影响其他部分。
+      六个实现 Service 在本包的 bundle 中以禁用状态注册。只有在 Profile 的 <code>cordis.patch.yml</code> 中启用的 Service 才会加载并校验配置；使用通知时，钉钉与飞书渠道选其一即可。
     </p>
     <pre><code>{patchExample}</code></pre>
     <p>装了可选的运维工具 <code>@mc/dsh-agent-kit-admin</code> 时，也可以用 <code>setup</code> 交互式生成这段配置，或在 dsh Web 的设置页里直接勾选。</p>

@@ -26,16 +26,16 @@ const enable = `# Profile 的 cordis.patch.yml
     defaultTarget: { chatId: cidxxxx }`
 ---
 
-<Base title="架构" description="dsh-agent-kit 如何挂进 DeepSeek Harness：两个包、bundle patch 层、默认禁用的六个 Service、可选 admin 包中常驻的设置服务，以及业务包如何接入。" wide>
+<Base title="架构" description="dsh-agent-kit 如何挂进 DeepSeek Harness：五类能力、六个实现 Service、二选一的通知渠道、bundle patch 层与可选 admin 包。" wide>
   <div class="narrow">
     <p class="eyebrow">架构</p>
-    <h1>一个库，六个 Service，一层 dsh</h1>
+    <h1>一个库，五类能力，一层 dsh</h1>
     <p class="lead">
-      <code>@mc/dsh-agent-kit</code> 是一组 DeepSeek Harness（dsh）插件 Service。业务包通过 cordis 的 inject 使用它们，自己只写协议、路由、模板和流程。运维工具放在另一个可选的包 <code>@mc/dsh-agent-kit-admin</code> 中。
+      <code>@mc/dsh-agent-kit</code> 是一组 DeepSeek Harness（dsh）插件 Service。它向业务包提供五类能力；底层共有六个 Service，因为“渠道适配”分别有钉钉和飞书两种实现，通知配置时二选一。业务包通常只 inject <code>notify</code>，自己只写协议、路由、模板和流程。
     </p>
   </div>
 
-  <Figure src="/architecture.svg" alt="dsh-agent-kit 架构图：业务包在上，dsh-agent-kit 的六个 Service 在中间，其中五个连接外部系统，通知渠道转发给钉钉或飞书中的一个，可选的 admin 包提供设置页与命令行，dsh 在最下层" caption="业务包 → dsh-agent-kit → dsh；通知渠道把消息转发给当前渠道（钉钉或飞书），其余 Service 各自连接一个外部系统；设置页与 doctor / setup 在可选的 admin 包中。" width={960} />
+  <Figure src="/architecture.svg" alt="dsh-agent-kit 架构图：业务包在上，dsh-agent-kit 的五类能力在中间，通知渠道从钉钉和飞书中选择一个适配器，可选的 admin 包提供设置页与命令行，dsh 在最下层" caption="业务包 → dsh-agent-kit → dsh；业务只面向 notify，底层通知渠道在钉钉与飞书适配器中二选一；设置页与 doctor / setup 在可选的 admin 包中。" width={960} />
 
   <div class="narrow">
     <h2>两个包</h2>
@@ -43,7 +43,7 @@ const enable = `# Profile 的 cordis.patch.yml
       <table>
         <thead><tr><th>包</th><th>作用</th><th>谁依赖它</th></tr></thead>
         <tbody>
-          <tr><td><code>@mc/dsh-agent-kit</code></td><td>六个 Service，以及 <code>/ws</code>、<code>/dingtalk</code>、<code>/feishu</code>、<code>/notify</code>、<code>/agent-tasks</code>、<code>/jev</code>、<code>/secrets</code>、<code>/testing</code> 子路径。没有命令行，也没有设置页</td><td>业务包（peer 依赖）</td></tr>
+          <tr><td><code>@mc/dsh-agent-kit</code></td><td>五类能力（由六个 Service 实现），以及 <code>/ws</code>、<code>/dingtalk</code>、<code>/feishu</code>、<code>/notify</code>、<code>/agent-tasks</code>、<code>/jev</code>、<code>/secrets</code>、<code>/testing</code> 子路径。没有命令行，也没有设置页</td><td>业务包（peer 依赖）</td></tr>
           <tr><td><code>@mc/dsh-agent-kit-admin</code></td><td>可选的运维工具：<code>dsh-agent-kit doctor</code> / <code>setup</code> 命令行、dsh Web「设置 → Agent Kit」页、<code>agentKitAdmin</code> 服务与业务包设置入口的登记（<code>@mc/dsh-agent-kit-admin/entry</code>）</td><td>运维按需加入 Profile；业务包不依赖它</td></tr>
         </tbody>
       </table>
@@ -73,11 +73,11 @@ const enable = `# Profile 的 cordis.patch.yml
       </table>
     </div>
     <p>
-      六个 Service 默认禁用：dsh 不会导入禁用行的模块，也不会校验它的配置，所以未启用的 Service 缺少配置不影响启动。在 Profile 的 <code>cordis.patch.yml</code> 中按 id 启用即可；按 id 修改 <code>config</code> 时整段替换，不与 bundle 中的值合并。
+      六个实现 Service 默认禁用：dsh 不会导入禁用行的模块，也不会校验它的配置。使用通知时，启用 <code>notify</code> 和一个渠道适配器（<code>dingtalk</code> 或 <code>feishu</code>）即可。在 Profile 的 <code>cordis.patch.yml</code> 中按 id 启用；按 id 修改 <code>config</code> 时整段替换，不与 bundle 中的值合并。
     </p>
     <pre><code>{enable}</code></pre>
     <p>
-      admin 包的常驻行 <code>agent-kit-admin</code> 很轻，不连接任何外部服务。它挂载 <code>AgentKitAdmin</code>（dsh Web 设置页调用的服务端接口），并让 dsh 发现 admin 包的前端模块，也就是「设置 → Agent Kit」页。它不影响基础包各行的启停；不装 admin 包时没有这一行，六个 Service 照常工作。
+      admin 包的常驻行 <code>agent-kit-admin</code> 很轻，不连接任何外部服务。它挂载 <code>AgentKitAdmin</code>（dsh Web 设置页调用的服务端接口），并让 dsh 发现 admin 包的前端模块，也就是「设置 → Agent Kit」页。它不影响基础包各行的启停；不装 admin 包时没有这一行，五类能力照常工作。
     </p>
 
     <h2>业务包如何接入</h2>

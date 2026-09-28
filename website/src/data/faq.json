@@ -1,6 +1,6 @@
 [
   {
-    "question": "为什么六个 Service 默认都是禁用的？",
+    "question": "为什么各个 Service 默认都是禁用的？",
     "answer": "未启用的 Service 不会被加载，也不会校验配置，所以只用其中一两个时，不需要为其余的准备配置或环境变量。在 Profile 的 cordis.patch.yml 中按 id 启用即可；装了可选的 @mc/dsh-agent-kit-admin 时，也可以用 setup 或设置页勾选。"
   },
   {
@@ -21,7 +21,7 @@
   },
   {
     "question": "一定要装 @mc/dsh-agent-kit-admin 吗？",
-    "answer": "不需要。六个 Service 都在 @mc/dsh-agent-kit 里，业务包也只依赖它；配置直接写在 Profile 的 cordis.patch.yml 中即可。admin 包是可选的运维工具：doctor 检查、setup 交互式配置、dsh Web「设置 → Agent Kit」页，以及业务包设置入口的登记。需要时用 dsh plugin --profile <名字> add @mc/dsh-agent-kit-admin 加入 Profile。"
+    "answer": "不需要。五类能力的实现都在 @mc/dsh-agent-kit 里，业务包也只依赖它；配置直接写在 Profile 的 cordis.patch.yml 中即可。admin 包是可选的运维工具：doctor 检查、setup 交互式配置、dsh Web「设置 → Agent Kit」页，以及业务包设置入口的登记。需要时用 dsh plugin --profile <名字> add @mc/dsh-agent-kit-admin 加入 Profile。"
   },
   {
     "question": "claude-code 任务报 unsupported_permissions？",

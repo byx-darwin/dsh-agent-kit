@@ -47,10 +47,10 @@ describe('config tables', () => {
     expect(SERVICES.map((s) => [s.numeral, s.id])).toEqual([
       ['壹', 'agentWs'],
       ['贰', 'dingtalk'],
-      ['叁', 'feishu'],
-      ['肆', 'notify'],
-      ['伍', 'agentTasks'],
-      ['陆', 'jev'],
+      ['贰', 'feishu'],
+      ['叁', 'notify'],
+      ['肆', 'agentTasks'],
+      ['伍', 'jev'],
     ])
     for (const s of SERVICES) expect(s.errors.length).toBeGreaterThan(0)
   })

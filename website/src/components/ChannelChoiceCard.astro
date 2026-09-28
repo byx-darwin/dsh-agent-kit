@@ -1,0 +1,51 @@
+---
+import { withBasePath } from '../lib/paths'
+
+const base = import.meta.env.BASE_URL
+---
+
+<article class="service-card" aria-labelledby="channel-choice-title">
+  <span class="kicker">贰 · 渠道适配（二选一）</span>
+  <span class="name" id="channel-choice-title">钉钉 / 飞书渠道</span>
+  <span class="context"><code>ctx.dingtalk</code> / <code>ctx.feishu</code></span>
+  <span class="summary">通知配置选择一个渠道适配器；业务代码通常只调用 <code>ctx.notify</code>，无需感知当前使用钉钉还是飞书。</span>
+  <span class="links">
+    <a href={withBasePath(base, '/docs/dingtalk')}>钉钉文档</a>
+    <span aria-hidden="true">·</span>
+    <a href={withBasePath(base, '/docs/feishu')}>飞书文档</a>
+  </span>
+</article>
+
+<style>
+  .service-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: var(--card);
+    border-radius: 6px;
+    padding: 16px;
+    color: var(--ink);
+  }
+  .kicker {
+    font-family: var(--serif);
+    font-size: 13px;
+    color: var(--accent);
+  }
+  .name {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 18px;
+  }
+  .context,
+  .summary {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--quote);
+  }
+  .links {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+    font-size: 14px;
+  }
+</style>

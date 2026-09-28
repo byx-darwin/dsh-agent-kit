@@ -10,7 +10,7 @@ export interface ServiceError {
   meaning: string
 }
 
-export type ServiceNumeral = '壹' | '贰' | '叁' | '肆' | '伍' | '陆'
+export type ServiceNumeral = '壹' | '贰' | '叁' | '肆' | '伍'
 
 export interface ServiceMeta {
   id: ServiceId
@@ -67,7 +67,7 @@ export const SERVICES: ServiceMeta[] = [
   {
     id: 'dingtalk',
     numeral: '贰',
-    verb: '推送',
+    verb: '渠道',
     name: '钉钉推送',
     context: 'ctx.dingtalk',
     slug: 'dingtalk',
@@ -102,8 +102,8 @@ export const SERVICES: ServiceMeta[] = [
   },
   {
     id: 'feishu',
-    numeral: '叁',
-    verb: '推送',
+    numeral: '贰',
+    verb: '渠道',
     name: '飞书推送',
     context: 'ctx.feishu',
     slug: 'feishu',
@@ -137,7 +137,7 @@ export const SERVICES: ServiceMeta[] = [
   },
   {
     id: 'notify',
-    numeral: '肆',
+    numeral: '叁',
     verb: '通知',
     name: '通知渠道',
     context: 'ctx.notify',
@@ -160,7 +160,7 @@ export const SERVICES: ServiceMeta[] = [
   },
   {
     id: 'agentTasks',
-    numeral: '伍',
+    numeral: '肆',
     verb: '委托',
     name: 'Agent 任务',
     context: 'ctx.agentTasks',
@@ -193,7 +193,7 @@ export const SERVICES: ServiceMeta[] = [
   },
   {
     id: 'jev',
-    numeral: '陆',
+    numeral: '伍',
     verb: '校验',
     name: 'Jev 判断',
     context: 'ctx.jev',
