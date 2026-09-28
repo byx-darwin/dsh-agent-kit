@@ -4,7 +4,7 @@
 
 构建常驻 Agent Worker 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件工具包：WebSocket 接入、钉钉 user 推送与通知、Claude Code / Codex 任务委托、TypeSafe Jev（或本地 Laya）校验。
 
-> **状态：`0.2.0` 发布候选已通过测试，待发布到 npm。** 历史设计文档可能包含已移除的方案，以当前代码和官网文档为准。
+> **状态：`0.2.0` 已发布到 npm：[`@baoyx/dsh-agent-kit`](https://www.npmjs.com/package/@baoyx/dsh-agent-kit) 与 [`@baoyx/dsh-agent-kit-admin`](https://www.npmjs.com/package/@baoyx/dsh-agent-kit-admin)。** 历史设计文档可能包含已移除的方案，以当前代码和官网文档为准。
 
 ## 为什么需要它
 
@@ -417,11 +417,11 @@ export function apply(ctx: Context) {
 ## 路线图
 
 - [x] 完成设计文档中的「实施前需核实」项
-- [x] 四个 Service 的首个实现与测试
+- [x] 五个 Service 的首个实现与测试
 - [x] 钉钉 user 推送与通知（`ctx.dingtalk`、`ctx.notify`）
 - [x] 渠道登录状态与设备流登录（`status()` / `login()` / `logout()`）
 - [x] 运维工具拆分为可选的 `@baoyx/dsh-agent-kit-admin`
-- [ ] 发布 `0.2.0` 到 npm
+- [x] 发布 `0.2.0` 到 npm
 - [ ] 通用的「Agent 执行 → Jev 校验 → 升级」级联 helper
 - [ ] 钉钉卡片消息
 
