@@ -1,6 +1,6 @@
 import type { ClientContext, RemoteResult } from './host-types.js'
 
-export type KitId = 'agent-kit-ws' | 'agent-kit-dingtalk' | 'agent-kit-feishu' | 'agent-kit-notify' | 'agent-kit-agent-tasks' | 'agent-kit-jev'
+export type KitId = 'agent-kit-ws' | 'agent-kit-dingtalk' | 'agent-kit-notify' | 'agent-kit-agent-tasks' | 'agent-kit-jev'
 export type KeyTarget = 'keychain' | 'credentials'
 export interface CheckResult {
   id: string
@@ -13,7 +13,7 @@ export interface CheckResult {
 export interface EntryField {
   path: string
   label: string
-  kind?: 'text' | 'number' | 'boolean' | 'select' | 'list'
+  kind?: 'text' | 'number' | 'boolean' | 'select' | 'list' | 'dingtalk-target'
   options?: string[]
   placeholder?: string
   help?: string
@@ -60,6 +60,24 @@ export interface DingtalkAuthStatus {
   error?: string
   login?: DingtalkLoginState
 }
+export interface DingtalkUnmatchedMessage {
+  eventId: string
+  messageId?: string
+  conversationId: string
+  groupName?: string
+  senderOpenDingtalkId?: string
+  preview: string
+  receivedAt: number
+  timestamp?: number
+}
+export interface DingtalkRecipientCandidate {
+  name: string
+  target: { chatId: string } | { userId: string } | { openDingtalkId: string }
+}
+export interface DingtalkRecipientSearchResult {
+  candidates: DingtalkRecipientCandidate[]
+  complete: boolean
+}
 export interface AdminApi {
   status(): Promise<AdminStatus>
   saveService(id: string, enabled: boolean, config: Record<string, unknown> | null, expectedVersion: string): Promise<{ version: string }>
@@ -67,6 +85,8 @@ export interface AdminApi {
   setSecret(target: KeyTarget, value: string, ref?: string): Promise<{ configured: boolean; source?: string }>
   clearSecret(target: KeyTarget, ref?: string): Promise<{ configured: boolean; source?: string }>
   dingtalkAuth(): Promise<DingtalkAuthStatus>
+  dingtalkUnmatched(): Promise<DingtalkUnmatchedMessage[]>
+  dingtalkSearchRecipients(kind: 'group' | 'user', query: string): Promise<DingtalkRecipientSearchResult>
   dingtalkLogin(): Promise<DingtalkLoginState>
   dingtalkLoginCancel(): Promise<{ cancelled: true }>
   dingtalkLogout(): Promise<DingtalkAuthStatus>
@@ -107,6 +127,8 @@ export const AGENT_KIT_REMOTE = {
     method('setSecret', ['target', 'value', 'ref']),
     method('clearSecret', ['target', 'ref']),
     method('dingtalkAuth', []),
+    method('dingtalkUnmatched', []),
+    method('dingtalkSearchRecipients', ['kind', 'query']),
     method('dingtalkLogin', []),
     method('dingtalkLoginCancel', []),
     method('dingtalkLogout', []),
@@ -151,6 +173,8 @@ export function createAdminApi(ctx: ClientContext): AdminApi {
     setSecret: (target, value, ref) => unwrap(svc().setSecret!(target, value, ref)),
     clearSecret: (target, ref) => unwrap(svc().clearSecret!(target, ref)),
     dingtalkAuth: () => unwrap(svc().dingtalkAuth!()),
+    dingtalkUnmatched: () => unwrap(svc().dingtalkUnmatched!()),
+    dingtalkSearchRecipients: (kind, query) => unwrap(svc().dingtalkSearchRecipients!(kind, query)),
     dingtalkLogin: () => unwrap(svc().dingtalkLogin!()),
     dingtalkLoginCancel: () => unwrap(svc().dingtalkLoginCancel!()),
     dingtalkLogout: () => unwrap(svc().dingtalkLogout!()),

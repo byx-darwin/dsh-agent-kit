@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsPage } from '../../src/client/settings-page.js'
 import { AGENT_KIT_REMOTE, createAdminApi, type AdminApi, type AdminStatus } from '../../src/client/remote.js'
 import { en, zh } from '../../src/client/locale.js'
+import { WsConfig } from '../../../src/ws/config.js'
 
 // vitest.config.ts 未开启 `test.globals`，@testing-library/react 的自动清理依赖全局 afterEach，
 // 因此这里显式注册，避免上一个用例渲染的 DOM 残留导致下一个用例里出现重复元素。
@@ -39,6 +40,8 @@ function fakeApi(
     setSecret: vi.fn(async () => ({ configured: true, source: 'credentials' })),
     clearSecret: vi.fn(async () => ({ configured: false })),
     dingtalkAuth: vi.fn(async () => ({ installed: true, authenticated: false })),
+    dingtalkUnmatched: vi.fn(async () => []),
+    dingtalkSearchRecipients: vi.fn(async () => ({ candidates: [], complete: true })),
     dingtalkLogin: vi.fn(async () => ({ state: 'waiting' as const })),
     dingtalkLoginCancel: vi.fn(async () => ({ cancelled: true as const })),
     dingtalkLogout: vi.fn(async () => ({ installed: true, authenticated: false })),
@@ -46,6 +49,41 @@ function fakeApi(
 }
 
 describe('SettingsPage', () => {
+  it('shows WebSocket defaults as editable values when the config omits them', async () => {
+    const api = fakeApi(status())
+    const defaults = WsConfig({})
+    render(<SettingsPage api={api} t={t} />)
+    const ping = await screen.findByRole('spinbutton', { name: zh['ws.pingIntervalMs']! }) as HTMLInputElement
+    const timeout = screen.getByRole('spinbutton', { name: zh['ws.readTimeoutMs']! }) as HTMLInputElement
+    expect(ping.value).toBe(String(defaults.pingIntervalMs))
+    expect(timeout.value).toBe(String(defaults.readTimeoutMs))
+
+    fireEvent.change(ping, { target: { value: '' } })
+    expect(ping.value).toBe('')
+    fireEvent.change(ping, { target: { value: '35000' } })
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} WebSocket` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-ws', true, {
+      pingIntervalMs: 35_000,
+      readTimeoutMs: defaults.readTimeoutMs,
+    }, 'v1'))
+  })
+
+  it('does not hard-code provider permissions in the shared Agent tasks form', async () => {
+    const s = status()
+    s.services[2] = { ...s.services[2]!, enabled: true, phase: 'active', config: {
+      workspaceDir: '/tmp/agent-tasks', declaredPermissions: { 'claude-code': 'read-only', codex: 'read-only' },
+    } }
+    const api = fakeApi(s)
+    render(<SettingsPage api={api} t={t} />)
+    expect(await screen.findByRole('textbox', { name: zh['agentTasks.workspaceDir']! })).toBeTruthy()
+    expect(screen.queryByText(/claude-code 权限上限/)).toBeNull()
+    expect(screen.queryByText(/codex 权限上限/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} Agent 任务` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-agent-tasks', true, {
+      workspaceDir: '/tmp/agent-tasks', declaredPermissions: { 'claude-code': 'read-only', codex: 'read-only' },
+    }, 'v1'))
+  })
+
   it('renders one card per service with health and failing checks', async () => {
     render(<SettingsPage api={fakeApi(status())} t={t} />)
     expect(await screen.findByText('WebSocket')).toBeTruthy()
@@ -54,15 +92,91 @@ describe('SettingsPage', () => {
     expect(screen.getByText(/设置 Key/)).toBeTruthy()
   })
 
+  it('hides the notification service card without changing its backend status', async () => {
+    const s = status()
+    s.services.push({ id: 'agent-kit-notify', title: '通知渠道', enabled: true, phase: 'active', health: null, config: { channel: 'dingtalk' } })
+    const api = fakeApi(s)
+    render(<SettingsPage api={api} t={t} />)
+    expect(await screen.findByText('WebSocket')).toBeTruthy()
+    expect(screen.queryByRole('region', { name: '通知渠道' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '保存 通知渠道' })).toBeNull()
+    expect((await api.status()).services.some((service) => service.id === 'agent-kit-notify')).toBe(true)
+  })
+
+  it('shows unmatched group names alongside stable IDs in the DingTalk card', async () => {
+    const s = status()
+    s.services[1] = { ...s.services[1]!, enabled: true, phase: 'active' }
+    const api = fakeApi(s)
+    api.dingtalkUnmatched = vi.fn(async () => [{ eventId: 'e1', conversationId: 'cidA', groupName: '研发群', preview: '待接入插件', receivedAt: 123 }])
+    render(<SettingsPage api={api} t={t} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh['dingtalk.unmatched.refresh']! }))
+    expect(await screen.findByText('研发群')).toBeTruthy()
+    expect(screen.getByText('cidA')).toBeTruthy()
+    expect(screen.getByText('待接入插件')).toBeTruthy()
+  })
+
+  it('saves a group-to-business-plugin route selected from unmatched messages', async () => {
+    const s = status()
+    s.services[1] = { ...s.services[1]!, enabled: true, phase: 'active', config: { identity: 'user' } }
+    s.services.push({ id: 'business-orders', title: '工单插件', enabled: true, phase: 'active', health: null, config: {}, registered: true })
+    const api = fakeApi(s)
+    api.dingtalkUnmatched = vi.fn(async () => [{ eventId: 'e1', conversationId: 'cidOrders', groupName: '工单群', preview: '待处理', receivedAt: 123 }])
+    render(<SettingsPage api={api} t={t} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh['dingtalk.routes.discover']! }))
+    fireEvent.click(await screen.findByRole('button', { name: '工单群 · cidOrders' }))
+    fireEvent.change(screen.getByRole('combobox', { name: zh['dingtalk.routes.plugin']! }), { target: { value: 'business-orders' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['dingtalk.routes.add']! }))
+    expect(screen.getByText('工单群')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} 钉钉` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-dingtalk', true, {
+      identity: 'user', groupRoutes: [{ conversationId: 'cidOrders', pluginId: 'business-orders' }],
+    }, 'v1'))
+  })
+
+  it('lets an arbitrary business card select a group or person as its forwarding target', async () => {
+    const s = status()
+    s.services.push({ id: 'business-orders', title: '工单插件', enabled: true, phase: 'active', health: null, config: {}, registered: true,
+      fields: [{ path: 'forwardTo', label: '工单转发对象', kind: 'dingtalk-target' }] })
+    const api = fakeApi(s)
+    api.dingtalkSearchRecipients = vi.fn(async (kind) => kind === 'group'
+      ? { candidates: [{ name: '工单群', target: { chatId: 'cidOrders' } }], complete: true }
+      : { candidates: [{ name: '张三', target: { userId: 'userZ' } }], complete: false })
+    render(<SettingsPage api={api} t={t} />)
+    fireEvent.change(await screen.findByRole('textbox', { name: '工单转发对象' }), { target: { value: '工单' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['recipient.search']! }))
+    fireEvent.click(await screen.findByRole('button', { name: '工单群 · cidOrders' }))
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} 工单插件` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('business-orders', true, { forwardTo: { chatId: 'cidOrders' } }, 'v1'))
+    fireEvent.change(screen.getByRole('combobox', { name: zh['recipient.kind']! }), { target: { value: 'user' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '工单转发对象' }), { target: { value: '张三' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['recipient.search']! }))
+    fireEvent.click(await screen.findByRole('button', { name: '张三 · userZ' }))
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} 工单插件` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenLastCalledWith('business-orders', true, { forwardTo: { userId: 'userZ' } }, 'v2'))
+  })
+
   it('enables a service and saves with the current version', async () => {
     const api = fakeApi(status())
     render(<SettingsPage api={api} t={t} />)
     const toggle = await screen.findByRole('switch', { name: /钉钉/ })
     fireEvent.click(toggle)
-    fireEvent.change(screen.getByLabelText(zh['dingtalk.identity']!), { target: { value: 'bot' } })
-    fireEvent.change(screen.getByLabelText(zh['dingtalk.robotCode']!), { target: { value: 'ding1' } })
     fireEvent.click(screen.getByRole('button', { name: `${zh.save} 钉钉` }))
-    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-dingtalk', true, expect.objectContaining({ identity: 'bot', robotCode: 'ding1' }), 'v1'))
+    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-dingtalk', true, expect.objectContaining({ identity: 'user' }), 'v1'))
+  })
+
+  it('hides fixed DingTalk fields without clearing existing config on save', async () => {
+    const s = status()
+    s.services[1] = { ...s.services[1]!, enabled: true, phase: 'active', config: { identity: 'user', defaultTarget: { chatId: 'cidLegacy' }, dryRun: true } }
+    const api = fakeApi(s)
+    render(<SettingsPage api={api} t={t} />)
+    expect(await screen.findByRole('button', { name: `${zh.save} 钉钉` })).toBeTruthy()
+    expect(screen.queryByText(/发送身份/)).toBeNull()
+    expect(screen.queryByText(/默认群 ID/)).toBeNull()
+    expect(screen.queryByText(/只演练不真实发送/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} 钉钉` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-dingtalk', true, {
+      identity: 'user', defaultTarget: { chatId: 'cidLegacy' }, dryRun: true,
+    }, 'v1'))
   })
 
   it('shows a conflict message and reloads', async () => {
@@ -80,7 +194,7 @@ describe('SettingsPage', () => {
     expect(screen.getByText(zh.conflict!)).toBeTruthy()
     // 且下一次保存应带上刷新后拿到的最新 version（而不是发生冲突时那个过期的 version）。
     fireEvent.click(screen.getByRole('button', { name: `${zh.save} WebSocket` }))
-    await waitFor(() => expect(api.saveService).toHaveBeenLastCalledWith('agent-kit-ws', true, {}, 'v2'))
+    await waitFor(() => expect(api.saveService).toHaveBeenLastCalledWith('agent-kit-ws', true, { pingIntervalMs: 30_000, readTimeoutMs: 75_000 }, 'v2'))
   })
 
   it('shows field errors from the server', async () => {
@@ -135,10 +249,10 @@ describe('SettingsPage', () => {
     render(<SettingsPage api={api} t={t} />)
     const saveButton = await screen.findByRole('button', { name: `${zh.save} WebSocket` })
     fireEvent.click(saveButton)
-    await waitFor(() => expect(api.saveService).toHaveBeenNthCalledWith(1, 'agent-kit-ws', true, {}, 'v1'))
+    await waitFor(() => expect(api.saveService).toHaveBeenNthCalledWith(1, 'agent-kit-ws', true, { pingIntervalMs: 30_000, readTimeoutMs: 75_000 }, 'v1'))
     await waitFor(() => expect((saveButton as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(saveButton)
-    await waitFor(() => expect(api.saveService).toHaveBeenNthCalledWith(2, 'agent-kit-ws', true, {}, 'v2'))
+    await waitFor(() => expect(api.saveService).toHaveBeenNthCalledWith(2, 'agent-kit-ws', true, { pingIntervalMs: 30_000, readTimeoutMs: 75_000 }, 'v2'))
   })
 
   it('does not poll for status after unmount', async () => {
@@ -327,7 +441,7 @@ describe('AGENT_KIT_REMOTE descriptors (issue #3)', () => {
       ['status', []],
       ['saveService', ['id', 'enabled', 'config', 'expectedVersion']],
       ['setSecret', ['target', 'value', 'ref']],
-      ['clearSecret', ['target', 'ref']], ['dingtalkAuth', []], ['dingtalkLogin', []], ['dingtalkLoginCancel', []], ['dingtalkLogout', []],
+      ['clearSecret', ['target', 'ref']], ['dingtalkAuth', []], ['dingtalkUnmatched', []], ['dingtalkSearchRecipients', ['kind', 'query']], ['dingtalkLogin', []], ['dingtalkLoginCancel', []], ['dingtalkLogout', []],
     ])
   })
 })
@@ -344,42 +458,11 @@ describe('English UI (issue #4)', () => {
     for (const title of ['WebSocket', 'DingTalk', 'Agent tasks', 'Jev judge', 'Biz']) expect(screen.getByRole('region', { name: title })).toBeTruthy()
     expect(screen.getByText(en.reloadDependents!.replace('{names}', 'Biz, Other'))).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Save DingTalk' })).toBeTruthy()
-    expect(screen.getByLabelText(en['dingtalk.identity']!)).toBeTruthy()
+    expect(screen.queryByText(/Sender identity|Default group ID|Dry run/)).toBeNull()
     // 除了服务端生成的检查文案（issue #4 已注明），页面上没有中文
     expect(screen.getByText(/^TypeSafe Key: 没有找到/)).toBeTruthy()
     const text = document.body.textContent!.replace(/没有找到|设置 Key/g, '')
     expect(text).not.toMatch(/[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]/)
-  })
-})
-
-describe('Feishu and notification channel cards', () => {
-  const withChannels = () => {
-    const s = status()
-    s.services.splice(2, 0,
-      { id: 'agent-kit-feishu', title: '飞书', enabled: true, phase: 'active', health: { status: 'ok', detail: 'ready' }, config: { identity: 'bot', defaultTarget: { chatId: 'oc_a' } } },
-      { id: 'agent-kit-notify', title: '通知渠道', enabled: true, phase: 'active', health: { status: 'ok', detail: 'channel: dingtalk' }, config: { channel: 'dingtalk' } },
-    )
-    return s
-  }
-
-  it('switches the notification channel and saves', async () => {
-    const api = fakeApi(withChannels())
-    render(<SettingsPage api={api} t={t} />)
-    const card = await screen.findByRole('region', { name: '通知渠道' })
-    fireEvent.change(within(card).getByLabelText(zh['notify.channel']!), { target: { value: 'feishu' } })
-    fireEvent.click(within(card).getByRole('button', { name: `${zh.save} 通知渠道` }))
-    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-notify', true, { channel: 'feishu' }, 'v1'))
-  })
-
-  it('edits the Feishu default target and keeps the kind when the id changes', async () => {
-    const api = fakeApi(withChannels())
-    render(<SettingsPage api={api} t={t} />)
-    const card = await screen.findByRole('region', { name: '飞书' })
-    fireEvent.change(within(card).getByLabelText(zh['feishu.targetKind']!), { target: { value: 'userId' } })
-    fireEvent.change(within(card).getByLabelText(zh['feishu.targetUserId']!), { target: { value: 'ou_me' } })
-    fireEvent.change(within(card).getByLabelText(zh['feishu.profile']!), { target: { value: 'prod' } })
-    fireEvent.click(within(card).getByRole('button', { name: `${zh.save} 飞书` }))
-    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-feishu', true, { identity: 'bot', defaultTarget: { userId: 'ou_me' }, profile: 'prod' }, 'v1'))
   })
 })
 
@@ -397,7 +480,7 @@ describe('DingTalk sign-in panel', () => {
     render(<SettingsPage api={api} t={t} />)
     expect(await screen.findByText(/张三 @ 示例公司 · 登录有效至 10-24 \d\d:30（访问凭证每 2 小时自动续期）/)).toBeTruthy()
     expect(screen.getByText(zh['dingtalk.auth.signedIn']!)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: zh['dingtalk.auth.login']! })).toBeNull()
+    expect(screen.getByRole('button', { name: zh['dingtalk.auth.relogin']! })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh['dingtalk.auth.logout']! }))
     await waitFor(() => expect(api.dingtalkLogout).toHaveBeenCalledOnce())
     expect(confirm).toHaveBeenCalled()
@@ -420,19 +503,13 @@ describe('DingTalk sign-in panel', () => {
     fireEvent.click(await screen.findByRole('button', { name: zh['dingtalk.auth.login']! }))
     expect(await screen.findByText('ABCD-EFGH')).toBeTruthy()
     expect((screen.getByRole('link', { name: zh['dingtalk.auth.open']! }) as HTMLAnchorElement).href).toContain('user_code=ABCD-EFGH')
+    const qr = await screen.findByRole('img', { name: zh['dingtalk.auth.qr']! }) as HTMLImageElement
+    expect(qr.src).toMatch(/^data:image\/svg\+xml,/)
     signedIn = true
     await act(async () => { await vi.advanceTimersByTimeAsync(3500) })
     expect(await screen.findByText(zh['dingtalk.auth.signedIn']!)).toBeTruthy()
     expect(screen.queryByText('ABCD-EFGH')).toBeNull()
     vi.useRealTimers()
-  })
-
-  it('is hidden for the webhook identity', async () => {
-    const api = fakeApi(status({ services: [{ id: 'agent-kit-dingtalk', title: '钉钉', enabled: true, phase: 'active', health: null, config: { identity: 'webhook' } }], checks: [] }))
-    render(<SettingsPage api={api} t={t} />)
-    await screen.findByRole('region', { name: '钉钉' })
-    expect(screen.queryByRole('region', { name: zh['dingtalk.auth.section']! })).toBeNull()
-    expect(api.dingtalkAuth).not.toHaveBeenCalled()
   })
 
   it('warns and offers sign-in when the login expires within 3 days', async () => {
@@ -441,8 +518,8 @@ describe('DingTalk sign-in panel', () => {
     api.dingtalkAuth = vi.fn(async () => ({ installed: true, authenticated: true, user: '张三', expiresAt: new Date().toISOString(), refreshExpiresAt: soon }))
     render(<SettingsPage api={api} t={t} />)
     expect(await screen.findByText(zh['dingtalk.auth.expiring']!)).toBeTruthy()
-    expect(screen.getByRole('button', { name: zh['dingtalk.auth.login']! })).toBeTruthy()
+    expect(screen.getByRole('button', { name: zh['dingtalk.auth.relogin']! })).toBeTruthy()
     expect(screen.getByRole('button', { name: zh['dingtalk.auth.logout']! })).toBeTruthy()
   })
-})
 
+})

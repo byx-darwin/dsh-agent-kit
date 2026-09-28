@@ -1,13 +1,13 @@
-/** 通知渠道：钉钉（dws）与飞书（lark-cli）。 */
-export type ChannelName = 'dingtalk' | 'feishu'
-export const CHANNEL_NAMES: readonly ChannelName[] = ['dingtalk', 'feishu']
+/** 通知渠道：钉钉（dws）。 */
+export type ChannelName = 'dingtalk'
+export const CHANNEL_NAMES: readonly ChannelName[] = ['dingtalk']
 
 /** 渠道的登录状态（实时检查 CLI 得到，不是缓存）。 */
 export interface ChannelStatus {
   channel: ChannelName
   /** 配置的发送身份。 */
   identity: string
-  /** 该身份当前能否发送：已登录（user）或应用 / 机器人可用（bot）。 */
+  /** 当前 user 身份是否已登录且可发送。 */
   online: boolean
   /** 登录的账号或应用，CLI 给出时才有。 */
   account?: string
@@ -30,7 +30,7 @@ export interface LoginSession {
   cancel(): void
 }
 
-/** CLI 未给出有效期时使用的默认值：钉钉与飞书的设备码都是 15 分钟。 */
+/** CLI 未给出有效期时使用的默认值：钉钉设备码为 15 分钟。 */
 export const DEFAULT_LOGIN_TTL_MS = 15 * 60_000
 
 /** 从 CLI 的 JSON 输出里宽松地取字段：先看 `data`，再看顶层。 */

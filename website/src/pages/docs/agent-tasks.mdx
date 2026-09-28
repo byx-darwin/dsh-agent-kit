@@ -31,14 +31,18 @@ const r = await ctx.agentTasks.run<Verdict>({
 // r: { sessionId, taskId, text, output: Verdict, durationMs }
 ```
 
+业务插件也可为代码任务传 `worktree: { repository: '/absolute/path/to/repo' }`。业务插件负责从自己的配置和消息规则中选定仓库；Agent Kit 不保存项目列表，也不根据群 ID 猜测项目。任务从仓库当前 `HEAD` 创建 `workspaceDir/<taskId>/` 工作树及 `agent-kit/task-<taskId>` 分支，返回 `result.worktree`（仓库、路径、分支）。该工作树不会自动删除、提交、推送或合并，供人工检查；原仓库有未提交或未跟踪改动时拒绝创建，避免遗漏这些改动。仓库必须是 Git 根目录，且与 `workspaceDir` 分离。
+
 `provider` 是 dsh 中已注册的 subagent provider 名称，例如 `claude-code`、`codex`。`ctx.subagents` 与子进程服务由 dsh 的 base bundle 提供，Profile 里只需安装对应的 provider 包。
 
 ### 隔离与权限
 
 - 每个任务在 `workspaceDir/<taskId>/` 下使用一个新建的空目录（权限 0700）作为 Agent 的工作目录，结束后删除；`keepWorkdir: true` 时保留，便于排查。
+- 指定 `worktree` 的任务例外：目录包含仓库代码并始终保留，代码改动只在该工作树中。工作目录不是文件系统沙箱；仍需由 provider 的原生沙箱/权限控制实际读写范围。
 - `permissions` 默认 `read-only`，可选 `workspace-write`，不提供更高档位。
 - 支持工具过滤的 provider：按 `toolAllowlist` 传入工具白名单，白名单之外的工具（包括 bash 和网络）都不可见。
 - 不支持工具过滤的 provider（claude-code、codex）：权限由 provider 实例自身的配置决定，必须在 `declaredPermissions` 中如实声明它的权限上限。未声明，或声明的上限高于本次请求的档位时，任务以 `unsupported_permissions` 失败。
+- `permissions` 是业务插件每次任务的申请值；Agent Kit 设置页不再预设某两个 provider。`declaredPermissions` 是部署 Profile 对 provider 原生权限的核验声明，不能由业务插件的一次请求替代；申请 `workspace-write` 也不能让原本只读的 provider 获得写权限。
 
 <Notice title="claude-code 可以声明为 read-only">
 已验证 claude-code 在默认的 `permissionMode: dontAsk` 下既不能执行命令也不能写文件，因此可以声明为 `declaredPermissions: { claude-code: read-only }`。如果你修改了 provider 的权限模式，请同步修改这里的声明。

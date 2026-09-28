@@ -15,7 +15,6 @@ export interface ChannelCli {
 
 export const CHANNEL_CLIS = {
   dingtalk: { bin: 'dws', package: 'dingtalk-workspace-cli', version: '1.0.62', title: '钉钉 CLI（dws）', next: 'dws auth login' },
-  feishu: { bin: 'lark-cli', package: '@larksuite/cli', version: '1.0.96', title: '飞书 CLI（lark-cli）', next: 'lark-cli config init（bot 身份）；user 身份再运行 lark-cli auth login' },
 } as const satisfies Record<string, ChannelCli>
 
 export type ChannelCliId = keyof typeof CHANNEL_CLIS

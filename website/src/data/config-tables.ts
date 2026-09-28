@@ -1,7 +1,6 @@
 // 由本包源码中的 schemastery schema 生成配置项表，避免网站与代码脱节。
 import { WsConfig } from '../../../src/ws/config'
 import { DingtalkConfig } from '../../../src/dingtalk/config'
-import { FeishuConfig } from '../../../src/feishu/config'
 import { NotifyConfig } from '../../../src/notify/config'
 import { AgentTasksConfig } from '../../../src/agent-tasks/config'
 import { JevConfig } from '../../../src/jev/service'
@@ -36,7 +35,6 @@ interface SchemaNode {
 const SCHEMAS: Record<ServiceId, SchemaNode> = {
   agentWs: WsConfig as unknown as SchemaNode,
   dingtalk: DingtalkConfig as unknown as SchemaNode,
-  feishu: FeishuConfig as unknown as SchemaNode,
   notify: NotifyConfig as unknown as SchemaNode,
   agentTasks: AgentTasksConfig as unknown as SchemaNode,
   jev: JevConfig as unknown as SchemaNode,

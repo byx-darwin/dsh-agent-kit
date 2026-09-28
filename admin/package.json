@@ -43,6 +43,7 @@
   "dependencies": {
     "@inquirer/prompts": "^7.10.1",
     "diff": "^8.0.4",
+    "qrcode": "^1.5.4",
     "yaml": "^2.9.1"
   },
   "peerDependencies": {
@@ -62,5 +63,8 @@
         "@deepseek-ai/dsh-client-locale"
       ]
     }
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6"
   }
 }

@@ -17,8 +17,8 @@ const ORIGINAL = `# 用户自己的注释
 - id: agent-kit-dingtalk
   disabled: false
   config:
-    identity: bot   # 行内注释
-    robotCode: ding1
+    identity: user   # 行内注释
+    timeoutMs: 15000
 `
 
 beforeEach(() => {
@@ -53,7 +53,7 @@ describe('patch file', () => {
   it('reads kit entries with defaults for absent rows', async () => {
     const snap = await readKitEntries(patchFile)
     expect(snap.version).toMatch(/^[0-9a-f]{64}$/)
-    expect(snap.entries['agent-kit-dingtalk']).toEqual({ enabled: true, config: { identity: 'bot', robotCode: 'ding1' } })
+    expect(snap.entries['agent-kit-dingtalk']).toEqual({ enabled: true, config: { identity: 'user', timeoutMs: 15000 } })
     expect(snap.entries['agent-kit-ws']).toEqual({ enabled: false, config: undefined })
   })
 
@@ -62,7 +62,7 @@ describe('patch file', () => {
     await writeKitEntries(
       patchFile,
       {
-        'agent-kit-dingtalk': { enabled: true, config: { identity: 'bot', robotCode: 'ding2' } },
+        'agent-kit-dingtalk': { enabled: true, config: { identity: 'user', timeoutMs: 20000 } },
         'agent-kit-ws': { enabled: true },
       },
       version,
@@ -71,7 +71,7 @@ describe('patch file', () => {
     expect(text).toContain('# 用户自己的注释')
     expect(text).toContain('# 启用钉钉')
     expect(text).toContain('mode: basic')
-    expect(text).toContain('robotCode: ding2')
+    expect(text).toContain('timeoutMs: 20000')
     expect(text).toMatch(/- id: agent-kit-ws\n\s+disabled: false/)
     const snap = await readKitEntries(patchFile)
     expect(snap.entries['agent-kit-ws'].enabled).toBe(true)
@@ -80,7 +80,7 @@ describe('patch file', () => {
   it('disables a row without dropping its config', async () => {
     const { version } = await readKitEntries(patchFile)
     await writeKitEntries(patchFile, { 'agent-kit-dingtalk': { enabled: false } }, version)
-    expect((await readKitEntries(patchFile)).entries['agent-kit-dingtalk']).toEqual({ enabled: false, config: { identity: 'bot', robotCode: 'ding1' } })
+    expect((await readKitEntries(patchFile)).entries['agent-kit-dingtalk']).toEqual({ enabled: false, config: { identity: 'user', timeoutMs: 15000 } })
   })
 
   it('creates the file when absent', async () => {
@@ -136,10 +136,10 @@ describe('patch file', () => {
   })
 
   it('exposes metadata for every kit service', () => {
-    expect(KIT_ENTRIES.map((e) => e.id)).toEqual(['agent-kit-ws', 'agent-kit-dingtalk', 'agent-kit-feishu', 'agent-kit-notify', 'agent-kit-agent-tasks', 'agent-kit-jev'])
+    expect(KIT_ENTRIES.map((e) => e.id)).toEqual(['agent-kit-ws', 'agent-kit-dingtalk', 'agent-kit-notify', 'agent-kit-agent-tasks', 'agent-kit-jev'])
     expect(KIT_ENTRIES.find((e) => e.id === 'agent-kit-notify')!.validate({ channel: 'email' })).toMatchObject({ ok: false, errors: [{ path: 'channel' }] })
-    expect(KIT_ENTRIES.find((e) => e.id === 'agent-kit-notify')!.validate({ channel: 'feishu' }).ok).toBe(true)
-    expect(KIT_ENTRIES.find((e) => e.id === 'agent-kit-feishu')!.validate({ identity: 'bot' }).ok).toBe(true)
+    expect(KIT_ENTRIES.find((e) => e.id === 'agent-kit-notify')!.validate({ channel: 'dingtalk' }).ok).toBe(true)
+    expect(KIT_ENTRIES.find((e) => e.id === 'agent-kit-dingtalk')!.validate({ identity: 'bot' }).ok).toBe(false)
     expect(KIT_ENTRIES.find((e) => e.id === 'agent-kit-agent-tasks')!.validate({}).ok).toBe(false)
   })
 })
@@ -161,7 +161,7 @@ describe('patch file: arbitrary rows (issue #1)', () => {
 ${BUSINESS_ROW}# 钉钉
 - id: agent-kit-dingtalk
   disabled: false
-  config: { identity: bot,   robotCode: ding1 }
+  config: { identity: user,   timeoutMs: 15000 }
 - id: tools
   config:
     n: 0x2A
@@ -179,11 +179,11 @@ ${BUSINESS_ROW}# 钉钉
   it('saving a kit row leaves a business row byte-for-byte unchanged', async () => {
     writeFileSync(patchFile, MIXED)
     const { version } = await readKitEntries(patchFile)
-    await writeKitEntries(patchFile, { 'agent-kit-dingtalk': { enabled: true, config: { identity: 'bot', robotCode: 'ding2' } }, 'agent-kit-ws': { enabled: true } }, version)
+    await writeKitEntries(patchFile, { 'agent-kit-dingtalk': { enabled: true, config: { identity: 'user', timeoutMs: 20000 } }, 'agent-kit-ws': { enabled: true } }, version)
     const text = readFileSync(patchFile, 'utf8')
     expect(text.startsWith(`# head\n${BUSINESS_ROW}# 钉钉\n`)).toBe(true)
     expect(text).toContain('- id: tools\n  config:\n    n: 0x2A\n')
-    expect(text).toMatch(/robotCode: ding2/)
+    expect(text).toMatch(/timeoutMs: 20000/)
     expect(text.endsWith('- id: agent-kit-ws\n  disabled: false\n')).toBe(true)
   })
 

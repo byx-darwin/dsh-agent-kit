@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" width="960" height="560" role="img" aria-labelledby="t d">
   <title id="t">dsh-agent-kit 架构</title>
-  <desc id="d">业务包通过 inject 使用 dsh-agent-kit 的五类能力；底层由六个 Service 实现，其中钉钉与飞书是同一渠道位置的二选一适配器；设置页与 doctor / setup 在可选的 @mc/dsh-agent-kit-admin 包中。</desc>
+  <desc id="d">业务包通过 inject 使用 dsh-agent-kit 的五类能力；底层由五个 Service 实现，钉钉仅使用已登录的 user 身份；设置页与 doctor / setup 在可选的 @mc/dsh-agent-kit-admin 包中。</desc>
   <style>
     .serif { font-family: 'Noto Serif SC', 'Songti SC', serif; font-weight: 700; }
     .sans { font-family: 'Noto Sans SC', -apple-system, 'PingFang SC', sans-serif; }
@@ -8,13 +8,13 @@
   </style>
   <rect width="960" height="560" fill="#FAF7F0"/>
 
-  <!-- 外部系统：钉钉与飞书共用一个渠道位置，通知配置时二选一 -->
+  <!-- 外部系统 -->
   <text x="40" y="160" class="sans" font-size="12" letter-spacing="2" fill="#B4532A">外部系统</text>
   <g class="sans" font-size="13" fill="#2A2622">
     <rect x="40" y="176" width="220" height="34" rx="6" fill="#FFFFFF" stroke="#E3DCCD"/>
     <text x="54" y="198">业务系统 · WebSocket</text><text x="248" y="198" text-anchor="end" fill="#B4532A" font-size="12">壹</text>
     <rect x="40" y="216" width="220" height="34" rx="6" fill="#FFFFFF" stroke="#E3DCCD"/>
-    <text x="54" y="238">钉钉 / 飞书 · 二选一</text><text x="248" y="238" text-anchor="end" fill="#B4532A" font-size="12">贰</text>
+    <text x="54" y="238">钉钉 · user 身份</text><text x="248" y="238" text-anchor="end" fill="#B4532A" font-size="12">贰</text>
     <rect x="40" y="256" width="220" height="34" rx="6" fill="#FFFFFF" stroke="#E3DCCD"/>
     <text x="54" y="278">Claude Code / Codex</text><text x="248" y="278" text-anchor="end" fill="#B4532A" font-size="12">肆</text>
     <rect x="40" y="296" width="220" height="34" rx="6" fill="#FFFFFF" stroke="#E3DCCD"/>
@@ -37,15 +37,15 @@
   <!-- dsh-agent-kit -->
   <rect x="300" y="170" width="620" height="200" rx="8" fill="#FFFFFF" stroke="#2A2622" stroke-width="1.5"/>
   <text x="324" y="202" class="serif" font-size="18" fill="#2A2622">@mc/dsh-agent-kit</text>
-  <text x="560" y="202" class="sans" font-size="12" fill="#6B6258">五类能力 · 六个实现 Service</text>
+  <text x="560" y="202" class="sans" font-size="12" fill="#6B6258">五类能力 · 五个 Service</text>
   <g class="sans">
     <rect x="324" y="220" width="96" height="80" rx="6" fill="#F1EBDF"/>
     <text x="334" y="244" class="serif" font-size="13" fill="#B4532A">壹 · 连接</text>
     <text x="334" y="268" class="mono" font-size="12" fill="#2A2622">agentWs</text>
     <rect x="428" y="220" width="164" height="80" rx="6" fill="#F1EBDF"/>
-    <text x="438" y="244" class="serif" font-size="13" fill="#B4532A">贰 · 渠道（二选一）</text>
-    <text x="438" y="268" class="mono" font-size="12" fill="#2A2622">dingtalk / feishu</text>
-    <text x="438" y="288" font-size="11" fill="#6B6258">两个适配 Service</text>
+    <text x="438" y="244" class="serif" font-size="13" fill="#B4532A">贰 · 钉钉</text>
+    <text x="438" y="268" class="mono" font-size="12" fill="#2A2622">dingtalk</text>
+    <text x="438" y="288" font-size="11" fill="#6B6258">user 身份</text>
     <rect x="600" y="220" width="96" height="80" rx="6" fill="#F1EBDF"/>
     <text x="610" y="244" class="serif" font-size="13" fill="#B4532A">叁 · 通知</text>
     <text x="610" y="268" class="mono" font-size="12" fill="#2A2622">notify</text>

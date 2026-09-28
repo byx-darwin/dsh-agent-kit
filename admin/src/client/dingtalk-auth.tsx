@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { T } from './forms.js'
 import type { AdminApi, DingtalkAuthStatus } from './remote.js'
+import { LoginQr } from './login-qr.js'
 
 const POLL_MS = 3000
 /** 登录（refresh token）剩余不足这么久时提醒重新登录。 */
@@ -97,12 +98,13 @@ export function DingtalkAuthPanel({ api, t, writable, onChanged }: { api: AdminA
         </p>
       )}
       {auth && !auth.installed && <p className="agent-kit-hint">{t('dingtalk.auth.installHint')}</p>}
-      {waiting && login_?.code ? (
+      {waiting ? (
         <div className="agent-kit-login">
-          <div className="agent-kit-login-code" aria-label={t('dingtalk.auth.code')}>{login_.code}</div>
-          <p className="agent-kit-hint">{t('dingtalk.auth.waiting', { time: shortTime(login_.expiresAt) })}</p>
+          {login_?.url && <LoginQr url={login_.url} label={t('dingtalk.auth.qr')} />}
+          {login_?.code && <div className="agent-kit-login-code" aria-label={t('dingtalk.auth.code')}>{login_.code}</div>}
+          <p className="agent-kit-hint">{t('dingtalk.auth.waiting', { time: shortTime(login_?.expiresAt) })}</p>
           <div className="agent-kit-secret-row agent-kit-actions">
-            {login_.url && (
+            {login_?.url && (
               <a className="agent-kit-btn" data-variant="primary" href={login_.url} target="_blank" rel="noreferrer">
                 {t('dingtalk.auth.open')}
               </a>
@@ -113,9 +115,9 @@ export function DingtalkAuthPanel({ api, t, writable, onChanged }: { api: AdminA
       ) : (
         auth?.installed && (
           <div className="agent-kit-secret-row agent-kit-actions">
-            {auth.authenticated && expiring && (
+            {auth.authenticated && (
               <button type="button" className="agent-kit-btn" data-variant="primary" disabled={disabled} onClick={login}>
-                {busy ? t('dingtalk.auth.starting') : t('dingtalk.auth.login')}
+                {busy ? t('dingtalk.auth.starting') : t('dingtalk.auth.relogin')}
               </button>
             )}
             {auth.authenticated ? (

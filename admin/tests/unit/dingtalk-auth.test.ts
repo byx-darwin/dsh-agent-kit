@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { DeviceLogin, logout, parseAuthStatus, parseDeviceLogin, readAuthStatus } from '../../src/admin/dingtalk-auth.js'
+import { DeviceLogin, logout, parseAuthStatus, parseDeviceFailure, parseDeviceLogin, readAuthStatus } from '../../src/admin/dingtalk-auth.js'
 import { createFakeDws } from '@mc/dsh-agent-kit/testing'
 
 // dws v1.0.62 `auth login --device` 的真实输出（链接中的一次性参数已替换）
@@ -18,6 +18,20 @@ https://login.dingtalk.com/oauth2/device/verify.htm?caller=dws&callerUmt=xyz
   (polling every 5 seconds)
 `
 
+const CHINESE_DEVICE_OUTPUT = `● Step 1: 请求设备授权码...
+
+  授权码: MSCP-CQWN
+  授权码将在 900 秒后过期。
+
+  授权链接（已填入授权码）：
+https://login.dingtalk.com/oauth2/device/verify.htm?caller=dws&callerUmt=xyz&user_code=MSCP-CQWN
+
+  手动输入授权码的链接：
+https://login.dingtalk.com/oauth2/device/verify.htm?caller=dws&callerUmt=xyz
+
+● Step 2: 等待用户授权...
+`
+
 describe('parseDeviceLogin', () => {
   it('extracts the code, both links and the expiry', () => {
     expect(parseDeviceLogin(DEVICE_OUTPUT)).toEqual({
@@ -31,6 +45,20 @@ describe('parseDeviceLogin', () => {
   it('returns nothing before the links are printed', () => {
     expect(parseDeviceLogin('● Step 1: Requesting device authorization code...\n\n  authorization code: CNXH-VNPT\n')).toEqual({ code: 'CNXH-VNPT' })
   })
+
+  it('parses the Chinese device-flow output emitted by the installed dws', () => {
+    expect(parseDeviceLogin(CHINESE_DEVICE_OUTPUT)).toEqual({
+      code: 'MSCP-CQWN',
+      url: 'https://login.dingtalk.com/oauth2/device/verify.htm?caller=dws&callerUmt=xyz&user_code=MSCP-CQWN',
+      manualUrl: 'https://login.dingtalk.com/oauth2/device/verify.htm?caller=dws&callerUmt=xyz',
+      expiresInSec: 900,
+    })
+  })
+})
+
+it('extracts a clean dws permission error from the final JSON output', () => {
+  const output = '⚠️ 您暂无 CLI 数据访问权限\n{\n  "error": {\n    "message": "device authorization failed: 您暂无 CLI 数据访问权限，请联系管理员开启"\n  }\n}'
+  expect(parseDeviceFailure(output, 2)).toBe('device authorization failed: 您暂无 CLI 数据访问权限，请联系管理员开启')
 })
 
 describe('parseAuthStatus', () => {

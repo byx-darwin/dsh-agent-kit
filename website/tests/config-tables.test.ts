@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { WsConfig } from '../../src/ws/config'
 import { DingtalkConfig } from '../../src/dingtalk/config'
-import { FeishuConfig } from '../../src/feishu/config'
 import { NotifyConfig } from '../../src/notify/config'
 import { AgentTasksConfig } from '../../src/agent-tasks/config'
 import { JevConfig } from '../../src/jev/service'
@@ -18,7 +17,6 @@ describe('config tables', () => {
   it.each([
     ['agentWs', WsConfig],
     ['dingtalk', DingtalkConfig],
-    ['feishu', FeishuConfig],
     ['notify', NotifyConfig],
     ['agentTasks', AgentTasksConfig],
     ['jev', JevConfig],
@@ -30,7 +28,7 @@ describe('config tables', () => {
     const dt = Object.fromEntries(configRows('dingtalk').map((r) => [r.path, r]))
     expect(dt.timeoutMs).toMatchObject({ default: '15000', range: '[1000, 120000]' })
     expect(dt['retry.maxAttempts']).toMatchObject({ default: '2', range: '[0, 5]' })
-    expect(dt.identity).toMatchObject({ required: true, range: 'user | bot | webhook', default: '—' })
+    expect(dt.identity).toMatchObject({ range: '—', default: 'user' })
     const at = Object.fromEntries(configRows('agentTasks').map((r) => [r.path, r]))
     expect(at.maxConcurrency).toMatchObject({ default: '2', range: '[1, 16]' })
     expect(at.workspaceDir.required).toBe(true)
@@ -47,7 +45,6 @@ describe('config tables', () => {
     expect(SERVICES.map((s) => [s.numeral, s.id])).toEqual([
       ['壹', 'agentWs'],
       ['贰', 'dingtalk'],
-      ['贰', 'feishu'],
       ['叁', 'notify'],
       ['肆', 'agentTasks'],
       ['伍', 'jev'],
@@ -59,7 +56,6 @@ describe('config tables', () => {
     const sources: Record<string, string> = {
       agentWs: 'src/ws/connection.ts',
       dingtalk: 'src/dingtalk/errors.ts',
-      feishu: 'src/feishu/errors.ts',
       notify: 'src/notify/service.ts',
       agentTasks: 'src/agent-tasks/service.ts',
       jev: 'src/jev/service.ts',

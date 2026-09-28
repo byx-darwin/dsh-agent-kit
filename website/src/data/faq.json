@@ -5,19 +5,11 @@
   },
   {
     "question": "doctor 提示 dws 未登录怎么办？",
-    "answer": "在运行 Profile 的同一个系统用户下执行 dws auth login。admin 包的 setup 在配置 user 身份时也可以直接拉起登录；业务包也可以调用 ctx.dingtalk.login()，把返回的授权链接交给要登录的人。钉钉的 dryRun 模式与 webhook 身份不检查登录态。"
+    "answer": "在运行 Profile 的同一个系统用户下执行 dws auth login。admin 包的 setup 也可以拉起登录；业务包可以调用 ctx.dingtalk.login()，把授权链接交给要登录的人。dryRun 模式不检查登录态。"
   },
   {
     "question": "Windows 上提示找不到 dws？",
     "answer": "本包会在 PATH 中查找 dws.exe，或把 npm 全局安装生成的 dws.cmd 定位到它背后的 dws.js。仍然找不到时，在钉钉配置中把 dwsPath 设为 dws.exe 或 dws.js 的绝对路径；不要指向 .cmd 或 .bat。"
-  },
-  {
-    "question": "doctor 提示飞书身份不可用怎么办？",
-    "answer": "bot 身份在运行 Profile 的同一个系统用户下执行 lark-cli config init，填写飞书应用的 App ID / App Secret；user 身份再执行 lark-cli auth login --scope \"im:message.send_as_user im:message\"，或由业务包调用 ctx.feishu.login() 把授权链接交给要登录的人。admin 包的 setup 在配置飞书时也可以直接拉起这两个命令。飞书的 dryRun 模式不检查身份。"
-  },
-  {
-    "question": "怎么把通知从钉钉换成飞书？",
-    "answer": "业务包 inject notify、调用 ctx.notify.send() 时，只需启用并配置飞书行（agent-kit-feishu），再把 agent-kit-notify 的 channel 改成 feishu：手动编辑 cordis.patch.yml，或用 admin 包的设置页「通知渠道」卡片、重新运行 setup。修改原地生效，不需要改业务代码，业务插件也不会重新加载。同一时间只发往一个渠道；业务包也可以在运行中调用 ctx.notify.use('feishu') 临时切换，dsh 重启后回到配置值。"
   },
   {
     "question": "一定要装 @mc/dsh-agent-kit-admin 吗？",
@@ -36,8 +28,8 @@
     "answer": "设置页由可选的 @mc/dsh-agent-kit-admin 提供。只有 dsh Web 绑定在 127.0.0.1 时设置页才可修改。绑定到其他地址，或没有加载 Web 服务时，设置页一律只读，避免把配置写入接口暴露到网络上。页面上会显示具体原因。"
   },
   {
-    "question": "没有 dws、lark-cli 或 Agent 登录态，怎么在本地开发业务包？",
-    "answer": "把钉钉或飞书设为 dryRun: true，并使用 @mc/dsh-agent-kit/testing 导出的本地 WebSocket 测试服务端、假 subagent provider、Jev mock、假 dws 脚本（createFakeDws）和假 lark-cli 脚本（createFakeLark）。"
+    "question": "没有 dws 或 Agent 登录态，怎么在本地开发业务包？",
+    "answer": "把钉钉设为 dryRun: true，并使用 @mc/dsh-agent-kit/testing 导出的本地 WebSocket 测试服务端、假 subagent provider、Jev mock 和假 dws 脚本（createFakeDws）。"
   },
   {
     "question": "没有 TypeSafe Key，能在本地跑 Jev 判断吗？",

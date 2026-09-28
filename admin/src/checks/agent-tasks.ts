@@ -25,7 +25,7 @@ export const agentTasksChecks: Check = (ctx) => {
       title: '权限上限已声明',
       status: undeclared.length === 0 ? 'pass' : 'warn',
       detail: undeclared.length === 0 ? '所有已安装 provider 都已声明' : `${undeclared.map((p) => p.name).join(', ')} 未声明 declaredPermissions，对应任务会被拒绝`,
-      ...(undeclared.length === 0 ? {} : { fix: '运行 setup 或在设置页声明权限上限（claude-code 默认 dontAsk 可声明为 read-only）' }),
+      ...(undeclared.length === 0 ? {} : { fix: '在 Profile 的 agent-kit-agent-tasks.config.declaredPermissions 中按 provider 实际权限声明；业务插件只负责申请任务权限' }),
     },
   ]
 }

@@ -48,13 +48,13 @@ const rows: { topic: string; diy: string; direct: string; kit: string }[] = [
     topic: '测试替身',
     diy: '需自行编写',
     direct: '需自行编写',
-    kit: 'testing 导出本地 WebSocket 服务端、假 provider、Jev mock、假 dws、假 lark-cli',
+    kit: 'testing 导出本地 WebSocket 服务端、假 provider、Jev mock、假 dws',
   },
   {
-    topic: '切换通知渠道',
-    diy: '需自行实现，通常要改代码',
-    direct: '钉钉与飞书的 CLI 参数、身份与目标格式各不相同',
-    kit: '业务包只调用 ctx.notify.send()；渠道（钉钉或飞书）由配置决定，修改后原地生效，也可以用 ctx.notify.use() 在运行中切换，业务插件不重新加载',
+    topic: '发送钉钉通知',
+    diy: '需自行处理登录态、目标与错误',
+    direct: '需自行拼装 dws 参数并处理输出',
+    kit: '业务包调用 ctx.notify.send()，由已登录的钉钉 user 身份发送',
   },
   {
     topic: '配置引导',

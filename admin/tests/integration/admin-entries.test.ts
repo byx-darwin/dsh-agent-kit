@@ -29,7 +29,7 @@ beforeEach(() => {
   patchFile = join(profileDir, 'cordis.patch.yml')
   credentialsFile = join(home, '.credentials.yaml')
   writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['@mc/dsh-agent-kit'], patchReload: 'live' } } }))
-  writeFileSync(patchFile, `- id: agent-kit-dingtalk\n  disabled: false\n  config: { identity: bot,  robotCode: ding1 }\n${BUSINESS_ROW}`)
+  writeFileSync(patchFile, `- id: agent-kit-dingtalk\n  disabled: false\n  config: { identity: user,  timeoutMs: 15000 }\n${BUSINESS_ROW}`)
   loaderEntries = [
     { id: 'agent-kit-dingtalk', disabled: false, fiber: { state: 2 } },
     { id: 'biz-row', disabled: false, fiber: { state: 2 } },
@@ -83,7 +83,7 @@ describe('AgentKitAdmin registered entries (issue #1)', () => {
   it('shows a registered row in status() with config, health, checks and secrets; status is unchanged without it', async () => {
     const admin = await setup()
     const before = await admin.status()
-    expect(before.services.map((s) => s.id)).toEqual(['agent-kit-ws', 'agent-kit-dingtalk', 'agent-kit-feishu', 'agent-kit-notify', 'agent-kit-agent-tasks', 'agent-kit-jev'])
+    expect(before.services.map((s) => s.id)).toEqual(['agent-kit-ws', 'agent-kit-dingtalk', 'agent-kit-notify', 'agent-kit-agent-tasks', 'agent-kit-jev'])
     expect(before.checks.some((c) => c.scope === 'biz-row')).toBe(false)
 
     const fiber = root.plugin(businessPlugin(bizEntry()) as never, {} as never)
@@ -161,7 +161,7 @@ describe('AgentKitAdmin registered entries (issue #1)', () => {
     const admin = await setup()
     admin.registerEntry(bizEntry())
     const s1 = await admin.status()
-    const { version } = await admin.saveService('agent-kit-dingtalk', true, { identity: 'bot', robotCode: 'ding2' }, s1.version)
+    const { version } = await admin.saveService('agent-kit-dingtalk', true, { identity: 'user', timeoutMs: 20000 }, s1.version)
     expect(readFileSync(patchFile, 'utf8').endsWith(BUSINESS_ROW)).toBe(true)
 
     const kitText = readFileSync(patchFile, 'utf8').slice(0, -BUSINESS_ROW.length)

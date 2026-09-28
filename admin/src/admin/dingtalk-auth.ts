@@ -65,7 +65,7 @@ export function parseAuthStatus(stdout: string, exitCode: number | null): Omit<D
 }
 
 /**
- * 从 `dws auth login --device` 的文本输出里取验证码与链接（dws v1.0.62 的格式）：
+ * 从 `dws auth login --device` 的中英文文本输出里取验证码与链接（dws v1.0.62 的格式）：
  *
  * ```
  *   authorization code: ABCD-EFGH
@@ -77,21 +77,30 @@ export function parseAuthStatus(stdout: string, exitCode: number | null): Omit<D
  * ```
  */
 export function parseDeviceLogin(text: string): { code?: string; url?: string; manualUrl?: string; expiresInSec?: number } {
-  const code = /authorization code:\s*([A-Z0-9-]{4,})/i.exec(text)?.[1]
-  const expires = /expire in (\d+) seconds/i.exec(text)?.[1]
+  const code = /(?:authorization code|授权码)[:：]\s*([A-Z0-9-]{4,})/i.exec(text)?.[1]
+  const expires = /expire in (\d+) seconds/i.exec(text)?.[1] ?? /授权码将在\s*(\d+)\s*秒后过期/.exec(text)?.[1]
   const urlAfter = (label: RegExp) => {
     const m = label.exec(text)
     if (!m) return undefined
     return /https:\/\/\S+/.exec(text.slice(m.index + m[0].length))?.[0]
   }
-  const url = urlAfter(/Authorization link \(code included\):/i)
-  const manualUrl = urlAfter(/Link for entering the code manually:/i)
+  const url = urlAfter(/Authorization link \(code included\):|授权链接（已填入授权码）[:：]/i)
+  const manualUrl = urlAfter(/Link for entering the code manually:|手动输入授权码的链接[:：]/i)
   return {
     ...(code ? { code } : {}),
     ...(url ? { url } : {}),
     ...(manualUrl ? { manualUrl } : {}),
     ...(expires ? { expiresInSec: Number(expires) } : {}),
   }
+}
+
+/** dws 失败时优先抽取结构化错误，避免把 JSON 尾部碎片直接显示在页面上。 */
+export function parseDeviceFailure(output: string, exitCode: number | null): string {
+  const message = [...output.matchAll(/"message"\s*:\s*("(?:\\.|[^"\\])*")/g)].at(-1)?.[1]
+  if (message) {
+    try { return redact(JSON.parse(message) as string) } catch { /* 回退到原始输出摘要 */ }
+  }
+  return redact(output.trim().split('\n').slice(-3).join(' ').slice(0, 300)) || `dws 退出码 ${exitCode}`
 }
 
 const STATUS_TIMEOUT_MS = 15_000
@@ -183,7 +192,7 @@ export class DeviceLogin {
         if (state.state === 'waiting') {
           const ok = code === 0 && /"success":\s*true/.test(output)
           state.state = ok ? 'succeeded' : 'failed'
-          if (!ok) state.message = redact(output.trim().split('\n').slice(-3).join(' ').slice(0, 300)) || `dws 退出码 ${code}`
+          if (!ok) state.message = parseDeviceFailure(output, code)
         }
         settle()
       })

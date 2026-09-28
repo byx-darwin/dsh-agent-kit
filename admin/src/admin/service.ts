@@ -5,7 +5,7 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import { createCheckContext, runChecks, type CheckResult } from '../checks/index.js'
 import { isKitError } from '@mc/dsh-agent-kit'
 import { redact } from '@mc/dsh-agent-kit'
-import type { ServiceHealth } from '@mc/dsh-agent-kit'
+import type { DingtalkRecipientKind, DingtalkRecipientSearchResult, DingtalkUnmatchedMessage, ServiceHealth } from '@mc/dsh-agent-kit'
 import { KIT_ENTRIES, locateProfile, readKitEntries, writeKitEntries, writePatchEntries, type KitId, type ProfileInfo } from '../profile/index.js'
 import {
   clearSecretRef,
@@ -225,7 +225,7 @@ export class AgentKitAdmin extends TypertRemoteService {
     private readonly config: AdminConfig = {},
   ) {
     super(ctx, 'agentKitAdmin')
-    ctx.effect(() => () => this.login.cancel(), 'agent-kit: dingtalk login')
+    ctx.effect(() => () => this.login.cancel(), 'agent-kit: login')
   }
 
   private readonly login = new DeviceLogin()
@@ -491,6 +491,29 @@ export class AgentKitAdmin extends TypertRemoteService {
     return { ...status, ...(login ? { login: { ...login } } : {}) }
   }
 
+  /** 消息预览可能含敏感业务内容，只允许本机设置页读取。 */
+  async dingtalkUnmatched(): Promise<DingtalkUnmatchedMessage[]> {
+    const reason = this.readOnlyReason(await this.locate())
+    if (reason) failWith('read_only', reason)
+    const service = (this.ctx as unknown as { get(name: 'dingtalk'): { unmatchedMessages(): Promise<DingtalkUnmatchedMessage[]> } | undefined }).get('dingtalk')
+    return service ? service.unmatchedMessages() : []
+  }
+
+  /** 仅本机设置页可查当前登录账号的收件人候选；业务行决定保存到自己的哪个目标字段。 */
+  async dingtalkSearchRecipients(kind: DingtalkRecipientKind, query: string): Promise<DingtalkRecipientSearchResult> {
+    const reason = this.readOnlyReason(await this.locate())
+    if (reason) failWith('read_only', reason)
+    if (kind !== 'group' && kind !== 'user') failWith('bad_request', 'recipient kind must be group or user')
+    if (typeof query !== 'string' || query.trim().length < 2 || query.trim().length > 80) failWith('bad_request', 'query must be 2–80 characters')
+    const service = (this.ctx as unknown as { get(name: 'dingtalk'): { searchRecipients(kind: DingtalkRecipientKind, query: string): Promise<DingtalkRecipientSearchResult> } | undefined }).get('dingtalk')
+    if (!service) failWith('bad_request', 'DingTalk service is not running')
+    try {
+      return await service!.searchRecipients(kind, query.trim())
+    } catch (error) {
+      failWith('bad_request', `recipient search failed: ${redactError(error)}`)
+    }
+  }
+
   /** 发起设备码登录，返回验证码与授权链接；授权在浏览器里完成，页面轮询 `dingtalkAuth`。 */
   async dingtalkLogin(): Promise<DingtalkLoginState> {
     await this.writable()
@@ -518,8 +541,9 @@ export class AgentKitAdmin extends TypertRemoteService {
     }
     return this.dingtalkAuth()
   }
+
 }
 
-for (const method of ['status', 'saveService', 'setSecret', 'clearSecret', 'dingtalkAuth', 'dingtalkLogin', 'dingtalkLoginCancel', 'dingtalkLogout']) {
+for (const method of ['status', 'saveService', 'setSecret', 'clearSecret', 'dingtalkAuth', 'dingtalkUnmatched', 'dingtalkSearchRecipients', 'dingtalkLogin', 'dingtalkLoginCancel', 'dingtalkLogout']) {
   markRemote(AgentKitAdmin.prototype, method)
 }

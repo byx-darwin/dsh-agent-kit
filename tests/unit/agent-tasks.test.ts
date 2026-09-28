@@ -1,4 +1,5 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -131,6 +132,16 @@ describe('AgentTasksService', () => {
     return { svc: () => consumer.agentTasks, fiber }
   }
 
+  function gitRepository(): string {
+    const repo = join(workspace, 'repo')
+    mkdirSync(repo)
+    execFileSync('git', ['init', '-b', 'main', repo])
+    writeFileSync(join(repo, 'README.md'), 'original\n')
+    execFileSync('git', ['-C', repo, 'add', 'README.md'])
+    execFileSync('git', ['-C', repo, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-m', 'initial'])
+    return repo
+  }
+
   it('applies defaults and validates config', async () => {
     const { svc } = await setup()
     expect(svc().config).toMatchObject({ defaultTimeoutMs: 600_000, maxConcurrency: 2, maxQueueSize: 100, keepWorkdir: false, declaredPermissions: {} })
@@ -197,6 +208,45 @@ describe('AgentTasksService', () => {
     expect(r.text).toBe('done')
     expect(provider.requests[0]!.toolFilter!.allow).toContain('write')
     expect(existsSync(cwd)).toBe(true)
+  })
+
+  it('runs a writable task in a retained worktree without changing the source checkout', async () => {
+    const repo = gitRepository()
+    provider.handler = (_req, { cwd }) => {
+      writeFileSync(join(cwd, 'change.txt'), 'agent edit\n')
+      return 'done'
+    }
+    const { svc } = await setup()
+    const result = await svc().run({ provider: 'fake', title: 'edit code', prompt: 'edit', permissions: 'workspace-write', worktree: { repository: repo } })
+    expect(result.worktree).toMatchObject({ repository: realpathSync(repo), branch: expect.stringMatching(/^agent-kit\/task-/) })
+    expect(readFileSync(join(result.worktree!.path, 'change.txt'), 'utf8')).toBe('agent edit\n')
+    expect(readFileSync(join(repo, 'README.md'), 'utf8')).toBe('original\n')
+    expect(existsSync(join(repo, 'change.txt'))).toBe(false)
+    expect(statSync(result.worktree!.path).mode & 0o777).toBe(0o700)
+    expect(provider.requests[0]!.parent.session.header.cwd).toBe(result.worktree!.path)
+  })
+
+  it('rejects dirty source repositories without starting a provider', async () => {
+    const repo = gitRepository()
+    const { svc } = await setup()
+    writeFileSync(join(repo, 'untracked.txt'), 'not committed')
+    await expect(svc().run({ provider: 'fake', title: 'edit', prompt: 'edit', permissions: 'workspace-write', worktree: { repository: repo } }))
+      .rejects.toThrow(/uncommitted or untracked/)
+    expect(provider.requests).toHaveLength(0)
+  })
+
+  it('retains a worktree for review even when the provider fails after editing', async () => {
+    const repo = gitRepository()
+    provider.handler = (_request, { cwd }) => {
+      writeFileSync(join(cwd, 'partial.txt'), 'unfinished\n')
+      throw new Error('provider stopped')
+    }
+    const { svc } = await setup()
+    await expect(svc().run({ provider: 'fake', title: 'edit', prompt: 'edit', permissions: 'workspace-write', worktree: { repository: repo } }))
+      .rejects.toThrow(/provider/)
+    const [taskId] = readdirSync(join(workspace, 'tasks'))
+    expect(readFileSync(join(workspace, 'tasks', taskId!, 'partial.txt'), 'utf8')).toBe('unfinished\n')
+    expect(existsSync(join(repo, 'partial.txt'))).toBe(false)
   })
 
   it('uses provider-native structured output when supported', async () => {
@@ -266,6 +316,16 @@ describe('AgentTasksService', () => {
     await svc().run({ provider: 'claude-code', title: 't', prompt: 'p' })
     await svc().run({ provider: 'claude-code', title: 't', prompt: 'p', permissions: 'workspace-write' })
     expect(cc.requests.every((r) => r.toolFilter === undefined)).toBe(true)
+  })
+
+  it('does not start a writable worktree task with a read-only native provider', async () => {
+    const repo = gitRepository()
+    const codex = new FakeSubagentProvider({ name: 'codex' })
+    const { svc } = await setup({ declaredPermissions: { codex: 'read-only' } }, [codex])
+    await expect(svc().run({ provider: 'codex', title: 'edit', prompt: 'edit', permissions: 'workspace-write', worktree: { repository: repo } }))
+      .rejects.toMatchObject({ code: 'unsupported_permissions' })
+    expect(codex.requests).toHaveLength(0)
+    expect(readdirSync(join(workspace, 'tasks'))).toEqual([])
   })
 
   it('times out and cancels the delegation', async () => {

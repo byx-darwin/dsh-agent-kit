@@ -2,8 +2,20 @@ import { useState, type ReactNode } from 'react'
 import { EntryForm, FORMS, type T } from './forms.js'
 import type { AdminApi, AdminStatus, CheckResult, KitId, ServiceStatus } from './remote.js'
 import { AdminError } from './remote.js'
+import { DingtalkRoutesPanel } from './dingtalk-routes.js'
 
 type Service = ServiceStatus
+
+const WS_FORM_DEFAULTS = { pingIntervalMs: 30_000, readTimeoutMs: 75_000 }
+
+function initialConfig(service: Service): Record<string, unknown> {
+  if (service.id === 'agent-kit-ws') return { ...WS_FORM_DEFAULTS, ...service.config }
+  if (service.id === 'agent-kit-dingtalk') {
+    const { robotCode: _robotCode, webhookTokenEnv: _webhookTokenEnv, ...rest } = service.config ?? {}
+    return { ...rest, identity: 'user' }
+  }
+  return service.config ?? {}
+}
 
 /** 本包四行的标题按界面语言翻译（issue #4）；业务行用它登记的 label，缺译时退回服务端给的标题。 */
 function serviceTitle(service: Service, t: T): string {
@@ -78,7 +90,7 @@ function statusTone(service: Service): 'ok' | 'warn' | 'error' | 'neutral' {
 export function ServiceCard(props: { service: Service; checks: CheckResult[]; status: AdminStatus; api: AdminApi; t: T; onSaved(version: string): void; onConflict(): void; onSecretChanged?(): void; children?: ReactNode }) {
   const { service, t } = props
   const [enabled, setEnabled] = useState(service.enabled)
-  const [config, setConfig] = useState<Record<string, unknown>>(service.config ?? {})
+  const [config, setConfig] = useState<Record<string, unknown>>(() => initialConfig(service))
   const [message, setMessage] = useState<{ text: string; error: boolean }>()
   const [saving, setSaving] = useState(false)
   const disabled = !props.status.writable || saving
@@ -147,11 +159,12 @@ export function ServiceCard(props: { service: Service; checks: CheckResult[]; st
             ))}
           </ul>
         )}
-        {enabled && (
+        {enabled && service.id !== 'agent-kit-dingtalk' && (
           <div className="agent-kit-fields">
-            {Form ? <Form config={config} onChange={setConfig} disabled={disabled} t={t} /> : <EntryForm fields={service.fields ?? []} config={config} onChange={setConfig} disabled={disabled} t={t} />}
+            {Form ? <Form config={config} onChange={setConfig} disabled={disabled} t={t} /> : <EntryForm fields={service.fields ?? []} config={config} onChange={setConfig} disabled={disabled} t={t} api={props.api} />}
           </div>
         )}
+        {enabled && service.id === 'agent-kit-dingtalk' && <DingtalkRoutesPanel config={config} onChange={setConfig} status={props.status} api={props.api} disabled={disabled} t={t} />}
         {props.children}
         {message && reloadHint && <p className="agent-kit-hint agent-kit-reload">{reloadHint}</p>}
         {service.secrets?.length ? <EntrySecrets service={service} status={props.status} api={props.api} t={t} onChanged={props.onSecretChanged ?? (() => {})} /> : null}

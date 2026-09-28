@@ -95,6 +95,26 @@ export const CSS = `
 
 .agent-kit-card-body { margin: 0 16px; padding-bottom: 4px; border-top: 0.5px solid var(--dsw-alias-border-l2); }
 .agent-kit-card-body > * + * { border-top: 0.5px solid var(--dsw-alias-border-l2); }
+.agent-kit-unmatched-list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow: auto; }
+.agent-kit-unmatched-list li { padding: 9px 0; border-top: 0.5px solid var(--dsw-alias-border-l2); overflow-wrap: anywhere; }
+.agent-kit-unmatched-list small { color: var(--dsw-alias-label-tertiary); }
+.agent-kit-unmatched-list p { margin: 4px 0 0; white-space: pre-wrap; }
+.agent-kit-routes { padding: 12px 0; }
+.agent-kit-routes .agent-kit-secret-head { margin-bottom: 6px; }
+.agent-kit-route-list { list-style: none; margin: 10px 0; padding: 0; }
+.agent-kit-route-list li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 0.5px solid var(--dsw-alias-border-l2); overflow-wrap: anywhere; }
+.agent-kit-route-list li > div { flex: 1; min-width: 0; }
+.agent-kit-route-list li > span { flex: 1; min-width: 0; }
+.agent-kit-route-list small { display: block; color: var(--dsw-alias-label-tertiary); }
+.agent-kit-route-list code { color: var(--dsw-alias-label-tertiary); }
+.agent-kit-route-add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 8px; margin-top: 10px; }
+.agent-kit-route-add label { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.agent-kit-route-suggestions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.agent-kit-target-picker { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.agent-kit-target-search { display: flex; align-items: center; gap: 8px; }
+.agent-kit-target-search input { min-width: 0; flex: 1; }
+.agent-kit-target-search button { flex: none; }
+@media (max-width: 580px) { .agent-kit-route-add { grid-template-columns: 1fr; } .agent-kit-route-list li { flex-wrap: wrap; } }
 
 .agent-kit-checks { list-style: none; margin: 0; padding: 10px 0; display: flex; flex-direction: column; gap: 6px; }
 .agent-kit-checks li { display: flex; gap: 8px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
@@ -188,6 +208,7 @@ export const CSS = `
 .agent-kit-actions { justify-content: flex-end; }
 a.agent-kit-btn { text-decoration: none; display: inline-flex; align-items: center; }
 .agent-kit-login { display: flex; flex-direction: column; gap: 8px; }
+.agent-kit-login-qr { display: block; max-width: 100%; background: white; border: 8px solid white; border-radius: 8px; }
 .agent-kit-login-code {
   align-self: flex-start;
   padding: 6px 14px;

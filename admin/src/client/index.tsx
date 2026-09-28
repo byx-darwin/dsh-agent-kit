@@ -31,6 +31,8 @@ export function apply(ctx: ClientContext): void {
     setSecret: async (...a: Parameters<typeof api.setSecret>) => (await ready, api.setSecret(...a)),
     clearSecret: async (...a: Parameters<typeof api.clearSecret>) => (await ready, api.clearSecret(...a)),
     dingtalkAuth: async () => (await ready, api.dingtalkAuth()),
+    dingtalkUnmatched: async () => (await ready, api.dingtalkUnmatched()),
+    dingtalkSearchRecipients: async (...a: Parameters<typeof api.dingtalkSearchRecipients>) => (await ready, api.dingtalkSearchRecipients(...a)),
     dingtalkLogin: async () => (await ready, api.dingtalkLogin()),
     dingtalkLoginCancel: async () => (await ready, api.dingtalkLoginCancel()),
     dingtalkLogout: async () => (await ready, api.dingtalkLogout()),

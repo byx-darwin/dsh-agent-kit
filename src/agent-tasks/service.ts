@@ -12,6 +12,7 @@ import { extractJson } from './extract-json.js'
 import { ConcurrencyQueue, QueueAbortedError, QueueFullError } from './queue.js'
 import type { ContentBlock, SubagentResult, SubagentRuntime, SubagentStartRequest } from './subagent-types.js'
 import { renderPrompt, type PromptPart } from './untrusted.js'
+import { createTaskWorktree, type TaskWorktree } from './worktree.js'
 
 export type AgentTaskErrorCode = 'provider_failed' | 'timeout' | 'invalid_output' | 'aborted' | 'queue_full' | 'unsupported_permissions'
 
@@ -39,6 +40,8 @@ interface RunOptionsBase {
   signal?: AbortSignal
   traceId?: string
   onEvent?: (event: AgentTaskEvent) => void
+  /** 由业务插件选择已知仓库根目录；在专用目录创建并保留一个独立 Git worktree。 */
+  worktree?: { repository: string }
 }
 
 export interface RunOptionsWithSchema<T> extends RunOptionsBase {
@@ -51,6 +54,8 @@ export interface AgentTaskResult<T> {
   text: string
   output: T
   durationMs: number
+  /** worktree 任务的修改不会自动合并；返回路径和分支供业务插件安排审查。 */
+  worktree?: TaskWorktree
 }
 
 export interface AgentTasksCounters {
@@ -165,6 +170,9 @@ export class AgentTasksService extends KitService<AgentTasksCounters> {
           ),
         )
       }
+      if (options.worktree && permissions === 'workspace-write' && declared !== 'workspace-write') {
+        fail(new AgentTaskError('unsupported_permissions', `provider ${options.provider} must be declared workspace-write before running a writable worktree task`))
+      }
       if (!this.warnedProviders.has(options.provider)) {
         this.warnedProviders.add(options.provider)
         this.logger.info('provider has no tool filter; relying on declared permission level', { provider: options.provider, declared })
@@ -192,8 +200,18 @@ export class AgentTasksService extends KitService<AgentTasksCounters> {
     const signal = AbortSignal.any(signals)
     const abortedCode = (): AgentTaskErrorCode => (timeout.signal.aborted ? 'timeout' : 'aborted')
 
+    let worktree: TaskWorktree | undefined
     try {
-      await mkdir(taskDir, { recursive: false, mode: 0o700 })
+      if (options.worktree) {
+        try {
+          worktree = await createTaskWorktree(options.worktree.repository, this.workspaceDir, taskDir, taskId, signal)
+          this.logger.info('task worktree created; retained for review', { taskId, branch: worktree.branch, path: worktree.path })
+        } catch (error) {
+          return fail(new AgentTaskError('provider_failed', `cannot create task worktree: ${(error as Error).message}`, { cause: error }))
+        }
+      } else {
+        await mkdir(taskDir, { recursive: false, mode: 0o700 })
+      }
       let promptText = renderPrompt(options.prompt)
       if (options.outputSchema && !nativeSchema) {
         promptText += [
@@ -271,11 +289,11 @@ export class AgentTasksService extends KitService<AgentTasksCounters> {
       }
       const durationMs = finish('ok')
       this.logger.info('agent task finished', { traceId, taskId, durationMs, answer: digest(text) })
-      return { sessionId, taskId, text, output: output as T | undefined, durationMs }
+      return { sessionId, taskId, text, output: output as T | undefined, durationMs, ...(worktree ? { worktree } : {}) }
     } finally {
       clearTimeout(timer)
       release()
-      if (!this.config.keepWorkdir) {
+      if (!options.worktree && !this.config.keepWorkdir) {
         await rm(taskDir, { recursive: true, force: true }).catch((e: unknown) => this.logger.warn('failed to remove task directory', { taskId, error: e }))
       }
     }

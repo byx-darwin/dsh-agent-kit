@@ -1,13 +1,13 @@
 import type { Check } from './types.js'
 
-const TITLES: Record<string, string> = { dingtalk: '钉钉', feishu: '飞书' }
+const TITLES: Record<string, string> = { dingtalk: '钉钉' }
 
 /** 通知渠道指向的渠道行应已启用，否则发送时报 channel_unavailable。 */
 export const notifyChecks: Check = (ctx) => {
   const scope = 'agent-kit-notify' as const
   const channel = ((ctx.snapshot.entries[scope].config ?? {}) as { channel?: string }).channel
   if (!channel) return []
-  const id = `agent-kit-${channel}` as 'agent-kit-dingtalk' | 'agent-kit-feishu'
+  const id = `agent-kit-${channel}` as 'agent-kit-dingtalk'
   const enabled = ctx.snapshot.entries[id]?.enabled === true
   const title = TITLES[channel] ?? channel
   return [

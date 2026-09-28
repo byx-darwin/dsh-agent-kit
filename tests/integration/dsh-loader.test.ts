@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { boot, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { createFakeDws } from '../../src/testing/fake-dws.js'
-import { createFakeLark } from '../../src/testing/fake-lark.js'
 import { FakeSubagentProvider } from '../../src/testing/fake-subagent.js'
 import { createJevMock } from '../../src/testing/jev-mock.js'
 import { startTestWsServer, type TestWsServer } from '../../src/testing/ws-server.js'
@@ -59,12 +58,11 @@ const enable = (id: string, config: Record<string, unknown>, extra: Patch = {}):
 describe('bundle patch.yml in a real dsh loader', () => {
   it('registers every service disabled by default', async () => {
     const c = await start([])
-    for (const name of ['agentWs', 'dingtalk', 'feishu', 'notify', 'agentTasks', 'jev']) expect(c.get(name)).toBeUndefined()
+    for (const name of ['agentWs', 'dingtalk', 'notify', 'agentTasks', 'jev']) expect(c.get(name)).toBeUndefined()
     const ids = BUNDLE_PATCHES.flatMap((p: any) => p.insert ?? []).map((e: any) => [e.id, e.name, e.disabled])
     expect(ids).toEqual([
       ['agent-kit-ws', '@mc/dsh-agent-kit/ws', true],
       ['agent-kit-dingtalk', '@mc/dsh-agent-kit/dingtalk', true],
-      ['agent-kit-feishu', '@mc/dsh-agent-kit/feishu', true],
       ['agent-kit-notify', '@mc/dsh-agent-kit/notify', true],
       ['agent-kit-agent-tasks', '@mc/dsh-agent-kit/agent-tasks', true],
       ['agent-kit-jev', '@mc/dsh-agent-kit/jev', true],
@@ -80,43 +78,55 @@ describe('bundle patch.yml in a real dsh loader', () => {
   })
 
   it('fails to boot when an enabled service has invalid config', async () => {
-    await expect(start([enable('dingtalk', { identity: 'bot' })])).rejects.toThrow(/robotCode is required|failed to load|did not activate/)
+    await expect(start([enable('dingtalk', { identity: 'bot' })])).rejects.toThrow(/expected|failed to load|did not activate/)
     ctx = undefined
     delete process.env.TYPESAFE_API_KEY
     await expect(start([enable('jev', {})])).rejects.toThrow(/TYPESAFE_API_KEY|failed to load|did not activate/)
     ctx = undefined
   })
 
-  it('notify sends through the configured channel and switches at runtime for a plugin that injects only notify', async () => {
-    const lark = createFakeLark()
-    process.env.LARKSUITE_CLI_CONFIG_DIR = lark.dir
-    try {
-      const c = await start([
-        enable('dingtalk', { identity: 'bot', robotCode: 'ding1', dwsPath: dws.path, defaultTarget: { chatId: 'cidA' } }),
-        enable('feishu', { identity: 'bot', larkPath: lark.path, defaultTarget: { chatId: 'oc_a' } }),
-        enable('notify', { channel: 'feishu' }),
-      ])
-      const sent: any[] = []
-      let status: any
-      await c.plugin({
-        name: 'business',
-        inject: ['notify'],
-        async apply(bctx: Context) {
-          sent.push(await bctx.notify.send({ title: 'T', markdown: 'alert', idempotencyKey: 'evt_1' }))
-          bctx.notify.use('dingtalk')
-          sent.push(await bctx.notify.send({ text: 'again' }))
-          status = await bctx.notify.status()
-        },
-      })
-      expect(sent.map((r) => [r.channel, r.results[0].ok])).toEqual([
-        ['feishu', true],
-        ['dingtalk', true],
-      ])
-      expect(lark.calls().some((call) => call.args.includes('--chat-id=oc_a'))).toBe(true)
-      expect(status).toMatchObject({ channel: 'dingtalk', source: 'runtime', channels: { dingtalk: { online: true }, feishu: { online: true, account: 'cli_fake' } } })
-    } finally {
-      lark.cleanup()
-    }
+  it('notify sends through the DingTalk user service for a plugin that injects only notify', async () => {
+    const c = await start([
+      enable('dingtalk', { identity: 'user', dwsPath: dws.path, defaultTarget: { chatId: 'cidA' } }),
+      enable('notify', { channel: 'dingtalk' }),
+    ])
+    let sent: any
+    let status: any
+    await c.plugin({
+      name: 'business',
+      inject: ['notify'],
+      async apply(bctx: Context) {
+        sent = await bctx.notify.send({ title: 'T', markdown: 'alert', idempotencyKey: 'evt_1' })
+        status = await bctx.notify.status()
+      },
+    })
+    expect(sent).toMatchObject({ channel: 'dingtalk', results: [{ ok: true }] })
+    expect(status).toMatchObject({ channel: 'dingtalk', channels: { dingtalk: { online: true } } })
+  })
+
+  it('routes group @ messages to the matching business plugins through one dws listener', async () => {
+    dws.setScenario({ eventDelayMs: 100, events: [
+      { type: 'user_im_message_receive_at', event_id: 'evt-A', message_id: 'msg-A', conversation_id: 'cidA', sender_open_dingtalk_id: 'sender', content: 'A' },
+      { type: 'user_im_message_receive_at', event_id: 'evt-B', message_id: 'msg-B', conversation_id: 'cidB', sender_open_dingtalk_id: 'sender', content: 'B' },
+    ] })
+    const c = await start([enable('dingtalk', { dwsPath: dws.path, killGraceMs: 50 })])
+    const received: string[] = []
+    const a = await c.plugin({
+      name: 'business-a', inject: ['dingtalk'], async apply(bctx: Context) {
+        await bctx.dingtalk.onMessage({ conversationId: 'cidA' }, (message) => { received.push(`a:${message.eventId}`) }).ready
+      },
+    })
+    const b = await c.plugin({
+      name: 'business-b', inject: ['dingtalk'], async apply(bctx: Context) {
+        await bctx.dingtalk.onMessage({ conversationId: 'cidB' }, (message) => { received.push(`b:${message.eventId}`) }).ready
+      },
+    })
+    await until(() => received.length === 2)
+    expect(received).toEqual(['a:evt-A', 'b:evt-B'])
+    expect(dws.calls().filter((call) => call.args[0] === 'event')).toHaveLength(1)
+    await a.dispose()
+    await b.dispose()
+    expect(c.dingtalk.health().counters.inbox).toMatchObject({ listener: 'ready', routes: 0 })
   })
 
   it('all four services can be injected, work together, and release resources on unload', async () => {
@@ -124,7 +134,7 @@ describe('bundle patch.yml in a real dsh loader', () => {
     const c = await start([
       { insert: [{ id: 'subagents', name: '@deepseek-ai/dsh-subagent' }] },
       enable('ws', { pingIntervalMs: 1000, readTimeoutMs: 2000 }),
-      enable('dingtalk', { identity: 'bot', robotCode: 'ding1', dwsPath: dws.path, defaultTarget: { chatId: 'cidA' }, timeoutMs: 5000, killGraceMs: 100 }),
+      enable('dingtalk', { identity: 'user', dwsPath: dws.path, defaultTarget: { chatId: 'cidA' }, timeoutMs: 5000, killGraceMs: 100 }),
       enable('agent-tasks', { workspaceDir, maxConcurrency: 1 }),
       enable('jev', {}),
     ])

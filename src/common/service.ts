@@ -37,7 +37,7 @@ export function createKitLogger(ctx: Context, name: string): KitLogger {
   }
 }
 
-/** 四个 Service 的公共基类：健康状态与 `agent-kit/service-failed` 事件。 */
+/** 各 Service 的公共基类：健康状态与 `agent-kit/service-failed` 事件。 */
 export abstract class KitService<C = Record<string, unknown>> extends Service {
   protected readonly logger: KitLogger
   private failedDetail?: string

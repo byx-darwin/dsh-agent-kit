@@ -7,7 +7,6 @@ import { isAbsolute, join } from 'node:path'
  */
 const WINDOWS_SHIM_SCRIPTS: Record<string, string> = {
   dws: join('dingtalk-workspace-cli', 'bin', 'dws.js'),
-  'lark-cli': join('@larksuite', 'cli', 'scripts', 'run.js'),
 }
 
 function resolveWindowsCmdShim(dir: string, name: string): string | undefined {

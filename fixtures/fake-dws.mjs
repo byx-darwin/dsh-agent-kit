@@ -8,7 +8,10 @@
 //   "auth": "ok" | "expired" | "error",
 //   "login": "approve" | "deny" | "hang" | "no_link",   // dws auth login --device；approve 后 auth 变为 ok（success / fail 为 approve / deny 的别名）
 //   "loginDelayMs": 300,
-//   "send": [ { "mode": "success" | "fail" | "hang" | "bad_output" | "partial", ... }, ... ]  // 按调用次序取，超出时重复最后一个
+//   "events": [ { "type": "user_im_message_receive_at", ... }, ... ],
+//   "eventDelayMs": 30,
+//   "eventStartup": "ready" | "fail",
+//   "send": [ { "mode": "success" | "fail" | "hang" | "bad_output", ... }, ... ]  // 按调用次序取，超出时重复最后一个
 // }
 import { spawn } from 'node:child_process'
 import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -46,7 +49,7 @@ if (args[0] === 'auth' && args[1] === 'status') {
     token_valid: ok,
     refresh_token_valid: ok,
     ...(ok
-      ? { expires_at: '2026-09-24T21:30:00+08:00', refresh_expires_at: '2026-10-24T19:30:00+08:00', corp_id: 'dingcorp', corp_name: '示例公司', user_id: 'u1', user_name: '张三' }
+      ? { expires_at: '2026-09-24T21:30:00+08:00', refresh_expires_at: '2026-10-24T19:30:00+08:00', corp_id: scenario.corpId ?? 'dingcorp', corp_name: '示例公司', user_id: scenario.userId ?? 'u1', user_name: '张三' }
       : { message: '未登录' }),
   })
   process.exit(0)
@@ -72,6 +75,39 @@ if (args[0] === 'auth' && args[1] === 'logout') {
   process.exit(0)
 }
 
+if (args[0] === 'event' && args[1] === '+listen-im') {
+  if (scenario.eventStartup === 'fail') err({ error: { category: 'auth', message: 'subscription denied' } }, 1)
+  if (scenario.eventStartup === 'hang') await new Promise(() => setInterval(() => {}, 1000))
+  if (args.includes('--kind') && args[args.indexOf('--kind') + 1] !== 'at-me') err({ error: { category: 'validation', message: 'expected at-me' } }, 3)
+  process.stderr.write('[event] ready event_key=user_im_message_receive_at bus_pid=1 subscribe_id=fake-sub\n')
+  await new Promise((r) => setTimeout(r, scenario.eventDelayMs ?? 30))
+  for (const event of scenario.events ?? []) process.stdout.write(`${JSON.stringify(event)}\n`)
+  process.stdin.resume()
+  process.stdin.on('end', () => process.exit(0))
+  setInterval(() => {}, 1000)
+  process.exit(0)
+}
+
+if (args[0] === 'chat' && args[1] === '+conversation-info') {
+  const id = args[args.indexOf('--group') + 1]
+  const title = scenario.groupNames?.[id]
+  if (!title) err({ error: { category: 'not_found', message: 'group not found' } }, 1)
+  out({ result: { openConversationId: id, title } })
+  process.exit(0)
+}
+
+if (args[0] === 'chat' && args[1] === '+chat-search') {
+  const query = String(flag('query') ?? '')
+  out({ chats: (scenario.groupSearch ?? []).filter((item) => item.title.includes(query)), complete: true, hasMore: false, failures: [] })
+  process.exit(0)
+}
+
+if (args[0] === 'aisearch' && args[1] === 'person') {
+  const query = String(flag('query') ?? '')
+  out({ success: true, result: (scenario.personSearch ?? []).filter((item) => item.title.includes(query)), complete: true })
+  process.exit(0)
+}
+
 if (args[0] !== 'chat' || args[1] !== '+messages-send') err({ error: { category: 'validation', code: 3, message: `unknown command ${args.slice(0, 2).join(' ')}` } }, 3)
 
 let index = 0
@@ -83,10 +119,8 @@ if (dir) {
 const steps = scenario.send ?? [{ mode: 'success' }]
 const step = steps[Math.min(index, steps.length - 1)] ?? { mode: 'success' }
 const identity = flag('as') ?? 'user'
-const groups = typeof flag('groups') === 'string' ? flag('groups').split(',') : undefined
-const tool = identity === 'bot' ? 'send_robot_group_message' : identity === 'webhook' ? 'send_message_by_custom_robot' : 'send_personal_message'
-
-if (identity === 'bot' && !flag('robot-code')) err({ error: { category: 'validation', code: 3, message: '--identity bot 必须指定 --robot-code' } }, 3)
+if (identity !== 'user') err({ error: { category: 'validation', code: 3, message: 'only user identity is supported' } }, 3)
+const tool = 'send_personal_message'
 
 switch (step.mode) {
   case 'hang': {
@@ -109,33 +143,14 @@ switch (step.mode) {
     break
   default: {
     if (flag('dry-run')) {
-      const targets = groups ?? [undefined]
       out({
-        actionCount: targets.length,
-        actions: targets.map((t) => ({ arguments: {}, ...(t ? { target: t } : { identity }), tool })),
-        ...(groups ? { contractVersion: 'im.batch-write.v1', requestedCount: groups.length } : {}),
+        actionCount: 1,
+        actions: [{ arguments: {}, identity, tool }],
         dry_run: true,
         executed: false,
         failedCount: 0,
         preview_kind: 'plan',
         tool,
-      })
-      process.exit(0)
-    }
-    const batchTargets = groups ?? (identity === 'bot' ? [flag('users') ?? flag('open-dingtalk-ids')] : undefined)
-    if (batchTargets) {
-      const failing = new Set(step.mode === 'partial' ? (step.failTargets ?? batchTargets.slice(-1)) : [])
-      const succeeded = batchTargets.filter((t) => !failing.has(t)).map((target) => ({ result: { result: [], success: true, messageId: `msg-${target}` }, target }))
-      const failures = batchTargets.filter((t) => failing.has(t)).map((target) => ({ error: { message: 'robot is not in the group' }, target }))
-      out({
-        contractVersion: 'im.batch-write.v1',
-        failedCount: failures.length,
-        failures,
-        ok: failures.length === 0,
-        partial: failures.length > 0 && succeeded.length > 0,
-        requestedCount: batchTargets.length,
-        succeeded,
-        succeededCount: succeeded.length,
       })
       process.exit(0)
     }

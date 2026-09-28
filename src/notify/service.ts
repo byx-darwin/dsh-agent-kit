@@ -5,8 +5,6 @@ import { digest } from '../common/redact.js'
 import { KitService, type ServiceHealth } from '../common/service.js'
 import type { DingtalkAt, DingtalkTarget } from '../dingtalk/args.js'
 import type { DingtalkService } from '../dingtalk/service.js'
-import type { FeishuAt, FeishuTarget } from '../feishu/args.js'
-import type { FeishuService } from '../feishu/service.js'
 import { NOTIFY_CHANNELS, NotifyConfig, type NotifyChannel } from './config.js'
 
 export type NotifyErrorCode = 'channel_unavailable' | 'invalid_channel'
@@ -25,11 +23,11 @@ export interface NotifySendOptions {
   /** Markdown 正文，与 `text` 二选一。 */
   markdown?: string
   text?: string
-  /** 按渠道给出目标，切换渠道后自动用对应的一项；缺省用该渠道配置的 defaultTarget。 */
-  targets?: { dingtalk?: DingtalkTarget; feishu?: FeishuTarget }
-  /** 按渠道 @ 人（两个渠道的用户 id 体系不同）。 */
-  at?: { dingtalk?: DingtalkAt; feishu?: FeishuAt }
-  /** 透传给渠道；飞书与钉钉 user 身份据此去重与重试。 */
+  /** 缺省使用钉钉配置的 defaultTarget。 */
+  targets?: { dingtalk?: DingtalkTarget }
+  /** 钉钉 @ 人。 */
+  at?: { dingtalk?: DingtalkAt }
+  /** 透传给钉钉 user 身份用于去重与重试。 */
   idempotencyKey?: string
   traceId?: string
   signal?: AbortSignal
@@ -71,10 +69,10 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-type Channel = DingtalkService | FeishuService
+type Channel = DingtalkService
 
 /**
- * 与渠道无关的通知：业务包只调用 `ctx.notify.send()`，同一时间发往一个渠道（钉钉或飞书）。
+ * 通知入口：业务包调用 `ctx.notify.send()` 发往钉钉。
  *
  * - 切换渠道：修改本行配置的 `channel`，或在运行中调用 `use()`。两种方式都不重载本服务与依赖它的
  *   业务插件：修改配置时在本 fiber 的 `internal/update` 钩子里原地换上新值（不调用 `next()`，否决
@@ -135,10 +133,7 @@ export class NotifyService extends KitService<NotifyCounters> {
     try {
       const svc = this.require(channel)
       const common = { title: options.title, markdown: options.markdown, text: options.text, idempotencyKey: options.idempotencyKey, traceId: options.traceId, signal: options.signal }
-      const r =
-        channel === 'dingtalk'
-          ? await (svc as DingtalkService).send({ ...common, target: options.targets?.dingtalk, at: options.at?.dingtalk })
-          : await (svc as FeishuService).send({ ...common, target: options.targets?.feishu, at: options.at?.feishu })
+      const r = await svc.send({ ...common, target: options.targets?.dingtalk, at: options.at?.dingtalk })
       const results = r.results.map((x) => ({ ok: x.ok, ...(x.messageId ? { messageId: x.messageId } : {}), ...(x.error ? { error: x.error } : {}) }))
       const failed = results.find((x) => !x.ok)
       if (failed) this.recordFailure(failed.error?.code ?? 'send_failed')

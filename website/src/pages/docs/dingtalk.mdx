@@ -5,82 +5,80 @@ import Base from '../../layouts/Base.astro'
 import ServiceDoc from '../../components/ServiceDoc.astro'
 import Notice from '../../components/Notice.astro'
 
-<Base title="钉钉推送" description="ctx.dingtalk：通过 dws CLI 发送文本与 Markdown 消息，支持 user / bot / webhook 身份、单聊、多群、@ 与幂等键，并提供登录状态、设备流登录与退出。">
+<Base title="钉钉消息" description="ctx.dingtalk 使用已登录的 dws user 身份发送消息、监听群内 @ 消息并分发给业务插件。">
 <ServiceDoc id="dingtalk">
 
 ## 接口
 
 ```ts
 const r = await ctx.dingtalk.send({
-  markdown: '## 标题\n正文',             // 或 text: '纯文本'，二选一
-  title: '标题',
-  target: { chatId: 'cid...' },          // 或 { userId } / { openDingtalkId } / { chatIds: [...] }（仅 bot）
-  at: { userIds: ['...'], all: false },  // 另有 openDingtalkIds（user / bot）、mobiles（仅 webhook）
+  text: '纯文本',                       // 或 markdown: '## 标题\n正文'
+  target: { chatId: 'cid...' },        // 或 { userId } / { openDingtalkId }
+  at: { openDingtalkIds: ['...'] },   // 也支持 all: true
   idempotencyKey: 'evt_...',
   traceId: 'evt_...',
-  signal,                                // 可选，中止时终止 dws 子进程
+  signal,
 })
 // r.results: Array<{ target, ok, messageId?, error? }>
 ```
 
-本 Service 通过子进程调用 `dws chat +messages-send`：
+仅支持当前 `dws` 登录的 `user` 身份，不提供机器人或 webhook 身份。`target` 省略时使用配置的 `defaultTarget`；目标、@ 列表和幂等键会先经过格式校验。给出 `idempotencyKey` 时，可重试的失败最多重试 `retry.maxAttempts` 次；否则不自动重试，避免重复发送。
 
-- 不经过 shell，参数统一写成 `--key=value` 形式，以 `-` 开头的正文也不会被当成选项。
-- 固定附加 `--yes --format=json`，常驻进程不会卡在交互确认上。
-- 子进程只继承环境变量白名单，本包的其他密钥不会传给 dws。
-- 超时或卸载时先发 SIGTERM，宽限 `killGraceMs` 后发 SIGKILL，连同孙进程一起回收（Windows 上用 `taskkill /T /F`）。
+## 查找业务插件的转发目标
 
-### 目标与身份
-
-`target` 省略时使用配置的 `defaultTarget`；单次调用的 `target` 会覆盖它，多个业务包共用本包时互不影响。目标、@ 列表与幂等键在拼装参数前做格式校验，以 `-` 开头的值会被拒绝（`invalid_target`）。
-
-| 身份 | `chatId` | `chatIds` | `userId` | `openDingtalkId` | @ 参数 | 幂等键 |
-|---|---|---|---|---|---|---|
-| `user` | 支持 | 不支持 | 支持 | 支持 | `openDingtalkIds`、`all` | 支持 |
-| `bot` | 支持 | 支持，最多 100 个 | 支持 | 支持 | `userIds`、`openDingtalkIds`、`all` | 忽略 |
-| `webhook` | 不传 target，目标由 token 所在群决定 | | | | `userIds`、`mobiles`、`all` | 忽略 |
-
-bot 身份统一走批量参数，dws 返回逐目标结果。批量发送的部分失败甚至全部失败都不抛错，体现在 `results` 中。
-
-### 重试
-
-只有在 `user` 身份且给出 `idempotencyKey` 时，才会对可重试的失败（超时，或 dws 错误类别为 network / timeout / rate_limit / server / unavailable）最多重试 `retry.maxAttempts` 次，间隔从 500ms 起指数增长。其他情况不自动重试，避免重复发送。
+业务插件可以用 `ctx.dingtalk.searchRecipients('group', '群名关键词')` 或 `searchRecipients('user', '姓名')` 查询当前登录账号可见的候选。返回项带真实 `{ chatId }`、`{ userId }` 或 `{ openDingtalkId }` 和 `complete` 标记；重名时由配置人员明确选择，不自动采用第一项。业务插件也可在自己的设置字段上声明 `kind: 'dingtalk-target'`，让本机设置页提供群/个人搜索与选择。此操作只保存业务插件自己的发送目标，不影响下方“群消息进入哪个插件”的路由；查找不会发送消息。
 
 <h3 id="login">登录状态与登录</h3>
 
 ```ts
-const st = await ctx.dingtalk.status()
-// { channel: 'dingtalk', identity: 'bot', online: true, account?: '张三', detail, checkedAt }
-
-const s = await ctx.dingtalk.login()   // { channel, verificationUrl, userCode?, expiresAt, completed, cancel() }
-await postToOps(s.verificationUrl)      // 由业务包决定怎么把链接交给要登录的人
-const after = await s.completed         // 授权完成后的状态
-
-await ctx.dingtalk.logout()             // 返回退出后的状态
+const status = await ctx.dingtalk.status()
+const session = await ctx.dingtalk.login()
+await showToUser(session.verificationUrl)
+const after = await session.completed
+await ctx.dingtalk.logout()
 ```
 
-- `status()`：执行 `dws auth status` 实时检查。`dryRun` 时只报告，不改变 `health()`；非 `dryRun` 时结果同时更新 `health()`。
-- `login({ signal? })`：运行 `dws auth login --device --no-browser`，从输出中取到授权链接就返回，dws 在后台等待授权。对方授权后 `completed` 以新的状态 resolve；链接过期（15 分钟，dws 给出有效期时以它为准）、被拒绝、`cancel()` 或 `signal` 中止时同样 resolve，`online` 为 `false`。登录进行中再次调用返回同一个会话。dws 在给出链接前就退出时抛出 `login_failed`。
-- `logout()`：运行 `dws auth logout`，返回退出后的状态。
-- `webhook` 身份没有登录：`status()` 总是 `online: true`，`login()` / `logout()` 抛出 `unsupported`。
+`login()` 启动 `dws auth login --device --no-browser` 并返回真实授权链接；扫码授权完成后 `completed` 返回最新状态。`logout()` 只退出当前账号，不退出同机的其他 dws 账号。启动时以及每隔 `preflightIntervalMs` 检查登录状态；`dryRun: true` 时不真实发送，也跳过启动登录检查。
 
-<Notice title="dws 的登录是本机共享的" tone="warn">
-dws 的登录态属于运行 Profile 的这个系统用户，不属于某个 Profile。同一用户下使用 dws 的其他程序也会看到登录与退出的结果。`logout()` 只退出当前账号（`dws auth logout --profile=<corpId>:<userId>`），不用 dws 默认的「退出全部账号」；取不到当前账号时不做任何事。
+<Notice title="dws 登录是本机共享的" tone="warn">
+登录态属于运行 Profile 的系统用户，同一用户下使用 dws 的其他程序也会看到登录与退出的结果。组织必须授予 CLI 数据访问权限，扫码登录本身不能绕过权限限制。
 </Notice>
 
-### 登录态检查与 dryRun
+`dwsPath` 必须是可执行文件的绝对路径；省略时从 `PATH` 查找。Windows 上可以自动解析 npm 的 `dws.cmd` 到实际的 `dws.js`，手动指定时请直接指向 `.exe` 或 `.js`。
 
-- 启动时以及每隔 `preflightIntervalMs` 执行 `dws auth status` 检查登录态。失效时 `health()` 返回 `failed`，并触发 `agent-kit/service-failed` 事件。
-- `dryRun: true` 时附加 `--dry-run`，只做参数解析与日志、不真实发送，适合本地开发与测试；此时不检查登录态。
-- `webhook` 身份不检查登录态。
+## 群内 @ 消息路由
 
-<Notice title="webhook 身份不推荐" tone="warn">
-dws 只支持以 `--webhook-token` 命令行参数传入 token，运行期间用 `ps` 能看到。本包启动时会记录警告；服务器环境推荐使用 `bot` 身份。
-</Notice>
+在 Agent Kit 设置页的钉钉卡片中，可添加“群 ID → 业务插件 ID”映射，并从未命中消息选群。群名仅用于展示。插件用相同 ID 注册接收器：
 
-### dwsPath 与 Windows
+```ts
+export const inject = ['dingtalk']
+export async function apply(ctx: Context) {
+  const sub = ctx.dingtalk.onPluginMessage('business-orders', async (message, { signal }) => {
+    await handleOrder(message.content, { eventId: message.eventId, signal })
+  })
+  await sub.ready
+}
+```
 
-`dwsPath` 必须是绝对路径；省略时启动时从 `PATH` 解析。Windows 上 npm 全局安装的是 `dws.cmd`，本包会自动定位到它背后的 `dws.js` 并用 node 运行。手动配置 `dwsPath` 时，请指向可执行文件、`.exe` 或 `.js`，不要指向 `.cmd` / `.bat`。
+对应配置为 `groupRoutes: [{ conversationId: 'cid-orders', pluginId: 'business-orders' }]`。一个群只会转给一个目标插件；目标插件未注册时记入未命中，不回退给其他插件。设置页的业务插件列表提供 ID 输入建议，但登记设置项不等于注册了消息接收器。
+
+兼容旧接口：业务插件仍可用 `ctx.dingtalk.onMessage({ conversationId, match?, priority? }, handler)` 在代码中注册规则，设置页配置的群优先走指定业务插件。旧接口先按群的 `conversationId` 匹配，再由可选的 `match` 判断正文；数值更高的 `priority` 优先。每条消息只交给第一个命中的处理器，不会广播给所有插件。
+
+```ts
+export const inject = ['dingtalk']
+
+export async function apply(ctx: Context) {
+  const sub = ctx.dingtalk.onMessage(
+    { conversationId: 'cid-orders', match: (m) => m.content.startsWith('工单') },
+    async (message, { signal }) => {
+      await handleOrder(message.content, { eventId: message.eventId, signal })
+    },
+  )
+  await sub.ready
+}
+```
+
+Agent Kit 为全部业务插件共用一个常驻的 dws `@我` 事件监听进程。插件卸载时自动注销规则，但监听继续记录未命中的消息，Service 卸载时退出。最近 200 条未命中记录会保留群 ID、可查到的群名、时间和最多 240 字预览；可在本机设置页的钉钉卡片查看，或调用 `ctx.dingtalk.unmatchedMessages()` 读取。dsh Profile 下按 dws 账号分别保存于 `.agent-kit/dingtalk-unmatched/<账号哈希>.json`，不会自动转发给其他插件。`message.content` 是不可信输入；业务插件负责校验、决定是否回复。进程内按 `eventId` 去重，但重启后仍可能重复投递，业务处理需自行幂等。`dryRun` 模式不能启动监听。
 
 </ServiceDoc>
 </Base>

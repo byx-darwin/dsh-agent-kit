@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { T } from './forms.js'
 import type { AdminApi, AdminStatus, KeyTarget } from './remote.js'
 import { DingtalkAuthPanel } from './dingtalk-auth.js'
+import { DingtalkUnmatchedPanel } from './dingtalk-unmatched.js'
 import { ServiceCard } from './service-card.js'
 
 /** 与 secrets/typesafe-key.ts 里的 SHARED_KEYCHAIN_SERVICE 保持一致：与 gitflow-cli 等工具共享的钥匙串服务名。 */
@@ -136,7 +137,7 @@ export function SettingsPage({ api, t }: { api: AdminApi; t: T }) {
       </p>
       {!status.writable && <p role="note" className="agent-kit-banner">{t('readOnly', { reason: status.readOnlyReason ?? '' })}</p>}
       <div className="agent-kit-cards">
-        {status.services.map((s) => (
+        {status.services.filter((s) => s.id !== 'agent-kit-notify').map((s) => (
           <ServiceCard
             key={`${s.id}-${generation}`}
             service={s}
@@ -149,8 +150,11 @@ export function SettingsPage({ api, t }: { api: AdminApi; t: T }) {
             onSecretChanged={refreshAfterConflict}
           >
             {s.id === 'agent-kit-jev' && (s.config as { provider?: string } | undefined)?.provider !== 'laya' && <KeyPanel status={status} api={api} t={t} onChanged={load} />}
-            {s.id === 'agent-kit-dingtalk' && s.enabled && (s.config as { identity?: string } | undefined)?.identity !== 'webhook' && (
-              <DingtalkAuthPanel api={api} t={t} writable={status.writable} onChanged={refreshAfterConflict} />
+            {s.id === 'agent-kit-dingtalk' && s.enabled && (
+              <>
+                <DingtalkAuthPanel api={api} t={t} writable={status.writable} onChanged={refreshAfterConflict} />
+                {status.writable && <DingtalkUnmatchedPanel api={api} t={t} />}
+              </>
             )}
           </ServiceCard>
         ))}

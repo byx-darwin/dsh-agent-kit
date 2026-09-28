@@ -11,13 +11,21 @@ export type FakeDwsSendStep =
   | { mode: 'fail'; exitCode?: number; category?: string; message?: string }
   | { mode: 'hang' }
   | { mode: 'bad_output' }
-  | { mode: 'partial'; failTargets?: string[] }
 
 export interface FakeDwsScenario {
   auth?: 'ok' | 'expired' | 'error'
+  corpId?: string
+  userId?: string
   /** `dws auth login --device` 的结果；approve 后 auth 变为 ok。 */
   login?: 'approve' | 'deny' | 'hang' | 'no_link' | 'success' | 'fail'
   loginDelayMs?: number
+  /** 假监听器就绪后写到 NDJSON stdout 的事件。 */
+  events?: unknown[]
+  eventDelayMs?: number
+  eventStartup?: 'ready' | 'fail' | 'hang'
+  groupNames?: Record<string, string>
+  groupSearch?: Array<{ openConversationId: string; title: string }>
+  personSearch?: Array<{ userId?: string; openDingTalkId?: string; title: string }>
   /** 按调用次序取，超出时重复最后一个。 */
   send?: FakeDwsSendStep[]
 }

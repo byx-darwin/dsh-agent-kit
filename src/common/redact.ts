@@ -6,7 +6,7 @@ export const MAX_TEXT_LENGTH = 2000
 const secrets = new Map<string, number>()
 
 /**
- * 登记一个已知密钥值（WebSocket 鉴权头、Jev API Key、webhook token 等）。
+ * 登记一个已知密钥值（WebSocket 鉴权头、Jev API Key 等）。
  * 之后所有经过 {@link redact} 的文本中出现该值都会被替换。返回注销函数。
  */
 export function registerSecret(value: string | undefined | null): () => void {

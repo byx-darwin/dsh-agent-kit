@@ -27,13 +27,6 @@ function findMessageId(v: unknown, depth = 0): string | undefined {
   return undefined
 }
 
-function targetKey(t: ResolvedTarget): string {
-  if ('chatId' in t) return t.chatId
-  if ('userId' in t) return t.userId
-  if ('openDingtalkId' in t) return t.openDingtalkId
-  return 'webhook'
-}
-
 function describeFailure(entry: unknown): string {
   if (!isObject(entry)) return 'send failed'
   const err = entry.error
@@ -47,10 +40,9 @@ function describeFailure(entry: unknown): string {
 /**
  * 解析 `dws chat +messages-send --format=json` 成功退出时的 stdout。
  * - 单目标：`{ ok, identity, result, sendReceipt }`；
- * - bot 多目标（im.batch-write.v1）：`{ succeeded: [{target, result}], failures: [...] }`；
  * - dry-run：`{ dry_run: true, actions: [...] }`。
  */
-export function parseSendOutput(stdout: string, targets: ResolvedTarget[], batch: boolean): TargetResult[] {
+export function parseSendOutput(stdout: string, targets: ResolvedTarget[]): TargetResult[] {
   let data: unknown
   try {
     data = JSON.parse(stdout)
@@ -61,37 +53,6 @@ export function parseSendOutput(stdout: string, targets: ResolvedTarget[], batch
 
   if (data.dry_run === true) {
     return targets.map((target) => ({ target, ok: true }))
-  }
-
-  if (batch || data.contractVersion === 'im.batch-write.v1') {
-    const succeeded = data.succeeded
-    const failures = data.failures
-    if (!Array.isArray(succeeded) || !Array.isArray(failures)) {
-      throw new DingtalkSendError('bad_output', 'dws batch output is missing succeeded/failures')
-    }
-    const byKey = new Map<string, TargetResult>()
-    for (const entry of succeeded) {
-      if (!isObject(entry) || typeof entry.target !== 'string') continue
-      const messageId = findMessageId(entry.result)
-      byKey.set(entry.target, { target: { chatId: entry.target }, ok: true, ...(messageId ? { messageId } : {}) })
-    }
-    for (const entry of failures) {
-      if (!isObject(entry) || typeof entry.target !== 'string') continue
-      byKey.set(entry.target, {
-        target: { chatId: entry.target },
-        ok: false,
-        error: new DingtalkSendError('send_failed', describeFailure(entry), { details: { target: entry.target } }),
-      })
-    }
-    return targets.map((target) => {
-      const found = byKey.get(targetKey(target))
-      if (found) return { ...found, target }
-      return {
-        target,
-        ok: false,
-        error: new DingtalkSendError('bad_output', 'target missing from dws batch result'),
-      }
-    })
   }
 
   const ok = data.ok === true || data.success === true || (isObject(data.result) && data.result.success === true)

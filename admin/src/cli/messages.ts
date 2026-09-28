@@ -46,8 +46,7 @@ export const SELECT_SERVICES_MESSAGE = '要启用哪些 Service？'
 export const KIT_TITLES: Record<string, string> = {
   'agent-kit-ws': 'WebSocket 客户端',
   'agent-kit-dingtalk': '钉钉推送',
-  'agent-kit-feishu': '飞书推送',
-  'agent-kit-notify': '通知渠道（业务包通过 ctx.notify 发送，渠道可随时切换）',
+  'agent-kit-notify': '钉钉通知入口（业务包通过 ctx.notify 发送）',
   'agent-kit-agent-tasks': 'Agent 任务',
   'agent-kit-jev': 'Jev 判断',
 }
@@ -60,7 +59,7 @@ export const SEND_TEST_MESSAGE_CONFIRM = '给当前 dws 登录用户发送一条
 
 // ---- 渠道 CLI 安装 ----
 
-export const INSTALL_CLIS_MESSAGE = '以下 CLI 尚未安装，选择要现在安装的（可以都装，也可以只装一个）'
+export const INSTALL_CLIS_MESSAGE = '以下 CLI 尚未安装，选择要现在安装的'
 export function installCliChoice(title: string, pkg: string, version: string): string {
   return `${title}：${pkg}@${version}`
 }
@@ -82,15 +81,6 @@ export function installedButNotFound(title: string): string {
 
 // ---- dingtalk ----
 
-export const DINGTALK_IDENTITY_MESSAGE = '钉钉发送身份'
-export const DINGTALK_IDENTITY_CHOICES = [
-  { value: 'bot' as const, name: 'bot（机器人，服务器环境推荐）' },
-  { value: 'user' as const, name: 'user（当前 dws 登录账号）' },
-  { value: 'webhook' as const, name: 'webhook（不推荐：token 会出现在进程参数中）' },
-]
-export const DINGTALK_ROBOT_CODE_MESSAGE = '机器人 robotCode'
-export const DINGTALK_WEBHOOK_TOKEN_ENV_MESSAGE = '保存 webhook token 的环境变量名'
-export const DINGTALK_WEBHOOK_TOKEN_ENV_DEFAULT = 'DINGTALK_WEBHOOK_TOKEN'
 export const DINGTALK_DEFAULT_TARGET_MESSAGE = '默认发送目标（省略 target 时使用）'
 export const DINGTALK_DEFAULT_TARGET_CHOICES = [
   { value: 'search' as const, name: '按群名搜索群' },
@@ -107,7 +97,6 @@ export const DINGTALK_DRY_RUN_MESSAGE = '只演练不真实发送（dryRun）？
 export const DINGTALK_LOGIN_CONFIRM_MESSAGE = 'dws 尚未登录，现在运行 dws auth login？'
 export const DINGTALK_LOGIN_FAILED = 'dws auth login 未成功，稍后可手动运行。\n'
 
-export const DINGTALK_WEBHOOK_UNSUPPORTED_SELF_TEST = 'webhook 身份不支持单聊测试'
 export const DINGTALK_CANNOT_RESOLVE_CURRENT_USER = '无法从 dws auth status 取得当前用户'
 export const DINGTALK_TEST_MESSAGE_SENT = '测试消息已发送'
 export function dingtalkTestMessageFailed(detail: string): string {
@@ -117,41 +106,9 @@ export function dingtalkTestMarkdown(now = new Date()): string {
   return `dsh-agent-kit setup 测试消息 ${now.toISOString()}`
 }
 
-// ---- feishu ----
-
-export const FEISHU_IDENTITY_MESSAGE = '飞书发送身份'
-export const FEISHU_IDENTITY_CHOICES = [
-  { value: 'bot' as const, name: 'bot（应用机器人，服务器环境推荐；只需 lark-cli config init）' },
-  { value: 'user' as const, name: 'user（以登录用户身份发送；需要 lark-cli auth login）' },
-]
-export const FEISHU_CONFIG_INIT_CONFIRM = 'lark-cli 还没有可用的应用配置，现在运行 lark-cli config init？'
-export const FEISHU_LOGIN_CONFIRM = '飞书 user 身份尚未登录，现在运行 lark-cli auth login？'
-export const FEISHU_SETUP_FAILED = 'lark-cli 配置 / 登录未成功，稍后可手动运行。\n'
-export const FEISHU_DEFAULT_TARGET_MESSAGE = '默认发送目标（省略 target 时使用）'
-export const FEISHU_DEFAULT_TARGET_CHOICES = [
-  { value: 'search' as const, name: '按群名搜索群' },
-  { value: 'chatId' as const, name: '直接输入群 chat_id（oc_ 开头）' },
-  { value: 'userId' as const, name: '单聊（用户 open_id，ou_ 开头）' },
-  { value: 'none' as const, name: '不设置，每次调用时指定' },
-]
-export const FEISHU_GROUP_QUERY_MESSAGE = '群名关键词'
-export const FEISHU_NO_GROUP_FOUND = '没有搜索到群，请直接输入 chat_id。\n'
-export const FEISHU_CHAT_ID_MESSAGE = '群 chat_id（oc_ 开头）'
-export const FEISHU_USER_ID_MESSAGE = '接收者 open_id（ou_ 开头）'
-export const FEISHU_SELECT_GROUP_MESSAGE = '选择群'
-export const FEISHU_DRY_RUN_MESSAGE = '只演练不真实发送（dryRun）？'
-export const FEISHU_TEST_MESSAGE_CONFIRM = '给飞书默认目标发送一条测试消息？（群里其他人也会看到）'
-export const FEISHU_TEST_MESSAGE_SENT = '飞书测试消息已发送'
-export function feishuTestMessageFailed(detail: string): string {
-  return `飞书测试消息发送失败：${detail}`
-}
-export const CHAT_ID_PATTERN_HINT = '应以 oc_ 开头'
-export const OPEN_ID_PATTERN_HINT = '应以 ou_ 开头'
-
 // ---- notify ----
 
-export const NOTIFY_CHANNEL_MESSAGE = '通知发往哪个渠道？（同一时间只用一个；之后可在设置页、重新运行 setup，或在业务代码里用 ctx.notify.use() 切换）'
-export const NOTIFY_CHANNEL_TITLES: Record<string, string> = { dingtalk: '钉钉', feishu: '飞书' }
+export const NOTIFY_CHANNEL_TITLES: Record<string, string> = { dingtalk: '钉钉' }
 export function notifyChannelNotEnabled(channel: string): string {
   return `注意：${channel} 没有启用，发往它的通知会失败；可以稍后在设置页启用。\n`
 }
@@ -159,14 +116,6 @@ export function notifyChannelNotEnabled(channel: string): string {
 // ---- agent-tasks ----
 
 export const AGENT_TASKS_WORKSPACE_DIR_MESSAGE = '任务工作目录（绝对路径，专用目录）'
-export function agentTasksPermissionMessage(provider: string): string {
-  return `${provider} 实例的权限上限（不支持按任务过滤工具，需如实声明）`
-}
-export const AGENT_TASKS_PERMISSION_CHOICES = [
-  { value: 'read-only' as const, name: 'read-only（claude-code 默认 dontAsk / codex 默认 never 时选这个）' },
-  { value: 'workspace-write' as const, name: 'workspace-write' },
-  { value: 'none' as const, name: '不使用该 provider' },
-]
 
 // ---- jev ----
 

@@ -11,7 +11,7 @@ import { choice, noul } from '../../src/jev/types.js'
 // 端到端冒烟：使用真实 dws / subagent / Jev，只在夜间或手动触发时运行（npm run test:e2e）。
 // 每一项通过环境变量单独启用，未配置时跳过：
 //   dingtalk:   AGENT_KIT_E2E_DINGTALK_CHAT_ID（测试群）或 AGENT_KIT_E2E_DINGTALK_USER_ID（单聊接收者 userId），
-//               AGENT_KIT_E2E_DINGTALK_IDENTITY（默认 bot），AGENT_KIT_E2E_DINGTALK_ROBOT_CODE
+//               使用当前 dws 登录的 user 身份
 //   agentTasks: AGENT_KIT_E2E_SUBAGENT=claude-code，AGENT_KIT_E2E_SUBAGENT_MODEL（默认 haiku）；需要本机已登录 Claude Code。
 //               provider 会从子进程环境中剔除名字含 KEY/TOKEN/SECRET/PASSWORD 的变量，若 Agent 依赖这类变量鉴权，
 //               用 AGENT_KIT_E2E_SUBAGENT_ENV=ANTHROPIC_BASE_URL,ANTHROPIC_AUTH_TOKEN 列出要经 provider Config.env 显式传入的变量名
@@ -34,10 +34,8 @@ afterEach(async () => {
 
 describe.skipIf(!env.AGENT_KIT_E2E_DINGTALK_CHAT_ID && !env.AGENT_KIT_E2E_DINGTALK_USER_ID)('dingtalk (real dws)', () => {
   it('sends a message to the test group or user', async () => {
-    const identity = (env.AGENT_KIT_E2E_DINGTALK_IDENTITY ?? 'bot') as 'bot' | 'user'
     await root.plugin(DingtalkService, {
-      identity,
-      ...(identity === 'bot' ? { robotCode: env.AGENT_KIT_E2E_DINGTALK_ROBOT_CODE } : {}),
+      identity: 'user',
       defaultTarget: env.AGENT_KIT_E2E_DINGTALK_CHAT_ID
         ? { chatId: env.AGENT_KIT_E2E_DINGTALK_CHAT_ID }
         : { userId: env.AGENT_KIT_E2E_DINGTALK_USER_ID! },

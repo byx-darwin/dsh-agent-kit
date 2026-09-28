@@ -1,7 +1,6 @@
 ---
 import Base from '../layouts/Base.astro'
 import ServiceCard from '../components/ServiceCard.astro'
-import ChannelChoiceCard from '../components/ChannelChoiceCard.astro'
 import CopyCommand from '../components/CopyCommand.astro'
 import { SITE } from '../lib/site'
 import { SERVICES } from '../data/services'
@@ -11,19 +10,19 @@ import { softwareJsonLd } from '../lib/jsonld'
 
 const base = import.meta.env.BASE_URL
 const agentWs = SERVICES.find((s) => s.id === 'agentWs')!
-const remainingServices = SERVICES.filter((s) => !['agentWs', 'dingtalk', 'feishu'].includes(s.id))
+const remainingServices = SERVICES.filter((s) => s.id !== 'agentWs')
 
 const patchExample = `- id: agent-kit-ws
   disabled: false
-- id: agent-kit-feishu
+- id: agent-kit-dingtalk
   disabled: false
   config:
-    identity: bot
-    defaultTarget: { chatId: oc_xxxx }
+    identity: user
+    defaultTarget: { chatId: cidxxxx }
 - id: agent-kit-notify
   disabled: false
   config:
-    channel: feishu`
+    channel: dingtalk`
 
 const pluginExample = `export const inject = ['agentWs', 'notify', 'agentTasks', 'jev']
 
@@ -48,7 +47,7 @@ export function apply(ctx: Context, config: Config) {
         signal,
       })
 
-      // 通知：不相符时告警；发到钉钉还是飞书由 agent-kit-notify 的 channel 决定
+      // 通知：不相符时通过钉钉告警
       if (answers.wrong.noul >= 0.7) {
         await ctx.notify.send({ title: '需要人工复核', markdown: render(frame, draft), idempotencyKey: frame.id })
       }
@@ -73,10 +72,9 @@ export function apply(ctx: Context, config: Config) {
 
   <section>
     <h2>五类能力</h2>
-    <p>底层由六个 Cordis Service 实现；其中钉钉与飞书是同一个“渠道适配”位置的两种实现，通知配置时二选一。</p>
+    <p>底层由五个 Cordis Service 实现，钉钉使用已登录的 user 身份。</p>
     <div class="grid-2">
       <ServiceCard numeral={agentWs.numeral} verb={agentWs.verb} name={`${agentWs.name} · ${agentWs.context}`} summary={agentWs.summary} href={`/docs/${agentWs.slug}`} />
-      <ChannelChoiceCard />
       {
         remainingServices.map((s) => (
           <ServiceCard numeral={s.numeral} verb={s.verb} name={`${s.name} · ${s.context}`} summary={s.summary} href={`/docs/${s.slug}`} />
@@ -88,10 +86,10 @@ export function apply(ctx: Context, config: Config) {
   <section class="narrow">
     <h2>默认安全</h2>
     <ul>
-      <li>密钥只从环境变量、钥匙串或 dsh 凭据文件读取，不传给本包启动的任何子进程；钉钉、飞书的凭据由 dws、lark-cli 自己管理。</li>
+      <li>密钥只从环境变量、钥匙串或 dsh 凭据文件读取，不传给本包启动的任何子进程；钉钉凭据由 dws 管理。</li>
       <li>来自 WebSocket 的数据和 Agent 的输出都视为不可信：Agent 默认只读、在独立的空目录中运行，输出经过 Schema 与业务白名单校验后才应触发副作用。</li>
       <li>只允许 <code>wss://</code>，不关闭证书校验，不跟随重定向。</li>
-      <li>日志和错误统一脱敏，不记录鉴权头、API Key、webhook token 与完整消息正文。</li>
+      <li>日志和错误统一脱敏，不记录鉴权头、API Key 与完整消息正文。</li>
     </ul>
     <p><a href={withBasePath(base, '/docs/security')}>阅读安全说明</a></p>
   </section>
@@ -99,7 +97,7 @@ export function apply(ctx: Context, config: Config) {
   <section class="narrow">
     <h2>按需启用</h2>
     <p>
-      六个实现 Service 在本包的 bundle 中以禁用状态注册。只有在 Profile 的 <code>cordis.patch.yml</code> 中启用的 Service 才会加载并校验配置；使用通知时，钉钉与飞书渠道选其一即可。
+      五个 Service 在本包的 bundle 中以禁用状态注册。只有在 Profile 的 <code>cordis.patch.yml</code> 中启用的 Service 才会加载并校验配置；使用通知时启用钉钉和 notify 即可。
     </p>
     <pre><code>{patchExample}</code></pre>
     <p>装了可选的运维工具 <code>@mc/dsh-agent-kit-admin</code> 时，也可以用 <code>setup</code> 交互式生成这段配置，或在 dsh Web 的设置页里直接勾选。</p>
@@ -107,7 +105,7 @@ export function apply(ctx: Context, config: Config) {
 
   <section class="narrow">
     <h2>业务包长这样</h2>
-    <p>业务包只 inject 用到的 Service，协议、路由、模板和流程留在自己的代码里。发通知用 <code>ctx.notify</code>，渠道留给运维切换。</p>
+    <p>业务包只 inject 用到的 Service，协议、路由、模板和流程留在自己的代码里。发通知用 <code>ctx.notify</code>。</p>
     <pre><code>{pluginExample}</code></pre>
     <p><a href={withBasePath(base, '/architecture')}>了解它与 dsh 的关系</a></p>
   </section>

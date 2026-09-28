@@ -1,7 +1,7 @@
-// 六个 Service 的展示元数据，顺序与 patch.yml 中的 loader 行一致。配置项表由 config-tables.ts 从源码 schema 生成；
+// 五个 Service 的展示元数据，顺序与 patch.yml 中的 loader 行一致。配置项表由 config-tables.ts 从源码 schema 生成；
 // 这里只补充 schema 里没有的内容：编号、摘要、跨字段约束、错误码，以及缺少 description 的字段说明。
 
-export type ServiceId = 'agentWs' | 'dingtalk' | 'feishu' | 'notify' | 'agentTasks' | 'jev'
+export type ServiceId = 'agentWs' | 'dingtalk' | 'notify' | 'agentTasks' | 'jev'
 
 export interface ServiceError {
   code: string
@@ -71,68 +71,30 @@ export const SERVICES: ServiceMeta[] = [
     name: '钉钉推送',
     context: 'ctx.dingtalk',
     slug: 'dingtalk',
-    summary: '通过钉钉 dws CLI 发送文本 / Markdown 消息，支持 user / bot / webhook 身份、群聊 / 单聊 / 多群、@ 人、幂等键和 dryRun。',
+    summary: '通过钉钉 dws CLI 的 user 身份发送消息；统一监听群内 @ 消息，并按群 ID 与内容规则下发给业务插件。',
     kitId: 'agent-kit-dingtalk',
     notes: [
-      'bot 身份必须填写 robotCode；webhook 身份必须填写 webhookTokenEnv，且对应环境变量已设置。',
-      'webhook 身份不能设置 defaultTarget：目标由 token 所在群决定。',
-      'webhook 身份只能把 token 作为命令行参数传给 dws（会出现在 ps 中），不推荐使用。',
-      '自动重试只在 user 身份且给出 idempotencyKey 时进行，避免重复发送。',
-      'status() 实时检查登录态；login() 发起设备流登录，拿到授权链接即返回，由业务包决定怎么交给要登录的人；logout() 退出登录。webhook 身份的 login() / logout() 报 unsupported。',
+      '自动重试只在给出 idempotencyKey 时进行，避免重复发送。',
+      'status() 实时检查登录态；login() 发起设备流登录，拿到授权链接即返回，由业务包决定怎么交给要登录的人；logout() 退出登录。',
       'dws 的登录态是本机共享的，同一系统用户下的其他 dws 程序也会看到登录与退出；logout() 只退出当前账号（--profile=<corpId>:<userId>）。',
+      'onMessage() 按 conversationId、match 和 priority 注册路由；每条 @ 消息只交给首个命中的业务插件，路由随插件卸载自动注销。',
     ],
     errors: [
       { code: 'timeout', retryable: '是', meaning: 'dws 超时，子进程按「先 SIGTERM、宽限后 SIGKILL」回收。' },
       { code: 'exit_nonzero', retryable: '视情况', meaning: 'dws 非零退出；按 dws 错误类别（network / timeout / rate_limit / server / unavailable）判断是否可重试。' },
       { code: 'bad_output', retryable: '否', meaning: 'dws 输出无法解析。' },
-      { code: 'invalid_target', retryable: '否', meaning: '目标、@ 列表或幂等键格式非法，或与身份不匹配。' },
-      { code: 'send_failed', retryable: '否', meaning: 'dws 报告发送失败（批量发送时体现在逐目标结果中）。' },
+      { code: 'invalid_target', retryable: '否', meaning: '目标、@ 列表或幂等键格式非法。' },
+      { code: 'send_failed', retryable: '否', meaning: 'dws 报告发送失败。' },
       { code: 'aborted', retryable: '否', meaning: '调用方 signal 中止或 Service 卸载。' },
       { code: 'spawn_failed', retryable: '否', meaning: '无法启动 dws 子进程。' },
-      { code: 'unsupported', retryable: '否', meaning: 'webhook 身份调用 login() / logout()：该身份没有登录。' },
       { code: 'login_failed', retryable: '否', meaning: 'dws auth login 在给出授权链接之前就结束了。' },
       INVALID_CONFIG,
     ],
     descriptions: {
       timeoutMs: '单次 dws 调用的超时时间。',
       killGraceMs: '超时或卸载时，SIGTERM 之后等待多久再发 SIGKILL。',
-      'retry.maxAttempts': 'user 身份且给出幂等键时，可重试失败的最多重试次数。',
-      dryRun: '附加 --dry-run，只解析参数、不真实发送；同时跳过登录态检查。',
-    },
-  },
-  {
-    id: 'feishu',
-    numeral: '贰',
-    verb: '渠道',
-    name: '飞书推送',
-    context: 'ctx.feishu',
-    slug: 'feishu',
-    summary: '通过飞书官方 CLI lark-cli 发送文本 / Markdown 消息，支持 bot / user 身份、群聊 / 单聊 / 多群、@ 人、幂等键和 dryRun。',
-    kitId: 'agent-kit-feishu',
-    notes: [
-      'bot 身份只需要用 lark-cli config init 配好应用的 App ID / App Secret；user 身份还需要登录：lark-cli auth login --scope "im:message.send_as_user im:message"，或由业务包调用 ctx.feishu.login()。',
-      'status() 实时检查所配身份是否可用；user 身份的 login() 发起设备流登录，拿到授权链接即返回，logout() 退出登录。bot 身份的 login() / logout() 报 unsupported。',
-      '应用凭据与令牌由 lark-cli 自己的配置和系统钥匙串管理，本包不保存，也不把它们传给子进程。',
-      '自动重试只在给出 idempotencyKey 时进行，避免重复发送；lark-cli 的幂等键最长 50 个字符，多目标时逐目标派生。',
-      'larkPath 必须是绝对路径，指向可执行文件、.exe 或 .js，不支持 Windows 的 .cmd / .bat。',
-    ],
-    errors: [
-      { code: 'timeout', retryable: '是', meaning: 'lark-cli 超时，子进程按「先 SIGTERM、宽限后 SIGKILL」回收。' },
-      { code: 'exit_nonzero', retryable: '视情况', meaning: 'lark-cli 非零退出；按错误类别（network / timeout / rate_limit / server / internal / unavailable）判断是否可重试。' },
-      { code: 'bad_output', retryable: '否', meaning: 'lark-cli 输出无法解析。' },
-      { code: 'invalid_target', retryable: '否', meaning: '目标、@ 列表、正文或幂等键格式非法（例如 chat_id 不以 oc_ 开头、超过 100 个群）。' },
-      { code: 'send_failed', retryable: '否', meaning: 'lark-cli 报告 ok: false（多目标时体现在逐目标结果中）。' },
-      { code: 'aborted', retryable: '否', meaning: '调用方 signal 中止或 Service 卸载。' },
-      { code: 'spawn_failed', retryable: '否', meaning: '无法启动 lark-cli 子进程。' },
-      { code: 'unsupported', retryable: '否', meaning: 'bot 身份调用 login() / logout()：bot 使用应用凭据，没有用户登录。' },
-      { code: 'login_failed', retryable: '否', meaning: 'lark-cli auth login 未能开始设备流登录。' },
-      INVALID_CONFIG,
-    ],
-    descriptions: {
-      timeoutMs: '单次 lark-cli 调用的超时时间。',
-      killGraceMs: '超时或卸载时，SIGTERM 之后等待多久再发 SIGKILL。',
       'retry.maxAttempts': '给出幂等键时，可重试失败的最多重试次数。',
-      dryRun: '附加 --dry-run，只解析参数、不真实发送；同时跳过身份检查。',
+      dryRun: '附加 --dry-run，只解析参数、不真实发送；同时跳过登录态检查。',
     },
   },
   {
@@ -142,18 +104,16 @@ export const SERVICES: ServiceMeta[] = [
     name: '通知渠道',
     context: 'ctx.notify',
     slug: 'notify',
-    summary: '与渠道无关的通知：业务包只调用 ctx.notify.send()，同一时间发往一个渠道（钉钉或飞书）。渠道由配置决定，也可以在运行中用 ctx.notify.use() 切换，不需要改业务代码。',
+    summary: '钉钉通知入口：业务包通过 ctx.notify.send() 发送，无需直接依赖钉钉 Service。',
     kitId: 'agent-kit-notify',
     notes: [
-      'channel 所选渠道对应的行（agent-kit-dingtalk / agent-kit-feishu）需要启用；未运行时 send() 抛出 channel_unavailable，admin 包的 doctor 检查 agent-kit-notify.channel 也会失败。',
-      '修改 channel 时原地生效：notify 在自己的 internal/update 钩子里换上新值，拦截 cordis 默认的重启，notify 与只 inject notify 的业务插件都不重新加载。',
-      'ctx.notify.use(channel) 在运行中切换，立即生效、只在内存中；dsh 重启后回到配置值，修改配置时以新配置为准。',
-      '本 Service 不 inject 钉钉与飞书，而是在发送时查找：启用、停用渠道行也不会重新加载 notify。',
-      'status() 返回当前渠道、来源（config / runtime）与两个渠道的实时登录状态；login(channel?) / logout(channel?) 转给当前（或指定的）渠道。',
+      'channel 固定为 dingtalk；钉钉行（agent-kit-dingtalk）需要启用，未运行时 send() 抛出 channel_unavailable。',
+      '本 Service 不 inject 钉钉，而是在发送时查找：启用、停用渠道行也不会重新加载 notify。',
+      'status() 返回当前渠道、来源（config / runtime）与钉钉的实时登录状态；login(channel?) / logout(channel?) 转给当前（或指定的）渠道。',
     ],
     errors: [
       { code: 'channel_unavailable', retryable: '否', meaning: '当前渠道（或 login() / logout() 指定的渠道）对应的行未运行（未启用或启动失败）；details.channel 为渠道名。' },
-      { code: 'invalid_channel', retryable: '否', meaning: 'use() 传入了 dingtalk / feishu 以外的渠道。' },
+      { code: 'invalid_channel', retryable: '否', meaning: 'use() 传入了 dingtalk 以外的渠道。' },
       INVALID_CONFIG,
     ],
     descriptions: {},

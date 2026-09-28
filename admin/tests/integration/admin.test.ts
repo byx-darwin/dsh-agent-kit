@@ -32,6 +32,18 @@ async function setup(host: '127.0.0.1' | '0.0.0.0' | undefined) {
 }
 
 describe('AgentKitAdmin', () => {
+  it('exposes unmatched previews only through a loopback-bound settings page', async () => {
+    const local = await setup('127.0.0.1')
+    expect(await local.dingtalkUnmatched()).toEqual([])
+    root.provide('dingtalk', { searchRecipients: async () => ({ candidates: [{ name: '研发群', target: { chatId: 'cidA' } }], complete: true }) } as never)
+    expect(await local.dingtalkSearchRecipients('group', '研发')).toEqual({ candidates: [{ name: '研发群', target: { chatId: 'cidA' } }], complete: true })
+    await expect(local.dingtalkSearchRecipients('group', 'x')).rejects.toThrow(/bad_request/)
+    await root.fiber.dispose()
+    root = new Context()
+    const remote = await setup('0.0.0.0')
+    await expect(remote.dingtalkUnmatched()).rejects.toThrow(/read_only/)
+    await expect(remote.dingtalkSearchRecipients('group', '研发')).rejects.toThrow(/read_only/)
+  })
   it('reports status with health, checks and key description', async () => {
     const admin = await setup('127.0.0.1')
     const s = await admin.status()
@@ -48,6 +60,17 @@ describe('AgentKitAdmin', () => {
     expect(readFileSync(join(profileDir, 'cordis.patch.yml'), 'utf8')).toContain('agent-kit-jev')
     await expect(admin.saveService('agent-kit-jev', false, null, version)).rejects.toThrow(/conflict/)
     await expect(admin.saveService('agent-kit-ws', true, { pingIntervalMs: 30000, readTimeoutMs: 10 }, r.version)).rejects.toThrow(/invalid_config/)
+  })
+
+  it('persists DingTalk group-to-plugin routes through settings validation', async () => {
+    const admin = await setup('127.0.0.1')
+    const { version } = await admin.status()
+    await admin.saveService('agent-kit-dingtalk', true, {
+      identity: 'user', groupRoutes: [{ conversationId: 'cidOrders', pluginId: 'business-orders' }],
+    }, version)
+    expect((await admin.status()).services.find((service) => service.id === 'agent-kit-dingtalk')?.config).toMatchObject({
+      groupRoutes: [{ conversationId: 'cidOrders', pluginId: 'business-orders' }],
+    })
   })
 
   it('stores secrets write-only', async () => {
@@ -261,5 +284,5 @@ describe('AgentKitAdmin', () => {
       expect(dws.calls().some((c) => c.args[1] === 'login' || c.args[1] === 'logout')).toBe(false)
     })
   })
-})
 
+})

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import type { EntryField, KitId } from './remote.js'
+import type { AdminApi, DingtalkRecipientSearchResult, EntryField, KitId } from './remote.js'
 
 export type T = (key: string, vars?: Record<string, string | number>) => string
 type Config = Record<string, unknown>
@@ -8,6 +8,7 @@ export interface FormProps {
   onChange(next: Config): void
   disabled: boolean
   t: T
+  api?: AdminApi
 }
 
 function Field({ label, help, children }: { label: string; help?: string; children: (id: string) => ReactNode }) {
@@ -35,131 +36,8 @@ const text = (props: FormProps, key: string, label: string, type: 'text' | 'numb
   </Field>
 )
 
-function DingtalkForm(p: FormProps) {
-  const target = (p.config.defaultTarget as { chatId?: string } | undefined)?.chatId ?? ''
-  return (
-    <>
-      <Field label={p.t('dingtalk.identity')}>
-        {(id) => (
-          <select id={id} disabled={p.disabled} value={(p.config.identity as string) ?? ''} onChange={(e) => p.onChange({ ...p.config, identity: e.target.value })}>
-            <option value="" disabled>—</option>
-            <option value="bot">bot</option>
-            <option value="user">user</option>
-            <option value="webhook">webhook</option>
-          </select>
-        )}
-      </Field>
-      {p.config.identity === 'bot' && text(p, 'robotCode', p.t('dingtalk.robotCode'))}
-      {p.config.identity === 'webhook' && text(p, 'webhookTokenEnv', p.t('dingtalk.webhookTokenEnv'))}
-      {p.config.identity !== 'webhook' && (
-        <Field label={p.t('dingtalk.targetChatId')}>
-          {(id) => (
-            <input id={id} disabled={p.disabled} value={target} onChange={(e) => p.onChange({ ...p.config, defaultTarget: e.target.value ? { chatId: e.target.value } : undefined })} />
-          )}
-        </Field>
-      )}
-      <Field label={p.t('dingtalk.dryRun')}>
-        {(id) => <input id={id} type="checkbox" disabled={p.disabled} checked={p.config.dryRun === true} onChange={(e) => p.onChange({ ...p.config, dryRun: e.target.checked })} />}
-      </Field>
-    </>
-  )
-}
-
-function FeishuForm(p: FormProps) {
-  const target = p.config.defaultTarget as { chatId?: string; userId?: string } | undefined
-  const kind = target?.userId !== undefined ? 'userId' : 'chatId'
-  return (
-    <>
-      <Field label={p.t('feishu.identity')}>
-        {(id) => (
-          <select id={id} disabled={p.disabled} value={(p.config.identity as string) ?? ''} onChange={(e) => p.onChange({ ...p.config, identity: e.target.value })}>
-            <option value="" disabled>—</option>
-            <option value="bot">bot</option>
-            <option value="user">user</option>
-          </select>
-        )}
-      </Field>
-      <Field label={p.t('feishu.targetKind')}>
-        {(id) => (
-          <select
-            id={id}
-            disabled={p.disabled}
-            value={kind}
-            onChange={(e) => {
-              const value = target?.chatId ?? target?.userId
-              p.onChange({ ...p.config, defaultTarget: value ? { [e.target.value]: value } : undefined })
-            }}
-          >
-            <option value="chatId">{p.t('feishu.targetChat')}</option>
-            <option value="userId">{p.t('feishu.targetUser')}</option>
-          </select>
-        )}
-      </Field>
-      <Field label={p.t(kind === 'userId' ? 'feishu.targetUserId' : 'feishu.targetChatId')}>
-        {(id) => (
-          <input
-            id={id}
-            disabled={p.disabled}
-            value={target?.[kind] ?? ''}
-            onChange={(e) => p.onChange({ ...p.config, defaultTarget: e.target.value ? { [kind]: e.target.value } : undefined })}
-          />
-        )}
-      </Field>
-      {text(p, 'profile', p.t('feishu.profile'))}
-      <Field label={p.t('feishu.dryRun')}>
-        {(id) => <input id={id} type="checkbox" disabled={p.disabled} checked={p.config.dryRun === true} onChange={(e) => p.onChange({ ...p.config, dryRun: e.target.checked })} />}
-      </Field>
-    </>
-  )
-}
-
-const CHANNELS = ['dingtalk', 'feishu'] as const
-
-/** 通知渠道：同一时间只发一个渠道。保存后业务包的 ctx.notify 原地改发新渠道，业务插件不重新加载。 */
-function NotifyForm(p: FormProps) {
-  const channel = (p.config.channel as string | undefined) ?? ''
-  return (
-    <Field label={p.t('notify.channel')}>
-      {(id) => (
-        <select id={id} disabled={p.disabled} value={channel} onChange={(e) => p.onChange({ channel: e.target.value })}>
-          <option value="" disabled>—</option>
-          {CHANNELS.map((c) => (
-            <option key={c} value={c}>{p.t(`notify.name.${c}`)}</option>
-          ))}
-        </select>
-      )}
-    </Field>
-  )
-}
-
 function AgentTasksForm(p: FormProps) {
-  const declared = (p.config.declaredPermissions as Record<string, string> | undefined) ?? {}
-  return (
-    <>
-      {text(p, 'workspaceDir', p.t('agentTasks.workspaceDir'))}
-      {['claude-code', 'codex'].map((provider) => (
-        <Field key={provider} label={p.t('agentTasks.permission', { provider })}>
-          {(id) => (
-            <select
-              id={id}
-              disabled={p.disabled}
-              value={declared[provider] ?? ''}
-              onChange={(e) => {
-                const next = { ...declared }
-                if (e.target.value) next[provider] = e.target.value
-                else delete next[provider]
-                p.onChange({ ...p.config, declaredPermissions: next })
-              }}
-            >
-              <option value="">{p.t('agentTasks.permissionNone')}</option>
-              <option value="read-only">read-only</option>
-              <option value="workspace-write">workspace-write</option>
-            </select>
-          )}
-        </Field>
-      ))}
-    </>
-  )
+  return text(p, 'workspaceDir', p.t('agentTasks.workspaceDir'))
 }
 
 function WsForm(p: FormProps) {
@@ -212,6 +90,8 @@ function EntryInput({ field, p, id }: { field: EntryField; p: FormProps; id: str
   const value = getPath(p.config, field.path)
   const set = (v: unknown) => p.onChange(setPath(p.config, field.path, v))
   switch (field.kind ?? 'text') {
+    case 'dingtalk-target':
+      return <DingtalkTargetInput id={id} value={value} onChange={set} disabled={p.disabled} api={p.api} t={p.t} />
     case 'boolean':
       return <input id={id} type="checkbox" disabled={p.disabled} checked={value === true} onChange={(e) => set(e.target.checked)} />
     case 'number':
@@ -243,6 +123,58 @@ function EntryInput({ field, p, id }: { field: EntryField; p: FormProps; id: str
   }
 }
 
+function DingtalkTargetInput({ id, value, onChange, disabled, api, t }: {
+  id: string
+  value: unknown
+  onChange(value: unknown): void
+  disabled: boolean
+  api?: AdminApi
+  t: T
+}) {
+  const current = value && typeof value === 'object' && !Array.isArray(value) ? value as Config : {}
+  const [kind, setKind] = useState<'group' | 'user'>(current.userId || current.openDingtalkId ? 'user' : 'group')
+  const [query, setQuery] = useState('')
+  const [result, setResult] = useState<DingtalkRecipientSearchResult>()
+  const [error, setError] = useState<string>()
+  const [loading, setLoading] = useState(false)
+  const selected = current.chatId ?? current.userId ?? current.openDingtalkId ?? (Array.isArray(current.chatIds) ? current.chatIds.join(', ') : undefined)
+  const search = async () => {
+    if (!api || query.trim().length < 2) return
+    setLoading(true)
+    setError(undefined)
+    setResult(undefined)
+    try {
+      setResult(await api.dingtalkSearchRecipients(kind, query.trim()))
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }
+  return (
+    <div className="agent-kit-target-picker">
+      <select aria-label={t('recipient.kind')} value={kind} disabled={disabled} onChange={(e) => { setKind(e.target.value as 'group' | 'user'); setQuery(''); setResult(undefined) }}>
+        <option value="group">{t('recipient.group')}</option>
+        <option value="user">{t('recipient.user')}</option>
+      </select>
+      <div className="agent-kit-target-search">
+        <input id={id} value={query} disabled={disabled} placeholder={kind === 'group' ? t('recipient.groupQuery') : t('recipient.userQuery')} onChange={(e) => setQuery(e.target.value)} />
+        <button type="button" className="agent-kit-btn" disabled={disabled || loading || !api || query.trim().length < 2} onClick={() => void search()}>{t('recipient.search')}</button>
+      </div>
+      {selected && <div className="agent-kit-hint">{t('recipient.selected')}（{current.chatId || current.chatIds ? t('recipient.group') : t('recipient.user')}）: <code>{String(selected)}</code> <button type="button" className="agent-kit-btn" disabled={disabled} onClick={() => onChange(undefined)}>{t('recipient.clear')}</button></div>}
+      {result && <div className="agent-kit-route-suggestions">
+        {result.candidates.length === 0 && <p className="agent-kit-hint">{t('recipient.empty')}</p>}
+        {result.candidates.map((candidate) => {
+          const candidateId = Object.values(candidate.target)[0]!
+          return <button type="button" className="agent-kit-btn" key={candidateId} disabled={disabled} onClick={() => onChange(candidate.target)}>{candidate.name} · {candidateId}</button>
+        })}
+        {!result.complete && <p className="agent-kit-hint">{t('recipient.incomplete')}</p>}
+      </div>}
+      {error && <p role="alert">{error}</p>}
+    </div>
+  )
+}
+
 /** 业务包登记的行（issue #1）：按登记的 `fields` 渲染表单，未列出的配置项原样保留。 */
 export function EntryForm(p: FormProps & { fields: readonly EntryField[] }) {
   return (
@@ -256,11 +188,8 @@ export function EntryForm(p: FormProps & { fields: readonly EntryField[] }) {
   )
 }
 
-export const FORMS: Record<KitId, (p: FormProps) => ReactNode> = {
+export const FORMS: Partial<Record<KitId, (p: FormProps) => ReactNode>> = {
   'agent-kit-ws': WsForm,
-  'agent-kit-dingtalk': DingtalkForm,
-  'agent-kit-feishu': FeishuForm,
-  'agent-kit-notify': NotifyForm,
   'agent-kit-agent-tasks': AgentTasksForm,
   'agent-kit-jev': JevForm,
 }
