@@ -18,7 +18,6 @@ const patchExample = `- id: agent-kit-ws
   disabled: false
   config:
     identity: user
-    defaultTarget: { chatId: cidxxxx }
 - id: agent-kit-notify
   disabled: false
   config:
@@ -49,7 +48,7 @@ export function apply(ctx: Context, config: Config) {
 
       // 通知：不相符时通过钉钉告警
       if (answers.wrong.noul >= 0.7) {
-        await ctx.notify.send({ title: '需要人工复核', markdown: render(frame, draft), idempotencyKey: frame.id })
+        await ctx.notify.send({ title: '需要人工复核', markdown: render(frame, draft), targets: { dingtalk: config.alertTarget }, idempotencyKey: frame.id })
       }
     },
   })

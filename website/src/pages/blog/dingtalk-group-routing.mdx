@@ -1,0 +1,56 @@
+---
+title: 把钉钉群里的 @ 消息交给业务插件
+---
+import Base from '../../layouts/Base.astro'
+import Notice from '../../components/Notice.astro'
+import { blogPostingJsonLd } from '../../lib/jsonld'
+import { withBasePath } from '../../lib/paths'
+
+export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
+
+<Base title="把钉钉群里的 @ 消息交给业务插件" description="9 月 28 日的改动：群 ID 路由、未命中记录、群与个人发送目标，以及由业务插件决定项目和代码任务权限。" jsonLd={[blogPostingJsonLd('dingtalk-group-routing')]}>
+
+<p class="eyebrow">设计笔记 · 2026-09-28</p>
+
+# 把钉钉群里的 @ 消息交给业务插件
+
+之前的钉钉能力主要负责把消息发出去。现在，一个已登录的钉钉 user 被加入群后，群里任何成员 @ 这个账号的消息也能进入 Agent Kit。这里没有机器人身份：发送和接收都使用运行 Profile 的系统用户下、由 dws 管理的当前登录账号。飞书 Service 已移除。
+
+## 一个群先选一个插件
+
+Agent Kit 只做分发。在「设置 → Agent Kit」的钉钉卡片中，把群 ID `conversationId` 映射到业务插件 ID，例如 `iproost-agent`。插件用同一个 ID 注册处理器：
+
+```ts
+const subscription = ctx.dingtalk.onPluginMessage('iproost-agent', async (message, { signal }) => {
+  await handleGroupMessage(message.content, {
+    groupId: message.conversationId,
+    eventId: message.eventId,
+    signal,
+  })
+})
+await subscription.ready
+```
+
+匹配键是稳定的群 ID，不是可能重名或改名的群名称。群名只帮助人在页面上识别。消息不会广播给全部业务插件；映射的插件没注册时，也不会偷偷转给另一个插件。业务插件负责判断正文、处理重复事件和决定是否回复。Agent Kit 的监听只覆盖群内 **@ 当前登录 user** 的消息，不是读取群里所有发言。
+
+暂时没有映射的群消息会留在本机的未命中记录里：最近 200 条，包含群 ID、可查到的群名、时间和正文预览。管理员可以从设置页查看并添加路由；这不是自动转发，也不是完整聊天存档。记录按 dws 账号隔离，群名查不到时仍保留群 ID。
+
+## 发给谁，由业务插件决定
+
+接收路由与主动发送目标是两回事。业务插件可以调用 `ctx.dingtalk.searchRecipients('group', '群名')` 或 `searchRecipients('user', '姓名')` 查找当前账号可见的候选，也可以把自己的设置字段声明为 `kind: 'dingtalk-target'`，在设置页选择群或个人。保存的是 `{ chatId }`、`{ userId }` 或 `{ openDingtalkId }`，而不是显示名称；重名候选需要人工选定。查询本身不会发消息。
+
+例如 `dsh-agent-iproost` 的“告警转发目标”和“运维转发目标”是该业务插件的真实配置，不是 Agent Kit 固定的两个全局目标。插件收到业务事件后，按自己的规则选目标，再调用 `ctx.dingtalk.send()` 或 `ctx.notify.send()`。钉钉页面不再要求填写全局默认群 ID、发送身份或 dryRun；通知 Service 仍可供代码调用，但设置页隐藏它的卡片。
+
+## 代码任务的项目和权限也由业务插件决定
+
+`iproost-agent` 当前把已映射群中任何成员的 @ 消息视为 Bug 报告，但不会按群 ID 猜项目。消息必须**唯一**提到 `edge`、`api-src`、`s-web` 中的一个，并描述具体问题；不明确时只在群里询问。三个仓库路径和代码任务的 provider、权限在业务插件自己的配置里，未配置仓库或未启用 `workspace-write` 时不会启动可写任务。
+
+业务插件选定仓库后，才请求 `ctx.agentTasks.run({ worktree: { repository }, ... })`。Kit 从干净仓库的 `HEAD` 创建独立 Git worktree 和分支，让代码改动与原工作目录分开。任务结束后保留工作树供人检查，**不会自动提交、推送或合并**。`permissions: 'workspace-write'` 只是任务申请值，provider 原生权限和 Agent Kit 的 `declaredPermissions` 仍须正确配置。
+
+<Notice title="当前验证边界" tone="warn">
+上述接收、搜索、配置与工作树流程已有本地测试；本地预览里的候选数据是模拟数据。真实钉钉租户的扫码授权、群事件收取、搜索和发送仍需在具有 CLI 数据访问权限的账号上端到端验收。二维码来自 dws 返回的设备授权链接，页面本身不能替代钉钉授权。群消息是外部输入，业务插件还须检查提示注入防护和 provider 的实际写入边界；Kit 不会自动替业务插件包裹自行拼接的原文。
+</Notice>
+
+完整接口见 <a href={link('/docs/dingtalk')}>钉钉消息</a> 与 <a href={link('/docs/agent-tasks')}>Agent 任务</a>；配置入口见 <a href={link('/docs/onboarding')}>配置引导</a>。
+
+</Base>

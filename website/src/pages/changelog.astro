@@ -12,7 +12,7 @@ import { RELEASE } from '../data/release'
     CHANGELOG.map((entry) => (
       <section>
         <h2>
-          v{entry.version} <span class="date">{entry.date}</span>
+          {entry.version === '未发布' ? entry.version : `v${entry.version}`} <span class="date">{entry.date}</span>
         </h2>
         <ul>
           {entry.items.map((item) => (

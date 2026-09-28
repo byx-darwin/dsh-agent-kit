@@ -67,8 +67,8 @@ export const SERVICES: ServiceMeta[] = [
   {
     id: 'dingtalk',
     numeral: '贰',
-    verb: '渠道',
-    name: '钉钉推送',
+    verb: '消息',
+    name: '钉钉消息',
     context: 'ctx.dingtalk',
     slug: 'dingtalk',
     summary: '通过钉钉 dws CLI 的 user 身份发送消息；统一监听群内 @ 消息，并按群 ID 与内容规则下发给业务插件。',
@@ -77,7 +77,8 @@ export const SERVICES: ServiceMeta[] = [
       '自动重试只在给出 idempotencyKey 时进行，避免重复发送。',
       'status() 实时检查登录态；login() 发起设备流登录，拿到授权链接即返回，由业务包决定怎么交给要登录的人；logout() 退出登录。',
       'dws 的登录态是本机共享的，同一系统用户下的其他 dws 程序也会看到登录与退出；logout() 只退出当前账号（--profile=<corpId>:<userId>）。',
-      'onMessage() 按 conversationId、match 和 priority 注册路由；每条 @ 消息只交给首个命中的业务插件，路由随插件卸载自动注销。',
+      'groupRoutes 按群 ID 指定业务插件；插件用 onPluginMessage(pluginId, handler) 接收，未命中消息可在本机设置页查看。onMessage() 兼容代码注册的细分规则。',
+      'searchRecipients(group | user, query) 查找群或个人候选；业务插件的 dingtalk-target 设置字段只保存选中的稳定 ID，接收路由与发送目标独立。',
     ],
     errors: [
       { code: 'timeout', retryable: '是', meaning: 'dws 超时，子进程按「先 SIGTERM、宽限后 SIGKILL」回收。' },
@@ -129,6 +130,7 @@ export const SERVICES: ServiceMeta[] = [
     kitId: 'agent-kit-agent-tasks',
     notes: [
       'workspaceDir 必须是绝对路径，且不能是进程工作目录或其祖先。',
+      '业务插件可为代码任务指定 worktree.repository；项目与权限由业务插件选择，Kit 不自动提交、推送或合并。',
       '不支持工具过滤的 provider（claude-code、codex）必须在 declaredPermissions 中声明权限上限，否则任务以 unsupported_permissions 失败。',
       'claude-code 默认的 permissionMode: dontAsk 下不能执行命令或写文件，可声明为 read-only。',
     ],

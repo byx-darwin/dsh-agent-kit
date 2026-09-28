@@ -31,8 +31,9 @@ import Notice from '../../components/Notice.astro'
 
 ## 不可信数据与提示注入
 
-- 来自 WebSocket 的数据一律视为不可信。传给 Agent 时用 `untrusted()` 包裹：每次生成随机的分隔标记，并声明其中内容是数据而不是指令。
+- 来自 WebSocket 和钉钉群成员的消息一律视为不可信。业务插件传给 Agent 时应使用 `untrusted()` 包裹：每次生成随机的分隔标记，并声明其中内容是数据而不是指令；业务插件若自行拼接原文，Kit 不会替它自动加保护。
 - Agent 默认 `read-only`，在每个任务独立的空目录中运行。不支持工具过滤的 provider 必须如实声明权限上限，否则拒绝运行。
+- 代码任务的 Git worktree 是与原工作目录分开的工作现场，不是文件系统沙箱；可写范围仍由 provider 原生权限控制。业务插件负责选择仓库并限制触发条件，任务不会自动提交、推送或合并。
 - Agent 的输出同样不可信：只有经过 Schema 校验与业务白名单校验后，才应触发推送等副作用。
 
 <Notice title="数据最小化" tone="warn">

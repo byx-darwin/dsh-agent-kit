@@ -44,6 +44,8 @@ await ctx.dingtalk.logout()
 登录态属于运行 Profile 的系统用户，同一用户下使用 dws 的其他程序也会看到登录与退出的结果。组织必须授予 CLI 数据访问权限，扫码登录本身不能绕过权限限制。
 </Notice>
 
+设置页把 dws 返回的授权链接在本机生成二维码；二维码不是模拟授权，但是否能扫码并完成授权仍需在具备组织权限的真实账号上验证。页面不会单独展示 `identity`、`defaultTarget` 或 `dryRun`；这些仍是配置/API 字段，业务插件发送时应明确选择目标。
+
 `dwsPath` 必须是可执行文件的绝对路径；省略时从 `PATH` 查找。Windows 上可以自动解析 npm 的 `dws.cmd` 到实际的 `dws.js`，手动指定时请直接指向 `.exe` 或 `.js`。
 
 ## 群内 @ 消息路由
@@ -79,6 +81,8 @@ export async function apply(ctx: Context) {
 ```
 
 Agent Kit 为全部业务插件共用一个常驻的 dws `@我` 事件监听进程。插件卸载时自动注销规则，但监听继续记录未命中的消息，Service 卸载时退出。最近 200 条未命中记录会保留群 ID、可查到的群名、时间和最多 240 字预览；可在本机设置页的钉钉卡片查看，或调用 `ctx.dingtalk.unmatchedMessages()` 读取。dsh Profile 下按 dws 账号分别保存于 `.agent-kit/dingtalk-unmatched/<账号哈希>.json`，不会自动转发给其他插件。`message.content` 是不可信输入；业务插件负责校验、决定是否回复。进程内按 `eventId` 去重，但重启后仍可能重复投递，业务处理需自行幂等。`dryRun` 模式不能启动监听。
+
+本地测试覆盖了监听与路由流程；真实钉钉租户的授权、群事件收取和消息发送仍需用具备 CLI 数据访问权限的账号端到端验收。
 
 </ServiceDoc>
 </Base>

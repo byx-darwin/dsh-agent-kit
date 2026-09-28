@@ -103,7 +103,7 @@ Profile: my-agent
 
 ## 在 Web 设置页查看与修改
 
-Profile 中装了 admin 包时，启动后打开 dsh Web 界面，进入「设置 → Agent Kit」。每个 Service 一张卡片，可以启用或停用、修改配置、查看运行状态和检查结果；效果与 `setup` 相同，两者读写同一份 `cordis.patch.yml`。钉钉卡片固定使用 `user` 身份，通知固定发往钉钉。
+Profile 中装了 admin 包时，启动后打开 dsh Web 界面，进入「设置 → Agent Kit」。已展示的 Service 和业务插件各有卡片，可启停、修改配置、查看运行状态和检查结果；与 `setup` 读写同一份 `cordis.patch.yml`。钉钉卡片提供当前 `user` 扫码登录、群消息路由与未命中记录；通知 Service 仍供代码使用，但不显示独立卡片。业务插件可以在自己的卡片里选择群或个人作为发送目标。
 
 ```sh
 dsh --profile my-agent --no-open

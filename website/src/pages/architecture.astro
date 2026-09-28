@@ -22,7 +22,8 @@ const enable = `# Profile 的 cordis.patch.yml
   disabled: false
   config:
     identity: user
-    defaultTarget: { chatId: cidxxxx }`
+    groupRoutes:
+      - { conversationId: cidxxxx, pluginId: my-business-plugin }`
 ---
 
 <Base title="架构" description="dsh-agent-kit 如何挂进 DeepSeek Harness：五类能力、五个 Service、bundle patch 层与可选 admin 包。" wide>
