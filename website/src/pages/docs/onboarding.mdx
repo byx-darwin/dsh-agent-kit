@@ -60,13 +60,13 @@ Profile 中装了 admin 包时，启动后进入 dsh Web 的「设置 → Agent 
 - TypeSafe Key 只能写入或清除，不能读回；页面只显示「已配置」与来源。清除与 gitflow-cli 共用的钥匙串条目前会先确认。
 - Jev 卡片可在 TypeSafe Jev 与本地 Laya 之间切换。选 Laya 时填写服务地址，TypeSafe Key 面板换成 Laya Key（只存 dsh 凭据文件），检查项改为 Laya 服务能否连接。
 
-<Figure src="/walkthrough/settings.png" alt="Agent Kit 设置页" caption="设置 → Agent Kit：启用开关、运行状态、检查结果与配置表单。" />
+<Figure src="/walkthrough/settings.png" alt="Agent Kit 最新设置页预览，显示 WebSocket 参数、钉钉群消息路由和登录状态" caption="当前设置页组件的本地预览：群 ID 与登录状态均为示例数据；真实 dsh Web 会显示当前 Profile 的配置。" />
 
 <Notice title="只读条件" tone="warn">
 只有 dsh Web 绑定在 `127.0.0.1` 时设置页才可修改。绑定到其他地址，或没有加载 Web 服务时，设置页一律只读并显示原因。
 </Notice>
 
-<Figure src="/walkthrough/settings-readonly.png" alt="只读状态下的 Agent Kit 设置页" caption="只读状态：所有编辑控件禁用，并显示原因。" />
+<Figure src="/walkthrough/settings-readonly.png" alt="最新 Agent Kit 设置页的只读状态预览" caption="只读状态的本地预览：编辑控件禁用，页面说明原因；群与账号均为示例数据。" />
 
 ## 业务包的行
 

@@ -109,7 +109,7 @@ Profile 中装了 admin 包时，启动后打开 dsh Web 界面，进入「设�
 dsh --profile my-agent --no-open
 ```
 
-<Figure src="/walkthrough/settings.png" alt="dsh Web 设置页中的 Agent Kit 页面，每个 Service 一张卡片" caption="设置 → Agent Kit：各 Service 的状态、检查结果与配置表单。" />
+<Figure src="/walkthrough/settings.png" alt="Agent Kit 最新设置页预览，显示 WebSocket 参数、钉钉群消息路由和登录状态" caption="当前设置页组件的本地预览：群 ID 与登录状态均为示例数据；真实 dsh Web 会显示当前 Profile 的配置。" />
 
 <Notice title="什么时候是只读">
 只有 dsh Web 绑定在 `127.0.0.1` 时设置页才可修改；绑定到其他地址，或没有加载 Web 服务时，设置页一律只读，避免把配置写入接口暴露到网络上。
