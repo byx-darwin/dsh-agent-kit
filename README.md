@@ -4,7 +4,7 @@
 
 构建常驻 Agent Worker 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件工具包：WebSocket 接入、钉钉 user 推送与通知、Claude Code / Codex 任务委托、TypeSafe Jev（或本地 Laya）校验。
 
-> **状态：已实现，待发布 `0.1.0`。** 首个版本发布前接口可能调整；历史设计文档可能包含已移除的方案，以当前代码和官网文档为准。
+> **状态：`0.2.0` 发布候选已通过测试，待发布到 npm。** 历史设计文档可能包含已移除的方案，以当前代码和官网文档为准。
 
 ## 为什么需要它
 
@@ -109,11 +109,11 @@ dsh --profile my-agent --no-open
   "type": "module",
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
-    "@mc/dsh-agent-kit": "^0.1.0"
+    "@mc/dsh-agent-kit": "^0.2.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
-    "@mc/dsh-agent-kit": "^0.1.0"
+    "@mc/dsh-agent-kit": "^0.2.0"
   },
   "dsh": { "bundle": { "patch": "./patch.yml" } }
 }
@@ -421,7 +421,7 @@ export function apply(ctx: Context) {
 - [x] 钉钉 user 推送与通知（`ctx.dingtalk`、`ctx.notify`）
 - [x] 渠道登录状态与设备流登录（`status()` / `login()` / `logout()`）
 - [x] 运维工具拆分为可选的 `@mc/dsh-agent-kit-admin`
-- [ ] 发布 `0.1.0` 到 npm
+- [ ] 发布 `0.2.0` 到 npm
 - [ ] 通用的「Agent 执行 → Jev 校验 → 升级」级联 helper
 - [ ] 钉钉卡片消息
 

@@ -6,7 +6,7 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: '未发布',
+    version: '0.2.0',
     date: '2026-09-28',
     items: [
       '移除飞书 Service、CLI 检查与文档；钉钉只保留当前 dws 登录账号的 user 身份，不再支持机器人或 webhook 身份。',

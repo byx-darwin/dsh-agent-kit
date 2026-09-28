@@ -1,6 +1,6 @@
 {
   "name": "@mc/dsh-agent-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DeepSeek Harness services for resident agent workers: WebSocket, DingTalk user messaging and @-message routing, notifications, agent tasks, TypeSafe Jev",
   "license": "MIT",
   "type": "module",
@@ -50,6 +50,9 @@
   ],
   "engines": {
     "node": "^22.19 || >=24"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
