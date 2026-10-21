@@ -1,9 +1,8 @@
 import { accessSync, constants } from 'node:fs'
-import { createHash } from 'node:crypto'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Service, type Context } from '@deepseek-ai/cordis'
-import { DEFAULT_LOGIN_TTL_MS, type ChannelService, type ChannelStatus, type LoginSession } from '../common/channel.js'
+import { DEFAULT_LOGIN_TTL_MS, type ChannelInbox, type ChannelService, type ChannelStatus, type LoginSession } from '../common/channel.js'
 import { ConfigError } from '../common/errors.js'
 import { resolveExecutable } from '../common/executable.js'
 import { BASE_ENV_WHITELIST, pickEnv, runProcess, type RunProcessResult } from '../common/process.js'
@@ -12,10 +11,11 @@ import { KitService, type ServiceHealth } from '../common/service.js'
 import { buildSendArgs, type DingtalkAt, type DingtalkTarget } from './args.js'
 import { DingtalkConfig } from './config.js'
 import { DingtalkSendError } from './errors.js'
-import { DingtalkInbox, type DingtalkInboxStats, type DingtalkMessageHandler, type DingtalkMessageRoute, type DingtalkMessageSubscription } from './inbox.js'
+import { DingtalkInbox, type DingtalkAtMessage, type DingtalkInboxStats, type DingtalkMessageHandler, type DingtalkMessageRoute, type DingtalkMessageSubscription } from './inbox.js'
+import { unmatchedFileKey } from '../common/unmatched.js'
 import { DingtalkUnmatchedStore, type DingtalkUnmatchedMessage } from './unmatched.js'
 import { parseErrorOutput, parseSendOutput, type TargetResult } from './output.js'
-import { parseRecipientSearch, type DingtalkRecipientKind, type DingtalkRecipientSearchResult } from './recipients.js'
+import { parseRecipientSearch, type DingtalkRecipientKind, type DingtalkRecipientSearchResult, type DingtalkRecipientTarget } from './recipients.js'
 
 /** dws 运行所需、允许传给子进程的额外环境变量。 */
 export const DWS_ENV_WHITELIST = ['DWS_CONFIG_DIR', 'DWS_KEYCHAIN_DIR', 'DWS_DISABLE_KEYCHAIN', 'XDG_CONFIG_HOME'] as const
@@ -73,7 +73,8 @@ export function parseDwsDeviceLogin(text: string): DwsDeviceLogin | undefined {
   return { url, ...(userCode ? { userCode } : {}), ttlMs: seconds > 0 ? seconds * 1000 : DEFAULT_LOGIN_TTL_MS }
 }
 
-export class DingtalkService extends KitService<DingtalkCounters> implements ChannelService<DingtalkTarget, DingtalkAt> {
+export class DingtalkService extends KitService<DingtalkCounters> 
+  implements ChannelService<DingtalkTarget, DingtalkAt>, ChannelInbox<DingtalkAtMessage, DingtalkUnmatchedMessage, DingtalkRecipientTarget> {
   static Config = DingtalkConfig
   readonly config: DingtalkConfig
   readonly dwsPath: string
@@ -235,7 +236,7 @@ export class DingtalkService extends KitService<DingtalkCounters> implements Cha
   private createUnmatchedStore(): DingtalkUnmatchedStore {
     // 不把明文组织/用户 ID 放到文件名；不同 dws 账号的记录互不混用。
     const profile = this.activeProfile
-    const key = profile ? createHash('sha256').update(profile).digest('hex').slice(0, 24) : undefined
+    const key = profile ? unmatchedFileKey(profile) : undefined
     const file = key && this.unmatchedDir ? join(this.unmatchedDir, `${key}.json`) : undefined
     return new DingtalkUnmatchedStore(
       file,

@@ -6,6 +6,10 @@ export { resolveDshHome } from './common/dsh-home.js'
 export type { HealthStatus, ServiceHealth, ServiceFailedEvent } from './common/service.js'
 export type {
   ChannelAtMessage,
+  ChannelInbox,
+  ChannelRecipientKind,
+  ChannelRecipientSearchResult,
+  ChannelUnmatchedMessage,
   ChannelMessageHandler,
   ChannelMessageRoute,
   ChannelMessageSubscription,

@@ -1,4 +1,6 @@
-export type DingtalkRecipientKind = 'group' | 'user'
+import type { ChannelRecipientKind, ChannelRecipientSearchResult } from '../common/channel.js'
+
+export type DingtalkRecipientKind = ChannelRecipientKind
 export type DingtalkRecipientTarget = { chatId: string } | { userId: string } | { openDingtalkId: string }
 
 export interface DingtalkRecipientCandidate {
@@ -6,11 +8,8 @@ export interface DingtalkRecipientCandidate {
   target: DingtalkRecipientTarget
 }
 
-export interface DingtalkRecipientSearchResult {
-  candidates: DingtalkRecipientCandidate[]
-  /** false means DWS did not prove that every candidate was returned. */
-  complete: boolean
-}
+/** `complete` 为 false 表示 DWS 没有证明已返回全部候选。 */
+export type DingtalkRecipientSearchResult = ChannelRecipientSearchResult<DingtalkRecipientTarget>
 
 function object(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined

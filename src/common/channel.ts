@@ -1,3 +1,5 @@
+import type { ChannelUnmatchedMessage } from './unmatched.js'
+export type { ChannelUnmatchedMessage } from './unmatched.js'
 import type { KitError } from './errors.js'
 import type { HealthStatus } from './service.js'
 
@@ -102,4 +104,22 @@ export function pick(obj: unknown, ...keys: string[]): unknown {
     if (o?.[key] !== undefined) return o[key]
   }
   return undefined
+}
+
+export type ChannelRecipientKind = 'group' | 'user'
+
+export interface ChannelRecipientSearchResult<T = unknown> {
+  candidates: Array<{ name: string; target: T }>
+  /** false 表示渠道没有证明已返回全部候选。 */
+  complete: boolean
+}
+
+/** 接收群内 @ 消息的渠道都实现的约定。 */
+export interface ChannelInbox<M extends ChannelAtMessage, U extends ChannelUnmatchedMessage = ChannelUnmatchedMessage, T = unknown> {
+  onMessage(route: ChannelMessageRoute<M>, handler: ChannelMessageHandler<M>): ChannelMessageSubscription
+  onPluginMessage(pluginId: string, handler: ChannelMessageHandler<M>): ChannelMessageSubscription
+  /** 最近未命中任何路由的消息摘要，新记录在前。 */
+  unmatchedMessages(): Promise<U[]>
+  /** 按名称查找可作为发送目标的群或个人；只返回候选，不自动选择。 */
+  searchRecipients(kind: ChannelRecipientKind, query: string): Promise<ChannelRecipientSearchResult<T>>
 }
