@@ -307,7 +307,7 @@ export async function apply(ctx: Context) {
 | 字段 | 说明 |
 |---|---|
 | `chatType` | `'p2p'`（私聊）或 `'group'`（群聊） |
-| `messageType` | 飞书原始消息类型，如 `text`、`post`、`image`；`text` 消息的 `content` 去掉机器人自己的 @、其他 @ 还原为 `@名字`；`post` 只提取 `text` / `a` 节点文字（有标题时为第一行，不含 @）；其他类型为空串 |
+| `messageType` | 飞书原始消息类型，如 `text`、`post`、`image`；`text` 消息的 `content` 去掉所有 @ 机器人自己的地方（不只开头那个）、其他 @ 还原为 `@名字`，`@_all`（@所有人）原样保留；`post` 只提取 `text` / `a` 节点文字（有标题时为第一行，不含 @）；其他类型为空串 |
 | `mentions` | 消息中被 @ 的对象：`Array<{ openId, name }>` |
 
 `senderId` 是发送者的 `open_id`，`eventId` 取飞书 `message_id`。错误为 `FeishuSendError`，`code` 为 `invalid_target`、`auth_failed`、`permission_denied`、`rate_limited`、`timeout`、`aborted`、`network`、`api_error`；其中 `rate_limited`、`timeout`、`network` 可重试，`api_error` 在 HTTP 5xx 时可重试，`aborted`（调用方中止或 Service 卸载）不可重试。
@@ -315,7 +315,7 @@ export async function apply(ctx: Context) {
 注意：
 
 - **一个飞书应用只接一个 Profile**：长连接是集群投递，同一应用的多个连接中每条消息只送达其中一个，多个 Profile 共用一个应用会让消息随机落到别的实例上。
-- 飞书机器人身份不能按姓名搜索用户：`searchRecipients('group', …)` 只返回机器人所在的群，个人请直接填写 `open_id`。
+- 飞书机器人身份不能按姓名搜索用户：`searchRecipients('group', …)` 返回机器人所在的群以及机器人可见的公开群，个人请直接填写 `open_id`。选中机器人不在的群时，发送会报 `permission_denied`（230002）。
 - 需要安装可选依赖 `@larksuiteoapi/node-sdk`，开通的权限见「环境要求」。未命中路由的消息同样保留最近记录，可在设置页飞书卡片查看或调用 `ctx.feishu.unmatchedMessages()`。
 
 ### 本地开发与测试
@@ -426,7 +426,7 @@ npx @baoyx/dsh-agent-kit-admin doctor --profile my-agent
 
 - 安装：如果启用了钉钉而 `dws` 不在 `PATH` 中，`setup` 会展示 `npm i -g dingtalk-workspace-cli@1.0.62`，确认后安装。
 - 钉钉：固定 `user` 身份；未登录时可以拉起 `dws auth login`，可配置默认目标与 `dryRun`。
-- 飞书：检查可选依赖 `@larksuiteoapi/node-sdk`，引导填写 App ID、域名、默认目标，App Secret 只写入密钥存储；
+- 飞书：检查可选依赖 `@larksuiteoapi/node-sdk`，引导填写 App ID、域名，App Secret 只写入密钥存储；
 - 通知：选择默认渠道（钉钉或飞书），所选渠道的行未启用时会提示。
 
 `setup` 只会修改 Profile 目录下的 `cordis.patch.yml`；`doctor` 只读，不修改任何文件，`--json` 输出机器可读的体检报告，可接入 CI。`doctor` 的 `agent-kit-notify.channel` 检查在所选渠道的行未启用时失败。两者都会在 `$DSH_HOME/profiles` 下扫描带有基础包（bundles 里含 `@baoyx/dsh-agent-kit`）的 Profile；只有一个候选时自动选中，有多个时需要 `--profile` 指定。

@@ -13,6 +13,7 @@ export interface ChannelSendCommon {
   /** Markdown 正文，与 `text` 二选一。 */
   markdown?: string
   text?: string
+  /** 去重键：字符集 `[A-Za-z0-9._:@-]`，最长 128。各渠道的去重字段长度不同；超长时由渠道确定性地压缩（如飞书 `uuid` 限 50 字符，超出时取哈希）。 */
   idempotencyKey?: string
   traceId?: string
   signal?: AbortSignal

@@ -1,3 +1,4 @@
+import { FEISHU_APP_SECRET_REF } from '@baoyx/dsh-agent-kit/feishu'
 import { describeSecretRef, resolveSecretRef } from '@baoyx/dsh-agent-kit/secrets'
 import { probeFeishu } from '../feishu-probe.js'
 import type { Check, CheckResult } from './types.js'
@@ -10,7 +11,7 @@ const SOURCE: Record<string, string> = { env: '环境变量', credentials: 'dsh 
 export const feishuChecks: Check = async (ctx) => {
   const scope = 'agent-kit-feishu' as const
   const config = (ctx.snapshot.entries[scope].config ?? {}) as FeishuCheckConfig
-  const ref = config.appSecretRef ?? 'FEISHU_APP_SECRET'
+  const ref = config.appSecretRef ?? FEISHU_APP_SECRET_REF
   const keyStore = { ...ctx.keyStore, env: ctx.env }
   const sdk = ctx.resolveModule('@larksuiteoapi/node-sdk')
   const secret = await describeSecretRef(ref, keyStore)

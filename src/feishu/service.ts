@@ -59,8 +59,12 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
   private readonly router: MessageRouter<FeishuAtMessage>
   private readonly unmatched: UnmatchedStore
   private listener: 'idle' | 'ready' | 'reconnecting' | 'failed' = 'idle'
-  /** 等待长连接就绪的订阅方；`markConnected()` 时统一唤醒，无需轮询。 */
-  private readyWaiters: Array<() => void> = []
+  /** 等待长连接就绪的订阅方；`markConnected()` 时统一完成，监听失败或服务停止时统一拒绝。 */
+  private readyWaiters: Array<{ resolve: () => void; reject: (error: Error) => void }> = []
+  /** 启动时 botInfo 瞬时失败后，在长连接首次就绪时补取一次机器人信息。 */
+  private botInfoRetry: 'none' | 'pending' | 'done' = 'none'
+  /** 收到过私聊消息的会话；未命中记录不为它们查群名。 */
+  private readonly p2pChats = new Set<string>()
   private readonly counters: Omit<FeishuCounters, 'inbox'> = { success: 0, failure: 0, lastFailureAt: null, lastErrorCode: null }
 
   constructor(ctx: Context, config: FeishuConfig) {
@@ -99,20 +103,69 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
     this.sdk = await FeishuService.sdkLoader()
     this.client = this.sdk.createClient(this.sdkOptions())
     if (this.config.dryRun) return
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const info = await Promise.race([
-      this.client.botInfo(this.controller.signal).catch((e: unknown) => ({ code: -1, msg: redact(String((e as Error)?.message ?? e)) })),
-      new Promise<{ code: number; msg: string }>((resolve) => {
-        timer = setTimeout(() => resolve({ code: -1, msg: `timed out after ${this.config.timeoutMs}ms` }), this.config.timeoutMs)
-      }),
-    ]).finally(() => clearTimeout(timer))
-    if (info.code !== 0) {
-      this.markFailed(`feishu credential check failed: ${info.code} ${info.msg ?? ''}`.trim())
+    const info = await this.fetchBotInfo()
+    if (info.kind === 'rejected') {
+      // 只有飞书明确返回的业务错误码（凭据错误、应用停用等）才视为永久失败
+      const detail = `feishu credential check failed: ${info.code} ${info.msg}`.trim()
+      this.markFailed(detail)
+      this.rejectWaiters(new Error(detail))
       return
     }
-    this.botName = (info as { bot?: { app_name?: string } }).bot?.app_name
-    this.botOpenId = (info as { bot?: { open_id?: string } }).bot?.open_id
+    if (info.kind === 'transient') {
+      // 超时 / 网络错误：长连接客户端会自行重连，照常启动，机器人信息在连上后补取
+      this.logger.warn('feishu bot info unavailable at startup; starting long connection anyway', { error: info.msg })
+      this.botInfoRetry = 'pending'
+    }
+    // 启动期间服务已被卸载：不再建立长连接（清理 effect 无法再注册，连接会泄漏并抢走集群消息）
+    if (this.stopping) return
     this.startReceiving()
+  }
+
+  /**
+   * 服务是否正在卸载。Cordis 在 `[Service.init]` 期间被 dispose 时会先清空 `fiber.uid`，
+   * 等 init 结束后才执行清理 effect（届时才 abort `controller`），所以两者都要看。
+   */
+  private get stopping(): boolean {
+    return this.controller.signal.aborted || this.ctx.fiber.uid === null
+  }
+
+  /** 查询机器人信息，区分明确的业务拒绝与瞬时故障；成功时记录名称与 open_id。 */
+  private async fetchBotInfo(): Promise<{ kind: 'ok' } | { kind: 'rejected'; code: number; msg: string } | { kind: 'transient'; msg: string }> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    type Outcome = { kind: 'ok' } | { kind: 'rejected'; code: number; msg: string } | { kind: 'transient'; msg: string }
+    const request = this.client!.botInfo(this.controller.signal, this.config.timeoutMs).then(
+      (info): Outcome => {
+        if (info.code !== undefined && info.code !== 0) return { kind: 'rejected', code: info.code, msg: redact(info.msg ?? '') }
+        this.botName = info.bot?.app_name ?? this.botName
+        this.botOpenId = info.bot?.open_id ?? this.botOpenId
+        return { kind: 'ok' }
+      },
+      (e: unknown): Outcome => {
+        const err = e as { message?: string; response?: { status?: number; data?: { code?: number; msg?: string } } }
+        const apiCode = err?.response?.data?.code
+        const status = err?.response?.status
+        // HTTP 4xx 且带业务码同样是明确拒绝；5xx 按瞬时故障处理
+        if (typeof apiCode === 'number' && apiCode !== 0 && !(typeof status === 'number' && status >= 500)) {
+          return { kind: 'rejected', code: apiCode, msg: redact(err.response?.data?.msg ?? '') }
+        }
+        return { kind: 'transient', msg: redact(String(err?.message ?? e)) }
+      },
+    )
+    return Promise.race([
+      request,
+      new Promise<Outcome>((resolve) => {
+        timer = setTimeout(() => resolve({ kind: 'transient', msg: `timed out after ${this.config.timeoutMs}ms` }), this.config.timeoutMs)
+      }),
+    ]).finally(() => clearTimeout(timer))
+  }
+
+  /** 长连接首次就绪时补取启动阶段没拿到的机器人信息（只重试一次）。 */
+  private retryBotInfo(): void {
+    if (this.botInfoRetry !== 'pending') return
+    this.botInfoRetry = 'done'
+    void this.fetchBotInfo().then((info) => {
+      if (info.kind !== 'ok') this.logger.warn('feishu bot info still unavailable', { detail: info.kind === 'rejected' ? `${info.code} ${info.msg}` : info.msg })
+    })
   }
 
   protected sdkOptions() {
@@ -121,8 +174,14 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
 
   protected startReceiving(): void {
     const ws = this.sdk!.startWs(this.sdkOptions(), {
-      onReady: () => this.markConnected(),
-      onReconnected: () => this.markConnected(),
+      onReady: () => {
+        this.markConnected()
+        this.retryBotInfo()
+      },
+      onReconnected: () => {
+        this.markConnected()
+        this.retryBotInfo()
+      },
       onReconnecting: () => {
         this.connected = false
         this.listener = 'reconnecting'
@@ -132,7 +191,9 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
         this.connected = false
         this.listener = 'failed'
         this.router.setReady(false)
-        this.markFailed(`feishu long connection failed: ${redact(error.message)}`, error)
+        const detail = `feishu long connection failed: ${redact(error.message)}`
+        this.markFailed(detail, error)
+        this.rejectWaiters(new Error(detail))
       },
       // 飞书要求 3 秒内返回：这里只解析、入队，投递由路由器异步完成
       onMessage: (event) => {
@@ -142,10 +203,12 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
           this.logger.warn('invalid feishu event dropped')
           return
         }
+        if (message.chatType === 'p2p') this.p2pChats.add(message.conversationId)
         this.router.accept(message)
       },
     })
     this.ctx.effect(() => () => {
+      this.rejectWaiters(new Error('feishu service stopped'))
       ws.close()
       this.router.reset()
       this.connected = false
@@ -160,7 +223,23 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
     this.router.setReady(true)
     const waiters = this.readyWaiters
     this.readyWaiters = []
-    for (const resolve of waiters) resolve()
+    for (const waiter of waiters) waiter.resolve()
+  }
+
+  private rejectWaiters(error: Error): void {
+    const waiters = this.readyWaiters
+    this.readyWaiters = []
+    for (const waiter of waiters) waiter.reject(error)
+  }
+
+  /** 新订阅的 ready：已就绪立即完成，已失败立即拒绝，否则等待。调用方不 await 时拒绝也不会成为未处理的 rejection。 */
+  private readyPromise(): Promise<void> {
+    if (this.listener === 'ready') return Promise.resolve()
+    const promise = this.listener === 'failed' || this.failure
+      ? Promise.reject(new Error(this.failure ?? 'feishu long connection failed'))
+      : new Promise<void>((resolve, reject) => { this.readyWaiters.push({ resolve, reject }) })
+    promise.catch(() => {})
+    return promise
   }
 
   /** 按会话 ID 注册 @ 消息处理器；每条消息只下发给优先级最高的首个匹配处理器。 */
@@ -179,7 +258,7 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
       throw new ConfigError('feishu', 'cannot listen for messages in dryRun mode', { field: 'dryRun' })
     }
     const subscription: ChannelMessageSubscription = {
-      ready: this.listener === 'ready' ? Promise.resolve() : new Promise<void>((resolve) => { this.readyWaiters.push(resolve) }),
+      ready: this.readyPromise(),
       close: async () => dispose(),
     }
     try {
@@ -197,7 +276,7 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
     return this.unmatched.list()
   }
 
-  /** 只支持按群名搜索机器人所在的群；机器人身份无法按姓名搜人，个人请填写 open_id。 */
+  /** 按群名搜索机器人所在的群与它可见的公开群（选中机器人不在的群时发送会报 permission_denied）；机器人身份无法按姓名搜人，个人请填写 open_id。 */
   async searchRecipients(kind: ChannelRecipientKind, query: string): Promise<ChannelRecipientSearchResult<{ chatId: string }>> {
     if (kind === 'user') throw new TypeError('feishu bot cannot search users; enter an open_id')
     if (kind !== 'group') throw new TypeError('recipient kind must be group or user')
@@ -211,11 +290,16 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
   }
 
   private async chatName(chatId: string): Promise<string | undefined> {
-    if (!this.client) return undefined
+    // 私聊没有群名，不必为每条未命中的私聊消息调用接口
+    if (!this.client || this.p2pChats.has(chatId)) return undefined
     const r = await this.client.getChat(chatId, this.controller.signal)
     return r.code === 0 && r.data?.name?.trim() ? r.data.name.trim() : undefined
   }
 
+  /**
+   * 发送一条消息。超时（`timeout`）只代表本端没等到响应，飞书仍可能稍后投递成功；
+   * 需要安全重试时请传 `idempotencyKey`，飞书按它去重。
+   */
   async send(options: FeishuSendOptions): Promise<FeishuSendResult> {
     const req = buildCreateMessage({
       target: options.target ?? this.config.defaultTarget,

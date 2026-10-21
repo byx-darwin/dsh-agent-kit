@@ -40,9 +40,11 @@ const API_CODES: Record<number, FeishuErrorCode> = {
   230099: 'invalid_target', // 创建卡片内容失败
 }
 
-export function classifyApiCode(code: number, msg: string): FeishuSendError {
-  const kind = API_CODES[code] ?? 'api_error'
-  return new FeishuSendError(kind, `feishu api error ${code}: ${msg}`, { details: { apiCode: code } })
+/** `status` 为 HTTP 状态码（若有）：未映射的业务码在 HTTP 5xx 时视为可重试的 `api_error`。 */
+export function classifyApiCode(code: number, msg: string, status?: number): FeishuSendError {
+  const kind = API_CODES[code]
+  if (kind) return new FeishuSendError(kind, `feishu api error ${code}: ${msg}`, { details: { apiCode: code } })
+  return new FeishuSendError('api_error', `feishu api error ${code}: ${msg}`, { retryable: typeof status === 'number' && status >= 500, details: { apiCode: code, ...(status !== undefined ? { status } : {}) } })
 }
 
 /** SDK 抛出的异常（axios 风格）→ 分类。 */
@@ -51,7 +53,7 @@ export function classifyThrown(e: unknown): FeishuSendError {
   const err = e as { name?: string; code?: string; message?: string; response?: { status?: number; data?: { code?: number; msg?: string } } }
   const status = err?.response?.status
   const apiCode = err?.response?.data?.code
-  if (typeof apiCode === 'number' && apiCode !== 0) return classifyApiCode(apiCode, err.response?.data?.msg ?? '')
+  if (typeof apiCode === 'number' && apiCode !== 0) return classifyApiCode(apiCode, err.response?.data?.msg ?? '', status)
   if (status === 429) return new FeishuSendError('rate_limited', 'feishu rate limited (HTTP 429)', { cause: e })
   if (status === 401) return new FeishuSendError('auth_failed', 'feishu authentication failed (HTTP 401)', { cause: e })
   if (status === 403) return new FeishuSendError('permission_denied', 'feishu permission denied (HTTP 403)', { cause: e })

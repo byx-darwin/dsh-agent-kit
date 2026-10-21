@@ -59,7 +59,7 @@ const { candidates, complete } = await ctx.feishu.searchRecipients('group', '库
 // candidates: Array<{ name, target: { chatId } }>
 ```
 
-只能搜索机器人所在的群；飞书机器人身份无法按姓名搜索用户，`searchRecipients('user', …)` 会抛错，个人请直接填写 `open_id`。业务插件可在自己的设置字段上声明 `kind: 'feishu-target'`，让本机设置页提供群搜索或手动填写 open_id。
+按群名搜索时返回机器人所在的群，以及机器人可见的公开群；选中机器人不在的群时，发送会报 `permission_denied`（230002）。飞书机器人身份无法按姓名搜索用户，`searchRecipients('user', …)` 会抛错，个人请直接填写 `open_id`。业务插件可在自己的设置字段上声明 `kind: 'feishu-target'`，让本机设置页提供群搜索或手动填写 open_id。
 
 `status()` 返回机器人身份（`identity: 'bot'`）、长连接是否在线（`online`）和机器人名称；`health()` 在首次长连接建立之前为 `degraded`（detail 为 feishu long connection starting），连接建立后为 `ok`，重连中或最近一次发送失败时为 `degraded`，凭据无效等不可恢复错误为 `failed`。
 
@@ -74,7 +74,7 @@ const { candidates, complete } = await ctx.feishu.searchRecipients('group', '库
 | `conversationId` | `string` | 会话 `chat_id`，群与单聊都有；路由键 |
 | `chatType` | `'p2p' \| 'group'` | 单聊或群聊 |
 | `senderId` | `string?` | 发送者 `open_id` |
-| `content` | `string` | `text` 消息：去掉机器人自己的 @，其他 @ 还原为 `@名字`；`post` 消息：只提取 `text` / `a` 节点的文字（有标题时标题为第一行），不含 @ 节点；其他类型为空串 |
+| `content` | `string` | `text` 消息：去掉所有 @ 机器人自己的地方（不只开头那个），其他 @ 还原为 `@名字`，`@_all`（@所有人）原样保留；`post` 消息：只提取 `text` / `a` 节点的文字（有标题时标题为第一行），不含 @ 节点；其他类型为空串 |
 | `messageType` | `string` | 飞书原始类型，如 `text`、`post`、`image` |
 | `mentions` | `Array<{ openId, name }>` | 消息中被 @ 的对象 |
 | `timestamp` | `number?` | 消息创建时间（毫秒） |

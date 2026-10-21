@@ -193,6 +193,7 @@ export const SERVICES: ServiceMeta[] = [
       '机器人（自建应用）身份；需安装可选依赖 @larksuiteoapi/node-sdk ^1.76.0。',
       'App Secret 通过 appSecretRef 引用（默认 FEISHU_APP_SECRET），先读环境变量，再读 dsh 凭据文件。',
       '长连接接收：同一飞书应用的多个连接只有一个会收到某条消息，一个应用只接一个 Profile。',
+      '群搜索返回机器人所在的群以及机器人可见的公开群；选中机器人不在的群时，发送会报 permission_denied（230002）。',
       '开发者后台需开启机器人能力、事件订阅选长连接，并开通 im:message:send_as_bot、im:message.group_at_msg:readonly、im:message.p2p_msg:readonly。',
     ],
     errors: [

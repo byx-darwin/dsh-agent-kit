@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { FeishuTarget } from './config.js'
 import { FeishuSendError } from './errors.js'
 import type { FeishuCreateMessageRequest } from './sdk.js'
@@ -9,7 +10,15 @@ export interface FeishuAt {
 }
 
 const ID = /^[A-Za-z0-9_-]{1,128}$/
-const KEY = /^[A-Za-z0-9._:@-]{1,50}$/
+/** 与钉钉一致：字符集 `[A-Za-z0-9._:@-]`，最长 128。 */
+const KEY = /^[A-Za-z0-9._:@-]{1,128}$/
+/** 飞书 `uuid` 最长 50 字符。 */
+const UUID_MAX = 50
+
+/** 幂等键 → 飞书 `uuid`：不超过 50 字符原样使用，否则取 sha256 十六进制前 32 位（确定性，重试仍能去重）。 */
+export function feishuUuid(key: string): string {
+  return key.length <= UUID_MAX ? key : createHash('sha256').update(key).digest('hex').slice(0, 32)
+}
 
 export function assertFeishuId(kind: string, value: unknown): string {
   if (typeof value !== 'string' || value.startsWith('-') || !ID.test(value)) {
@@ -44,7 +53,7 @@ export function buildCreateMessage(input: {
   if (input.idempotencyKey !== undefined && !KEY.test(input.idempotencyKey)) {
     throw new FeishuSendError('invalid_target', 'invalid idempotencyKey', { details: { kind: 'idempotencyKey' } })
   }
-  const uuid = input.idempotencyKey !== undefined ? { uuid: input.idempotencyKey } : {}
+  const uuid = input.idempotencyKey !== undefined ? { uuid: feishuUuid(input.idempotencyKey) } : {}
   if (input.markdown !== undefined) {
     const card = {
       schema: '2.0',

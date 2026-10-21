@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { FeishuService } from '../../src/feishu/service.js'
 import { buildCreateMessage } from '../../src/feishu/message.js'
+import { formatSdkLog } from '../../src/feishu/sdk.js'
 import { createFakeFeishuSdk, useFakeFeishuSdk, type FakeFeishu } from '../../src/testing/fake-feishu.js'
 import { createRoot, type TestRoot } from '../helpers.js'
 
@@ -23,13 +24,34 @@ describe('buildCreateMessage', () => {
     })
   })
 
+  it('maps keys longer than 50 chars to a deterministic 32-char hex uuid', () => {
+    const key = 'k'.repeat(60)
+    const a = buildCreateMessage({ target: { chatId: 'oc_1' }, text: 'a', idempotencyKey: key })
+    const b = buildCreateMessage({ target: { chatId: 'oc_1' }, text: 'b', idempotencyKey: key })
+    expect(a.data.uuid).toMatch(/^[0-9a-f]{32}$/)
+    expect(b.data.uuid).toBe(a.data.uuid)
+    expect(buildCreateMessage({ target: { chatId: 'oc_1' }, text: 'a', idempotencyKey: 'x'.repeat(50) }).data.uuid).toBe('x'.repeat(50))
+    expect(buildCreateMessage({ target: { chatId: 'oc_1' }, text: 'a', idempotencyKey: 'x'.repeat(128) }).data.uuid).toMatch(/^[0-9a-f]{32}$/)
+  })
+
   it('rejects bad targets, bad keys, and missing or doubled bodies', () => {
     expect(() => buildCreateMessage({ text: 'x' })).toThrow(expect.objectContaining({ code: 'invalid_target' }))
     expect(() => buildCreateMessage({ target: { chatId: '-oc' }, text: 'x' })).toThrow(expect.objectContaining({ code: 'invalid_target' }))
     expect(() => buildCreateMessage({ target: { chatId: 'oc_1' } })).toThrow(expect.objectContaining({ code: 'invalid_target' }))
     expect(() => buildCreateMessage({ target: { chatId: 'oc_1' }, text: 'a', markdown: 'b' })).toThrow(expect.objectContaining({ code: 'invalid_target' }))
-    expect(() => buildCreateMessage({ target: { chatId: 'oc_1' }, text: 'a', idempotencyKey: 'x'.repeat(51) })).toThrow(expect.objectContaining({ code: 'invalid_target' }))
+    expect(() => buildCreateMessage({ target: { chatId: 'oc_1' }, text: 'a', idempotencyKey: 'x'.repeat(129) })).toThrow(expect.objectContaining({ code: 'invalid_target' }))
+    expect(() => buildCreateMessage({ target: { chatId: 'oc_1' }, text: 'a', idempotencyKey: 'has space' })).toThrow(expect.objectContaining({ code: 'invalid_target' }))
     expect(() => buildCreateMessage({ target: { chatId: 'oc_1' }, text: 'a', at: { openIds: ['bad id'] } })).toThrow(expect.objectContaining({ code: 'invalid_target' }))
+  })
+})
+
+describe('formatSdkLog', () => {
+  it('keeps only safe fields of SDK error objects and flattens arrays', () => {
+    const axiosError = { message: 'Request failed with status code 400', code: 'ERR_BAD_REQUEST', config: { data: '{"app_secret":"s3cret"}' }, response: { status: 400, data: { code: 99991663, msg: 'invalid' } } }
+    const text = formatSdkLog(['[ws]', [axiosError, { message: 'second' }]])
+    expect(text).toBe('[ws] Request failed with status code 400 code=ERR_BAD_REQUEST status=400 apiCode=99991663 msg=invalid second')
+    expect(text).not.toContain('s3cret')
+    expect(formatSdkLog([{ secret: 'x' }, 3])).toBe('[object] 3')
   })
 })
 
@@ -70,6 +92,10 @@ describe('FeishuService send', () => {
     expect((await feishu.send({ text: 'x' })).results[0]).toMatchObject({ ok: false, error: { code: 'permission_denied', retryable: false } })
     fake.setSend([{ throw: { status: 503 } }])
     expect((await feishu.send({ text: 'x' })).results[0]).toMatchObject({ ok: false, error: { code: 'api_error', retryable: true } })
+    fake.setSend([{ throw: { status: 502, code: 1234 } }])
+    expect((await feishu.send({ text: 'x' })).results[0]).toMatchObject({ ok: false, error: { code: 'api_error', retryable: true } })
+    fake.setSend([{ code: 1234, msg: 'x' }])
+    expect((await feishu.send({ text: 'x' })).results[0]).toMatchObject({ ok: false, error: { code: 'api_error', retryable: false } })
     fake.setSend([{ throw: 'network' }])
     expect((await feishu.send({ text: 'x' })).results[0]).toMatchObject({ ok: false, error: { code: 'network', retryable: true } })
     expect(feishu.health()).toMatchObject({ status: 'degraded' })

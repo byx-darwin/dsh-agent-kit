@@ -73,7 +73,7 @@ export function parseDwsDeviceLogin(text: string): DwsDeviceLogin | undefined {
   return { url, ...(userCode ? { userCode } : {}), ttlMs: seconds > 0 ? seconds * 1000 : DEFAULT_LOGIN_TTL_MS }
 }
 
-export class DingtalkService extends KitService<DingtalkCounters> 
+export class DingtalkService extends KitService<DingtalkCounters>
   implements ChannelService<DingtalkTarget, DingtalkAt>, ChannelInbox<DingtalkAtMessage, DingtalkUnmatchedMessage, DingtalkRecipientTarget> {
   static Config = DingtalkConfig
   readonly config: DingtalkConfig

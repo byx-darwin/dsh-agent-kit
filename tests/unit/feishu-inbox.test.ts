@@ -187,6 +187,78 @@ describe('FeishuService inbox', () => {
     await feishu.onMessage({ conversationId: 'oc_2' }, () => {}).ready
   })
 
+  it('rejects subscription.ready when the long connection fails', async () => {
+    await root.root.plugin(FeishuService, { appId: 'cli_test' })
+    const feishu = root.root.get('feishu')!
+    const sub = feishu.onMessage({ conversationId: 'oc_1' }, () => {})
+    fake.error(new Error('gave up'))
+    await expect(sub.ready).rejects.toThrow(/gave up/)
+    // 失败状态下新订阅的 ready 直接拒绝
+    await expect(feishu.onMessage({ conversationId: 'oc_2' }, () => {}).ready).rejects.toThrow(/gave up/)
+  })
+
+  it('rejects subscription.ready when the credential check fails', async () => {
+    restore()
+    fake = createFakeFeishuSdk({ authCode: 99991663 })
+    restore = useFakeFeishuSdk(fake)
+    await root.root.plugin(FeishuService, { appId: 'cli_test' })
+    await expect(root.root.get('feishu')!.onMessage({ conversationId: 'oc_1' }, () => {}).ready).rejects.toThrow(/99991663/)
+  })
+
+  it('rejects pending subscription.ready on unload without unhandled rejections', async () => {
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown) => { unhandled.push(reason) }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const fork = await root.root.plugin(FeishuService, { appId: 'cli_test' })
+      const feishu = root.root.get('feishu')!
+      const sub = feishu.onMessage({ conversationId: 'oc_1' }, () => {})
+      // 从不 await 的 ready
+      feishu.onMessage({ conversationId: 'oc_2' }, () => {})
+      await fork.dispose()
+      await expect(sub.ready).rejects.toThrow(/feishu service stopped/)
+      await new Promise((r) => setTimeout(r, 20))
+      expect(unhandled).toEqual([])
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+
+  it('still starts the long connection when the startup bot info request fails transiently', async () => {
+    restore()
+    fake = createFakeFeishuSdk({ botName: '告警机器人', botOpenId: 'ou_bot', botInfoThrows: true })
+    restore = useFakeFeishuSdk(fake)
+    await root.root.plugin(FeishuService, { appId: 'cli_test' })
+    const feishu = root.root.get('feishu')!
+    expect(fake.started()).toBe(1)
+    expect(feishu.health()).toMatchObject({ status: 'degraded', detail: 'feishu long connection starting' })
+    fake.ready()
+    await until(() => feishu.health().detail.includes('告警机器人'))
+    expect(feishu.health().status).toBe('ok')
+    expect(await feishu.status()).toMatchObject({ account: '告警机器人' })
+  })
+
+  it('does not open a long connection when unloaded during the startup bot info request', async () => {
+    restore()
+    fake = createFakeFeishuSdk({ botInfoHang: true })
+    restore = useFakeFeishuSdk(fake)
+    const fork = root.root.plugin(FeishuService, { appId: 'cli_test', timeoutMs: 1000 })
+    await until(() => fake.botInfoCalls() === 1)
+    await fork.dispose()
+    await new Promise((r) => setTimeout(r, 1100))
+    expect(fake.started()).toBe(0)
+  })
+
+  it('does not look up names of p2p conversations for unmatched messages', async () => {
+    await root.root.plugin(FeishuService, { appId: 'cli_test' })
+    const feishu = root.root.get('feishu')!
+    fake.ready()
+    await fake.emit(textEvent('om_p', 'oc_other', 'hi', { chat_type: 'p2p' }))
+    await until(async () => (await feishu.unmatchedMessages()).length === 1)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(fake.getChatCalls()).toBe(0)
+  })
+
   it('rejects duplicate group routes', async () => {
     await expect(root.root.plugin(FeishuService, { appId: 'cli_test', groupRoutes: [{ conversationId: 'oc_1', pluginId: 'a' }, { conversationId: 'oc_1', pluginId: 'b' }] })).rejects.toThrow(/duplicate group route/)
   })

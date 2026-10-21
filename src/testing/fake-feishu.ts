@@ -5,7 +5,8 @@ export interface FakeFeishuSendStep {
   code?: number
   msg?: string
   messageId?: string
-  throw?: 'network' | 'timeout' | 'hang' | { status: number }
+  /** `{ status, code }`：HTTP 错误响应，`code` 为响应体里的飞书业务码。 */
+  throw?: 'network' | 'timeout' | 'hang' | { status: number; code?: number }
 }
 
 export interface FakeFeishu {
@@ -23,6 +24,10 @@ export interface FakeFeishu {
   closed(): boolean
   /** startWs 被调用的次数。 */
   started(): number
+  /** botInfo 被调用的次数。 */
+  botInfoCalls(): number
+  /** getChat 被调用的次数。 */
+  getChatCalls(): number
 }
 
 export function createFakeFeishuSdk(options: {
@@ -32,12 +37,18 @@ export function createFakeFeishuSdk(options: {
   send?: FakeFeishuSendStep[]
   /** 非 0 时 botInfo 返回该错误码（模拟凭据错误）。 */
   authCode?: number
+  /** 首次 botInfo 抛出网络错误（模拟启动时的瞬时故障），之后正常。 */
+  botInfoThrows?: boolean
+  /** botInfo 永不返回（模拟请求挂起）。 */
+  botInfoHang?: boolean
 } = {}): FakeFeishu {
   let steps: FakeFeishuSendStep[] = options.send ?? []
   let calls = 0
   let handlers: FeishuWsHandlers | undefined
   let closed = false
   let started = 0
+  let botInfoCalls = 0
+  let getChatCalls = 0
   const sends: FeishuCreateMessageRequest[] = []
   const chats = options.chats ?? []
   const client: FeishuClient = {
@@ -48,7 +59,10 @@ export function createFakeFeishuSdk(options: {
       if (step.throw === 'hang') return new Promise<never>(() => {})
       if (step.throw === 'network') throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })
       if (step.throw === 'timeout') throw Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })
-      if (step.throw) throw Object.assign(new Error(`HTTP ${step.throw.status}`), { response: { status: step.throw.status } })
+      if (step.throw) {
+        const data = step.throw.code !== undefined ? { code: step.throw.code, msg: 'error' } : undefined
+        throw Object.assign(new Error(`HTTP ${step.throw.status}`), { response: { status: step.throw.status, ...(data ? { data } : {}) } })
+      }
       if (step.code) return { code: step.code, msg: step.msg ?? 'error' }
       return { code: 0, msg: 'ok', data: { message_id: step.messageId ?? `om_${sends.length}` } }
     },
@@ -56,10 +70,14 @@ export function createFakeFeishuSdk(options: {
       return { code: 0, data: { items: chats.filter((c) => c.name.includes(query)).map((c) => ({ chat_id: c.chatId, name: c.name })), has_more: false } }
     },
     async getChat(chatId) {
+      getChatCalls++
       const chat = chats.find((c) => c.chatId === chatId)
       return chat ? { code: 0, data: { name: chat.name } } : { code: 230001, msg: 'not found' }
     },
     async botInfo() {
+      botInfoCalls++
+      if (options.botInfoHang) return new Promise<never>(() => {})
+      if (options.botInfoThrows && botInfoCalls === 1) throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })
       if (options.authCode) return { code: options.authCode, msg: 'invalid app credential' }
       return { code: 0, bot: { app_name: options.botName ?? 'fake bot', open_id: options.botOpenId ?? 'ou_bot' } }
     },
@@ -91,6 +109,8 @@ export function createFakeFeishuSdk(options: {
     error: (e) => need().onError(e),
     closed: () => closed,
     started: () => started,
+    botInfoCalls: () => botInfoCalls,
+    getChatCalls: () => getChatCalls,
   }
 }
 
