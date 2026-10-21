@@ -3,3 +3,4 @@ export { FeishuConfig, FEISHU_APP_SECRET_REF, type FeishuTarget } from './config
 export { FeishuSendError, type FeishuErrorCode } from './errors.js'
 export { buildCreateMessage, type FeishuAt } from './message.js'
 export type { FeishuSdk, FeishuClient, FeishuWs, FeishuWsHandlers, FeishuSdkLoader } from './sdk.js'
+export { parseFeishuEvent, type FeishuAtMessage } from './event.js'

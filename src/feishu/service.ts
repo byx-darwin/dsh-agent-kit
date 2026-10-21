@@ -1,5 +1,10 @@
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Service, type Context } from '@deepseek-ai/cordis'
-import type { ChannelSendCommon, ChannelService, ChannelStatus } from '../common/channel.js'
+import type { ChannelInbox, ChannelMessageHandler, ChannelMessageRoute, ChannelMessageSubscription, ChannelRecipientKind, ChannelRecipientSearchResult, ChannelSendCommon, ChannelService, ChannelStatus } from '../common/channel.js'
+import { MessageRouter, type MessageRouterCounts } from '../common/inbox.js'
+import { UnmatchedStore, unmatchedFileKey, type ChannelUnmatchedMessage } from '../common/unmatched.js'
+import { parseFeishuEvent, type FeishuAtMessage } from './event.js'
 import { ConfigError } from '../common/errors.js'
 import { digest, redact, registerSecret } from '../common/redact.js'
 import { KitService, type ServiceHealth } from '../common/service.js'
@@ -23,6 +28,7 @@ export interface FeishuCounters {
   failure: number
   lastFailureAt: number | null
   lastErrorCode: string | null
+  inbox: MessageRouterCounts & { listener: 'idle' | 'ready' | 'reconnecting' | 'failed'; routes: number }
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -35,7 +41,7 @@ declare module '@deepseek-ai/cordis' {
  * 飞书机器人（自建应用）：发送消息，接收群内 @ 机器人与私聊机器人的消息。
  * SDK 只经 {@link FeishuSdk} 使用；`sdkLoader` 是测试替换入口。
  */
-export class FeishuService extends KitService<FeishuCounters> implements ChannelService<FeishuTarget, FeishuAt> {
+export class FeishuService extends KitService<FeishuCounters> implements ChannelService<FeishuTarget, FeishuAt>, ChannelInbox<FeishuAtMessage, ChannelUnmatchedMessage, { chatId: string }> {
   static Config = FeishuConfig
   /** 测试钩子：替换 SDK 的加载方式。 */
   static sdkLoader: FeishuSdkLoader = loadFeishuSdk
@@ -50,13 +56,34 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
   protected connected = false
   protected readonly controller = new AbortController()
   private lastSuccessAt: number | null = null
-  private readonly counters: FeishuCounters = { success: 0, failure: 0, lastFailureAt: null, lastErrorCode: null }
+  private readonly router: MessageRouter<FeishuAtMessage>
+  private readonly unmatched: UnmatchedStore
+  private listener: 'idle' | 'ready' | 'reconnecting' | 'failed' = 'idle'
+  /** 等待长连接就绪的订阅方；`markConnected()` 时统一唤醒，无需轮询。 */
+  private readyWaiters: Array<() => void> = []
+  private readonly counters: Omit<FeishuCounters, 'inbox'> = { success: 0, failure: 0, lastFailureAt: null, lastErrorCode: null }
 
   constructor(ctx: Context, config: FeishuConfig) {
     super(ctx, 'feishu')
     this.config = config
     if (!config.appId?.trim()) throw new ConfigError('feishu', 'appId is required', { field: 'appId' })
     if (config.defaultTarget) buildCreateMessage({ target: config.defaultTarget, text: '' })
+    const groupRoutes = new Map<string, string>()
+    for (const route of config.groupRoutes ?? []) {
+      const conversationId = route.conversationId?.trim()
+      const pluginId = route.pluginId?.trim()
+      if (!conversationId || !pluginId) throw new ConfigError('feishu', 'group route requires conversationId and pluginId', { field: 'groupRoutes' })
+      if (groupRoutes.has(conversationId)) throw new ConfigError('feishu', `duplicate group route: ${conversationId}`, { field: 'groupRoutes' })
+      groupRoutes.set(conversationId, pluginId)
+    }
+    const baseUrl = (ctx as Context & { baseUrl?: string }).baseUrl
+    const dir = baseUrl ? join(dirname(fileURLToPath(new URL('./cordis.yml', baseUrl))), '.agent-kit', 'feishu-unmatched') : undefined
+    this.unmatched = new UnmatchedStore(
+      dir ? join(dir, `${unmatchedFileKey(config.appId)}.json`) : undefined,
+      (chatId) => this.chatName(chatId),
+      (error) => this.logger.warn('feishu unmatched metadata unavailable', { error: redact(String(error)) }),
+    )
+    this.router = new MessageRouter<FeishuAtMessage>({ channel: 'feishu', logger: this.logger, onUnmatched: (m) => this.unmatched.add(m), pluginRoutes: groupRoutes })
     ctx.effect(() => () => this.controller.abort(), 'feishu.abortInFlight')
   }
 
@@ -92,16 +119,101 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
     return { appId: this.config.appId, appSecret: this.appSecret!, domain: this.config.domain, logger: this.logger }
   }
 
-  /** 接收在 Task 4 中完整实现；此处只维护连接状态。 */
   protected startReceiving(): void {
     const ws = this.sdk!.startWs(this.sdkOptions(), {
-      onReady: () => { this.connected = true },
-      onReconnected: () => { this.connected = true },
-      onReconnecting: () => { this.connected = false },
-      onError: () => { this.connected = false },
-      onMessage: () => {},
+      onReady: () => this.markConnected(),
+      onReconnected: () => this.markConnected(),
+      onReconnecting: () => {
+        this.connected = false
+        this.listener = 'reconnecting'
+        this.router.setReady(false)
+      },
+      onError: (error) => {
+        this.connected = false
+        this.listener = 'failed'
+        this.router.setReady(false)
+        this.markFailed(`feishu long connection failed: ${redact(error.message)}`, error)
+      },
+      // 飞书要求 3 秒内返回：这里只解析、入队，投递由路由器异步完成
+      onMessage: (event) => {
+        const message = parseFeishuEvent(event, this.botOpenId)
+        if (!message) {
+          this.router.drop()
+          this.logger.warn('invalid feishu event dropped')
+          return
+        }
+        this.router.accept(message)
+      },
     })
-    this.ctx.effect(() => () => ws.close(), 'feishu.ws')
+    this.ctx.effect(() => () => {
+      ws.close()
+      this.router.reset()
+      this.connected = false
+      this.listener = 'idle'
+    }, 'feishu.ws')
+  }
+
+  private markConnected(): void {
+    this.connected = true
+    this.listener = 'ready'
+    this.clearFailed()
+    this.router.setReady(true)
+    const waiters = this.readyWaiters
+    this.readyWaiters = []
+    for (const resolve of waiters) resolve()
+  }
+
+  /** 按会话 ID 注册 @ 消息处理器；每条消息只下发给优先级最高的首个匹配处理器。 */
+  onMessage(route: ChannelMessageRoute<FeishuAtMessage>, handler: ChannelMessageHandler<FeishuAtMessage>): ChannelMessageSubscription {
+    return this.subscribe(this.router.register(route, handler), 'feishu.onMessage')
+  }
+
+  /** 业务插件以设置页使用的插件 ID 注册接收器；会话到插件的映射由 `groupRoutes` 配置。 */
+  onPluginMessage(pluginId: string, handler: ChannelMessageHandler<FeishuAtMessage>): ChannelMessageSubscription {
+    return this.subscribe(this.router.registerPlugin(pluginId, handler), 'feishu.onPluginMessage')
+  }
+
+  private subscribe(dispose: () => void, label: string): ChannelMessageSubscription {
+    if (this.config.dryRun) {
+      dispose()
+      throw new ConfigError('feishu', 'cannot listen for messages in dryRun mode', { field: 'dryRun' })
+    }
+    const subscription: ChannelMessageSubscription = {
+      ready: this.listener === 'ready' ? Promise.resolve() : new Promise<void>((resolve) => { this.readyWaiters.push(resolve) }),
+      close: async () => dispose(),
+    }
+    try {
+      // Cordis 将此 effect 归属到调用方插件；插件卸载时自动取消它的路由。
+      this.ctx.effect(() => () => dispose(), label)
+    } catch (error) {
+      dispose()
+      throw error
+    }
+    return subscription
+  }
+
+  /** 最近 200 条未命中记录（只保存 240 字预览），新记录在前。 */
+  unmatchedMessages(): Promise<ChannelUnmatchedMessage[]> {
+    return this.unmatched.list()
+  }
+
+  /** 只支持按群名搜索机器人所在的群；机器人身份无法按姓名搜人，个人请填写 open_id。 */
+  async searchRecipients(kind: ChannelRecipientKind, query: string): Promise<ChannelRecipientSearchResult<{ chatId: string }>> {
+    if (kind === 'user') throw new TypeError('feishu bot cannot search users; enter an open_id')
+    if (kind !== 'group') throw new TypeError('recipient kind must be group or user')
+    const term = query?.trim()
+    if (!term || term.length < 2 || term.length > 80) throw new TypeError('recipient search query must be 2–80 characters')
+    if (!this.client) throw new Error('feishu service is not initialized')
+    const r = await this.client.searchChats(term, this.controller.signal)
+    if (r.code !== undefined && r.code !== 0) throw classifyApiCode(r.code, r.msg ?? '')
+    const candidates = (r.data?.items ?? []).flatMap((item) => (item.chat_id ? [{ name: item.name ?? item.chat_id, target: { chatId: item.chat_id } }] : []))
+    return { candidates, complete: r.data?.has_more !== true }
+  }
+
+  private async chatName(chatId: string): Promise<string | undefined> {
+    if (!this.client) return undefined
+    const r = await this.client.getChat(chatId, this.controller.signal)
+    return r.code === 0 && r.data?.name?.trim() ? r.data.name.trim() : undefined
   }
 
   async send(options: FeishuSendOptions): Promise<FeishuSendResult> {
@@ -200,12 +312,13 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
   }
 
   health(): ServiceHealth<FeishuCounters> {
-    const counters = { ...this.counters }
+    const counters: FeishuCounters = { ...this.counters, inbox: { listener: this.listener, routes: this.router.size, ...this.router.counters() } }
     if (this.failure) return { status: 'failed', detail: this.failure, counters }
+    if (this.listener === 'reconnecting') return { status: 'degraded', detail: 'feishu long connection reconnecting', counters }
     if (counters.lastFailureAt !== null && (this.lastSuccessAt === null || counters.lastFailureAt > this.lastSuccessAt)) {
       return { status: 'degraded', detail: `last send failed: ${counters.lastErrorCode}`, counters }
     }
-    return { status: 'ok', detail: this.config.dryRun ? 'dry-run' : `bot: ${this.botName ?? 'unknown'}`, counters }
+    return { status: 'ok', detail: this.config.dryRun ? 'dry-run' : `bot: ${this.botName ?? 'unknown'}; @ inbox listening (${counters.inbox.routes} route(s))`, counters }
   }
 }
 

@@ -1,0 +1,137 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import type { Context } from '@deepseek-ai/cordis'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { parseFeishuEvent, type FeishuAtMessage } from '../../src/feishu/event.js'
+import { FeishuService } from '../../src/feishu/service.js'
+import { createFakeFeishuSdk, useFakeFeishuSdk, type FakeFeishu } from '../../src/testing/fake-feishu.js'
+import { createRoot, until, type TestRoot } from '../helpers.js'
+
+const textEvent = (id: string, chatId: string, text: string, over: Record<string, unknown> = {}) => ({
+  sender: { sender_id: { open_id: 'ou_sender' }, sender_type: 'user' },
+  message: {
+    message_id: id,
+    chat_id: chatId,
+    chat_type: 'group',
+    message_type: 'text',
+    content: JSON.stringify({ text }),
+    mentions: [{ key: '@_user_1', id: { open_id: 'ou_bot' }, name: '告警机器人' }, { key: '@_user_2', id: { open_id: 'ou_a' }, name: '张三' }],
+    create_time: '1700000000000',
+    ...over,
+  },
+})
+
+describe('parseFeishuEvent', () => {
+  it('maps a group text message and replaces mention placeholders, dropping the bot mention', () => {
+    expect(parseFeishuEvent(textEvent('om_1', 'oc_1', '@_user_1 请 @_user_2 处理'), 'ou_bot')).toEqual({
+      eventId: 'om_1', messageId: 'om_1', conversationId: 'oc_1', chatType: 'group', senderId: 'ou_sender',
+      content: '请 @张三 处理', messageType: 'text',
+      mentions: [{ openId: 'ou_bot', name: '告警机器人' }, { openId: 'ou_a', name: '张三' }], timestamp: 1700000000000,
+    })
+  })
+
+  it('extracts the text of post messages and leaves other types empty', () => {
+    const post = { title: '日报', content: [[{ tag: 'text', text: '第一行' }, { tag: 'at', user_id: 'ou_bot' }], [{ tag: 'a', text: '链接', href: 'https://x' }]] }
+    expect(parseFeishuEvent(textEvent('om_2', 'oc_1', '', { message_type: 'post', content: JSON.stringify(post) }), 'ou_bot')?.content).toBe('日报\n第一行\n链接')
+    expect(parseFeishuEvent(textEvent('om_3', 'oc_1', '', { message_type: 'image', content: JSON.stringify({ image_key: 'k' }) }))).toMatchObject({ content: '', messageType: 'image' })
+  })
+
+  it('accepts the SDK payload wrapped in `event` and rejects malformed payloads', () => {
+    expect(parseFeishuEvent({ event: textEvent('om_4', 'oc_1', 'hi') })?.eventId).toBe('om_4')
+    expect(parseFeishuEvent({ message: { chat_id: 'oc_1' } })).toBeUndefined()
+    expect(parseFeishuEvent(textEvent('om_5', 'oc_1', 'x', { content: 'not json' }))).toBeUndefined()
+    expect(parseFeishuEvent(null)).toBeUndefined()
+  })
+})
+
+describe('FeishuService inbox', () => {
+  let root: TestRoot
+  let fake: FakeFeishu
+  let restore: () => void
+  let dir: string
+  const savedEnv = { ...process.env }
+
+  beforeEach(() => {
+    root = createRoot()
+    dir = mkdtempSync(join(tmpdir(), 'feishu-'))
+    root.root.baseUrl = pathToFileURL(`${dir}/`).href
+    process.env.FEISHU_APP_SECRET = 'secret-value'
+    fake = createFakeFeishuSdk({ botName: '告警机器人', botOpenId: 'ou_bot', chats: [{ chatId: 'oc_other', name: '研发群' }, { chatId: 'oc_ops', name: '运维值班群' }] })
+    restore = useFakeFeishuSdk(fake)
+  })
+  afterEach(async () => {
+    await root.dispose()
+    restore()
+    rmSync(dir, { recursive: true, force: true })
+    process.env = { ...savedEnv }
+  })
+
+  it('queues messages until the connection is ready, then routes by conversation', async () => {
+    await root.root.plugin(FeishuService, { appId: 'cli_test' })
+    const got: FeishuAtMessage[] = []
+    await root.root.plugin({ name: 'biz', inject: ['feishu'], apply(ctx: Context) { ctx.feishu.onMessage({ conversationId: 'oc_1' }, (m) => { got.push(m) }) } })
+    const feishu = root.root.get('feishu')!
+    await fake.emit(textEvent('om_1', 'oc_1', 'hello'))
+    expect(got).toHaveLength(0)
+    fake.ready()
+    await until(() => got.length === 1)
+    expect(got[0]).toMatchObject({ eventId: 'om_1', content: 'hello', chatType: 'group' })
+    await fake.emit(textEvent('om_1', 'oc_1', 'hello'))
+    expect(feishu.health().counters.inbox).toMatchObject({ listener: 'ready', duplicate: 1, routes: 1 })
+  })
+
+  it('delivers configured conversations to the business plugin and records unmatched ones with names', async () => {
+    await root.root.plugin(FeishuService, { appId: 'cli_test', groupRoutes: [{ conversationId: 'oc_1', pluginId: 'orders' }] })
+    const feishu = root.root.get('feishu')!
+    const got: string[] = []
+    feishu.onPluginMessage('orders', (m) => { got.push(m.eventId) })
+    fake.ready()
+    await fake.emit(textEvent('om_1', 'oc_1', 'a'))
+    await fake.emit(textEvent('om_2', 'oc_other', '没人处理'))
+    await until(async () => got.length === 1 && (await feishu.unmatchedMessages())[0]?.conversationName === '研发群')
+    expect(await feishu.unmatchedMessages()).toMatchObject([{ eventId: 'om_2', conversationId: 'oc_other', conversationName: '研发群', senderId: 'ou_sender', preview: '没人处理' }])
+  })
+
+  it('reports reconnecting as degraded and errors as failed with a service-failed event', async () => {
+    await root.root.plugin(FeishuService, { appId: 'cli_test' })
+    const feishu = root.root.get('feishu')!
+    fake.ready()
+    expect(feishu.health().status).toBe('ok')
+    fake.reconnecting()
+    expect(feishu.health()).toMatchObject({ status: 'degraded', detail: expect.stringContaining('reconnecting') })
+    fake.reconnected()
+    expect(feishu.health().status).toBe('ok')
+    fake.error(new Error('gave up'))
+    expect(feishu.health().status).toBe('failed')
+    expect(root.failures.some((f) => f.service === 'feishu')).toBe(true)
+  })
+
+  it('drops malformed events and closes the connection on unload', async () => {
+    const fork = await root.root.plugin(FeishuService, { appId: 'cli_test' })
+    const feishu = root.root.get('feishu')!
+    fake.ready()
+    await fake.emit({ nope: true })
+    expect(feishu.health().counters.inbox.dropped).toBe(1)
+    await fork.dispose()
+    expect(fake.closed()).toBe(true)
+  })
+
+  it('searches groups the bot belongs to and refuses user search', async () => {
+    await root.root.plugin(FeishuService, { appId: 'cli_test' })
+    const feishu = root.root.get('feishu')!
+    expect(await feishu.searchRecipients('group', '运维')).toEqual({ candidates: [{ name: '运维值班群', target: { chatId: 'oc_ops' } }], complete: true })
+    await expect(feishu.searchRecipients('user', '张三')).rejects.toThrow(/open_id/)
+    await expect(feishu.searchRecipients('group', 'x')).rejects.toThrow(/2–80/)
+  })
+
+  it('rejects duplicate group routes', async () => {
+    await expect(root.root.plugin(FeishuService, { appId: 'cli_test', groupRoutes: [{ conversationId: 'oc_1', pluginId: 'a' }, { conversationId: 'oc_1', pluginId: 'b' }] })).rejects.toThrow(/duplicate group route/)
+  })
+
+  it('refuses to listen in dryRun', async () => {
+    await root.root.plugin(FeishuService, { appId: 'cli_test', dryRun: true })
+    expect(() => root.root.get('feishu')!.onMessage({ conversationId: 'oc_1' }, () => {})).toThrow(/cannot listen for messages in dryRun mode/)
+  })
+})
