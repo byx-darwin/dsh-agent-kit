@@ -107,6 +107,25 @@ export function dingtalkTestMarkdown(now = new Date()): string {
   return `dsh-agent-kit setup 测试消息 ${now.toISOString()}`
 }
 
+// ---- feishu ----
+export const FEISHU_APP_ID_MESSAGE = '飞书 App ID（开发者后台 → 凭证与基础信息）'
+export const FEISHU_DOMAIN_MESSAGE = '使用飞书还是 Lark 国际版'
+export const FEISHU_DOMAIN_CHOICES = [
+  { value: 'feishu' as const, name: '飞书' },
+  { value: 'lark' as const, name: 'Lark（国际版）' },
+]
+export const FEISHU_SECRET_MESSAGE = '飞书 App Secret（只写入 dsh 凭据文件）'
+export function feishuSecretFoundMessage(ref: string, source: string): string {
+  return `已找到 ${ref}（来源：${source}），继续使用？`
+}
+export function feishuProbeResult(ok: boolean, detail: string, botName?: string): string {
+  return ok ? `飞书凭据有效，机器人：${botName ?? '未知'}\n` : `飞书凭据检查失败：${detail}\n`
+}
+export const FEISHU_SDK_MISSING = (profile: string) => `未安装 @larksuiteoapi/node-sdk，启用飞书前请运行：dsh plugin --profile ${profile} add @larksuiteoapi/node-sdk\n`
+export const FEISHU_PERMISSIONS_HINT = '请确认飞书开发者后台已开启机器人能力，事件订阅选择长连接并订阅「接收消息 v2.0」，开通权限 im:message:send_as_bot、im:message.group_at_msg:readonly、im:message.p2p_msg:readonly。\n'
+export const FEISHU_TEST_CONFIRM = '向一个飞书群发送测试消息？'
+export const FEISHU_TEST_CHAT_MESSAGE = '群 chat_id（oc_ 开头，机器人需已在群里）'
+
 // ---- notify ----
 
 export const NOTIFY_CHANNEL_TITLES: Record<string, string> = { dingtalk: '钉钉', feishu: '飞书' }

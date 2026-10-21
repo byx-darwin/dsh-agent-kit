@@ -154,3 +154,33 @@ describe('notify checks', () => {
     expect(byId(off, 'agent-kit-notify.channel')).toMatchObject({ status: 'fail', fix: expect.stringContaining('启用 钉钉'), detail: expect.stringContaining('发往默认渠道的通知会失败') })
   })
 })
+
+describe('feishu checks', () => {
+  const feishu = (config: Record<string, unknown>) => snapshot({ 'agent-kit-feishu': { enabled: true, config } })
+
+  it('reports SDK, appId, secret source and a working credential', async () => {
+    const report = await runChecks(ctx({
+      snapshot: feishu({ appId: 'cli_x' }),
+      resolveModule: (name) => name === '@larksuiteoapi/node-sdk',
+      env: { FEISHU_APP_SECRET: 's' },
+      feishuProbe: async () => ({ ok: true, botName: '告警机器人', detail: 'ok' }),
+    }))
+    expect(byId(report, 'agent-kit-feishu.sdk')).toMatchObject({ status: 'pass' })
+    expect(byId(report, 'agent-kit-feishu.appId')).toMatchObject({ status: 'pass' })
+    expect(byId(report, 'agent-kit-feishu.secret')).toMatchObject({ status: 'pass', detail: expect.stringContaining('环境变量') })
+    expect(byId(report, 'agent-kit-feishu.credential')).toMatchObject({ status: 'pass', detail: expect.stringContaining('告警机器人') })
+  })
+
+  it('fails with install and configuration fixes, and skips the credential check without a secret', async () => {
+    const report = await runChecks(ctx({ snapshot: feishu({}), resolveModule: () => false, env: {}, feishuProbe: async () => { throw new Error('should not be called') } }))
+    expect(byId(report, 'agent-kit-feishu.sdk')).toMatchObject({ status: 'fail', fix: expect.stringContaining('add @larksuiteoapi/node-sdk') })
+    expect(byId(report, 'agent-kit-feishu.appId')).toMatchObject({ status: 'fail' })
+    expect(byId(report, 'agent-kit-feishu.secret')).toMatchObject({ status: 'fail' })
+    expect(byId(report, 'agent-kit-feishu.credential')).toMatchObject({ status: 'skip' })
+  })
+
+  it('fails the credential check with the probe detail', async () => {
+    const report = await runChecks(ctx({ snapshot: feishu({ appId: 'cli_x' }), resolveModule: () => true, env: { FEISHU_APP_SECRET: 's' }, feishuProbe: async () => ({ ok: false, detail: '10003 invalid app_secret' }) }))
+    expect(byId(report, 'agent-kit-feishu.credential')).toMatchObject({ status: 'fail', detail: expect.stringContaining('10003') })
+  })
+})

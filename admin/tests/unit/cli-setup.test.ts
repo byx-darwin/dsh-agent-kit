@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { main } from '../../src/cli/main.js'
 import { scriptedPrompter } from '../../src/cli/prompter.js'
-import { readCredential } from '@baoyx/dsh-agent-kit/secrets'
+import { readCredential, resolveSecretRef } from '@baoyx/dsh-agent-kit/secrets'
 
 let home: string
 let patchFile: string
@@ -125,4 +125,26 @@ describe('setup', () => {
     expect(out.join('')).toContain('测试消息已发送')
   })
 
+
+  it('configures feishu and selects it as the default notify channel', async () => {
+    const answers = [
+      ['agent-kit-feishu', 'agent-kit-notify'],
+      'cli_x', // App ID
+      'feishu', // 域名
+      's3cret', // App Secret（password）
+      'feishu', // 默认通知渠道
+      true, // 确认写入
+      false, // 不发送飞书测试消息
+    ]
+    const feishuProbe = async () => ({ ok: true, botName: 'bot', detail: 'ok' })
+    const d = deps(answers, { feishuProbe })
+    const code = await main(['setup', '--profile', 'kit'], io(), { ...d, checkOverrides: { ...d.checkOverrides, feishuProbe } })
+    expect(code).toBe(0)
+    const text = readFileSync(patchFile, 'utf8')
+    expect(text).toMatch(/id: agent-kit-feishu\n\s+disabled: false\n\s+config:\n\s+appId: cli_x/)
+    expect(text).toMatch(/id: agent-kit-notify[\s\S]*channel: feishu/)
+    expect(text).not.toContain('s3cret')
+    expect((await resolveSecretRef('FEISHU_APP_SECRET', d.keyStore))?.value).toBe('s3cret')
+    expect(out.join('')).toContain('飞书凭据有效')
+  })
 })

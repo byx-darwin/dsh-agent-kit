@@ -10,11 +10,13 @@ import { commonChecks } from './common.js'
 import { dingtalkChecks } from './dingtalk.js'
 import { entryChecks } from './entries.js'
 import { notifyChecks } from './notify.js'
+import { feishuChecks } from './feishu.js'
 import { jevChecks } from './jev.js'
 import type { Check, CheckContext, CheckReport, CheckResult } from './types.js'
 
 const SERVICE_CHECKS: Record<string, Check> = {
   'agent-kit-dingtalk': dingtalkChecks,
+  'agent-kit-feishu': feishuChecks,
   'agent-kit-notify': notifyChecks,
   'agent-kit-agent-tasks': agentTasksChecks,
   'agent-kit-jev': jevChecks,

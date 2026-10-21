@@ -2,8 +2,10 @@ import { spawn } from 'node:child_process'
 import { diffLines } from 'diff'
 import { createCheckContext, runChecks } from '../checks/index.js'
 import { previewKitEntries, readKitEntries, writeKitEntries, type KitChanges, type KitId } from '../profile/index.js'
-import { SHARED_KEYCHAIN_SERVICE, defaultKeyTarget, describeSecretRef, describeTypesafeKey, saveSecretRef, saveTypesafeKey, type KeyStoreOptions, type KeyTarget } from '@baoyx/dsh-agent-kit/secrets'
+import { SHARED_KEYCHAIN_SERVICE, defaultKeyTarget, describeSecretRef, describeTypesafeKey, resolveSecretRef, saveSecretRef, saveTypesafeKey, type KeyStoreOptions, type KeyTarget } from '@baoyx/dsh-agent-kit/secrets'
 import { CHANNEL_CLIS, installArgs, installCommand, type ChannelCliId } from '../clis.js'
+import { FEISHU_APP_SECRET_REF } from '@baoyx/dsh-agent-kit/feishu'
+import { probeFeishu, sendFeishuTestMessage, type FeishuProbe } from '../feishu-probe.js'
 import { buildSendArgs } from '@baoyx/dsh-agent-kit/dingtalk'
 import { NOTIFY_CHANNELS, type NotifyChannel } from '@baoyx/dsh-agent-kit/notify'
 import type { CheckContext } from '../checks/index.js'
@@ -21,6 +23,9 @@ export interface SetupDeps extends CliDeps {
   /** 运行 `npm i -g <包>@<版本>`，测试可替换。 */
   runInstall?: (args: string[]) => Promise<number>
   keyStore?: KeyStoreOptions
+  /** 飞书凭据检查与测试消息，测试可替换。 */
+  feishuProbe?: FeishuProbe
+  sendFeishuTest?: typeof sendFeishuTestMessage
 }
 
 const nonEmpty = (v: string) => (v.trim() ? true : msg.NOT_EMPTY)
@@ -160,6 +165,26 @@ async function configureDingtalk(p: Prompter, current: Config, deps: SetupDeps, 
   return config
 }
 
+/** 飞书：App ID、域名、App Secret（凭据文件），随后检查凭据。 */
+async function configureFeishu(p: Prompter, current: Config, keyStore: KeyStoreOptions, io: CliIO, deps: SetupDeps, ctx: CheckContext, profileName: string): Promise<Config> {
+  if (!ctx.resolveModule('@larksuiteoapi/node-sdk')) io.out(msg.FEISHU_SDK_MISSING(profileName))
+  const appId = await p.input(msg.FEISHU_APP_ID_MESSAGE, current.appId as string | undefined, nonEmpty)
+  const domain = await p.select(msg.FEISHU_DOMAIN_MESSAGE, msg.FEISHU_DOMAIN_CHOICES, (current.domain as 'feishu' | 'lark') ?? 'feishu')
+  const config: Config = { ...current, appId, domain }
+  const ref = (config.appSecretRef as string | undefined) ?? FEISHU_APP_SECRET_REF
+  const existing = await describeSecretRef(ref, keyStore)
+  if (!(existing.configured && (await p.confirm(msg.feishuSecretFoundMessage(ref, existing.source!), true)))) {
+    await saveSecretRef(ref, await p.password(msg.FEISHU_SECRET_MESSAGE), keyStore)
+  }
+  const secret = await resolveSecretRef(ref, keyStore)
+  if (secret) {
+    const r = await (deps.feishuProbe ?? probeFeishu)({ appId, appSecret: secret.value, domain })
+    io.out(msg.feishuProbeResult(r.ok, r.detail, r.botName))
+  }
+  io.out(msg.FEISHU_PERMISSIONS_HINT)
+  return config
+}
+
 /** 选择默认通知渠道；只有一个可选渠道时直接使用，不提问。 */
 async function configureNotify(p: Prompter, io: CliIO, current: Config, enabledChannels: NotifyChannel[]): Promise<Config> {
   const channel = NOTIFY_CHANNELS.length === 1
@@ -227,13 +252,14 @@ export async function runSetup(opts: { home: string; profileName?: string; io: C
   const snap = await readKitEntries(profile.patchFile)
   const ctx = await createCheckContext(profile, deps.checkOverrides)
 
-  const ids: KitId[] = ['agent-kit-ws', 'agent-kit-dingtalk', 'agent-kit-notify', 'agent-kit-agent-tasks', 'agent-kit-jev']
+  const ids: KitId[] = ['agent-kit-ws', 'agent-kit-dingtalk', 'agent-kit-feishu', 'agent-kit-notify', 'agent-kit-agent-tasks', 'agent-kit-jev']
   const enabled = await p.checkbox(msg.SELECT_SERVICES_MESSAGE, ids.map((id) => ({ value: id, name: msg.KIT_TITLES[id]!, checked: snap.entries[id].enabled })))
 
   // 先装好渠道 CLI，后面的登录检查、按群名搜索才用得上
-  const channelRows: Partial<Record<NotifyChannel, KitId>> = { dingtalk: 'agent-kit-dingtalk' }
-  const enabledChannels = NOTIFY_CHANNELS.filter((c): c is ChannelCliId & NotifyChannel => c in CHANNEL_CLIS && enabled.includes(channelRows[c]!))
-  await installMissingClis(p, io, deps, ctx.findExecutable, enabledChannels)
+  const channelRows: Record<NotifyChannel, KitId | undefined> = { dingtalk: 'agent-kit-dingtalk', feishu: 'agent-kit-feishu', wecom: undefined }
+  const enabledChannels = NOTIFY_CHANNELS.filter((c) => channelRows[c] !== undefined && enabled.includes(channelRows[c]!))
+  // 只有带 CLI 的渠道需要安装检查
+  await installMissingClis(p, io, deps, ctx.findExecutable, enabledChannels.filter((c): c is ChannelCliId & NotifyChannel => c in CHANNEL_CLIS))
   const dws = ctx.findExecutable('dws')
   const loggedIn =
     enabled.includes('agent-kit-dingtalk') &&
@@ -250,6 +276,7 @@ export async function runSetup(opts: { home: string; profileName?: string; io: C
     }
     const config =
       id === 'agent-kit-dingtalk' ? await configureDingtalk(p, current, deps, io, loggedIn, ctx.exec, dws)
+      : id === 'agent-kit-feishu' ? await configureFeishu(p, current, keyStore, io, deps, ctx, profile.name)
       : id === 'agent-kit-notify' ? await configureNotify(p, io, current, enabledChannels)
       : id === 'agent-kit-agent-tasks' ? await configureAgentTasks(p, current)
       : id === 'agent-kit-jev' ? await configureJev(p, current, keyStore, io)
@@ -269,6 +296,16 @@ export async function runSetup(opts: { home: string; profileName?: string; io: C
   if (dingtalk?.enabled && dws && (await p.confirm(msg.SEND_TEST_MESSAGE_CONFIRM, false))) {
     const r = await sendSelfTestMessage(ctx.exec, dws)
     io.out(`${r.detail}\n`)
+  }
+  const feishu = changes['agent-kit-feishu']
+  if (feishu?.enabled && (await p.confirm(msg.FEISHU_TEST_CONFIRM, false))) {
+    const config = feishu.config as { appId: string; domain?: 'feishu' | 'lark'; appSecretRef?: string }
+    const secret = await resolveSecretRef(config.appSecretRef ?? FEISHU_APP_SECRET_REF, keyStore)
+    if (secret) {
+      const chatId = await p.input(msg.FEISHU_TEST_CHAT_MESSAGE, undefined, nonEmpty)
+      const r = await (deps.sendFeishuTest ?? sendFeishuTestMessage)({ appId: config.appId, appSecret: secret.value, domain: config.domain ?? 'feishu', chatId, text: msg.dingtalkTestMarkdown() })
+      io.out(`${r.detail}\n`)
+    }
   }
   const report = await runChecks(await createCheckContext(profile, deps.checkOverrides))
   io.out(formatReport(report))
