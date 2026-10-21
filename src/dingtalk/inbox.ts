@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { StringDecoder } from 'node:string_decoder'
 import type { ChannelAtMessage, ChannelMessageHandler, ChannelMessageRoute, ChannelMessageSubscription } from '../common/channel.js'
+import { MessageRouter, type MessageRouterCounts } from '../common/inbox.js'
 import { killTree } from '../common/process.js'
 import type { KitLogger } from '../common/logger.js'
 import { redact } from '../common/redact.js'
@@ -14,24 +15,13 @@ export type DingtalkMessageRoute = ChannelMessageRoute<DingtalkAtMessage>
 export type DingtalkMessageHandler = ChannelMessageHandler<DingtalkAtMessage>
 export type DingtalkMessageSubscription = ChannelMessageSubscription
 
-export interface DingtalkInboxStats {
+export interface DingtalkInboxStats extends MessageRouterCounts {
   listener: 'idle' | 'starting' | 'ready' | 'failed'
   routes: number
-  received: number
-  dispatched: number
-  unmatched: number
-  duplicate: number
-  dropped: number
-  handlerErrors: number
 }
 
-type Route = { id: number; config: DingtalkMessageRoute; handler: DingtalkMessageHandler; controller: AbortController }
-type PluginHandler = { pluginId: string; handler: DingtalkMessageHandler; controller: AbortController }
 const EVENT_TYPE = 'user_im_message_receive_at'
 const MAX_LINE = 1024 * 1024
-const MAX_QUEUE = 256
-const MAX_SEEN = 2048
-const HANDLER_TIMEOUT_MS = 30_000
 
 /** 从 dws 的扁平 NDJSON 中只提取已验证的路由字段。 */
 export function parseAtMessage(line: string): DingtalkAtMessage | undefined {
@@ -61,9 +51,7 @@ export function parseAtMessage(line: string): DingtalkAtMessage | undefined {
 }
 
 export class DingtalkInbox {
-  private readonly routes = new Map<number, Route>()
-  private readonly pluginHandlers = new Map<string, PluginHandler>()
-  private nextId = 0
+  private readonly router: MessageRouter<DingtalkAtMessage>
   private child?: ChildProcess
   private readyPromise?: Promise<void>
   private resolveReady?: () => void
@@ -71,11 +59,6 @@ export class DingtalkInbox {
   private closed?: Promise<void>
   private stopRequested = false
   private state: DingtalkInboxStats['listener'] = 'idle'
-  private readonly queue: DingtalkAtMessage[] = []
-  private processing = false
-  private readonly seen = new Set<string>()
-  private controller = new AbortController()
-  private readonly counts = { received: 0, dispatched: 0, unmatched: 0, duplicate: 0, dropped: 0, handlerErrors: 0 }
 
   constructor(
     private readonly file: string,
@@ -89,10 +72,12 @@ export class DingtalkInbox {
     private readonly captureUnmatched = false,
     private readonly profile: () => string | undefined = () => undefined,
     private readonly groupRoutes: ReadonlyMap<string, string> = new Map(),
-  ) {}
+  ) {
+    this.router = new MessageRouter<DingtalkAtMessage>({ channel: 'dingtalk', logger, onUnmatched, pluginRoutes: groupRoutes })
+  }
 
   stats(): DingtalkInboxStats {
-    return { listener: this.state, routes: this.routes.size + this.pluginHandlers.size, ...this.counts }
+    return { listener: this.state, routes: this.router.size, ...this.router.counters() }
   }
 
   /** 即使尚无业务路由，也保持 @ 订阅，用于发现需要新插件的群消息。 */
@@ -101,35 +86,15 @@ export class DingtalkInbox {
   }
 
   register(config: DingtalkMessageRoute, handler: DingtalkMessageHandler): DingtalkMessageSubscription {
-    if (!config.conversationId || typeof config.conversationId !== 'string') throw new TypeError('conversationId is required')
-    if (config.match !== undefined && typeof config.match !== 'function') throw new TypeError('match must be a function')
-    if (config.priority !== undefined && !Number.isFinite(config.priority)) throw new TypeError('priority must be finite')
-    if (typeof handler !== 'function') throw new TypeError('handler must be a function')
-    const id = ++this.nextId
-    const route = { id, config, handler, controller: new AbortController() }
-    this.routes.set(id, route)
-    const ready = this.start()
-    void ready.catch(() => {})
-    let closed = false
-    return {
-      ready,
-      close: async () => {
-        if (closed) return
-        closed = true
-        route.controller.abort()
-        this.routes.delete(id)
-        if (this.routes.size === 0 && this.pluginHandlers.size === 0 && !this.captureUnmatched) await this.stop()
-      },
-    }
+    return this.subscribe(this.router.register(config, handler))
   }
 
   /** 注册业务插件处理器；设置页按群 ID 指定 pluginId 后才会向它投递。 */
   registerPlugin(pluginId: string, handler: DingtalkMessageHandler): DingtalkMessageSubscription {
-    if (!pluginId.trim()) throw new TypeError('pluginId is required')
-    if (typeof handler !== 'function') throw new TypeError('handler must be a function')
-    if (this.pluginHandlers.has(pluginId)) throw new TypeError(`pluginId already registered: ${pluginId}`)
-    const route = { pluginId, handler, controller: new AbortController() }
-    this.pluginHandlers.set(pluginId, route)
+    return this.subscribe(this.router.registerPlugin(pluginId, handler))
+  }
+
+  private subscribe(dispose: () => void): DingtalkMessageSubscription {
     const ready = this.start()
     void ready.catch(() => {})
     let closed = false
@@ -138,22 +103,20 @@ export class DingtalkInbox {
       close: async () => {
         if (closed) return
         closed = true
-        route.controller.abort()
-        if (this.pluginHandlers.get(pluginId) === route) this.pluginHandlers.delete(pluginId)
-        if (this.routes.size === 0 && this.pluginHandlers.size === 0 && !this.captureUnmatched) await this.stop()
+        dispose()
+        if (this.router.size === 0 && !this.captureUnmatched) await this.stop()
       },
     }
   }
 
   private start(): Promise<void> {
     if (this.stopRequested && this.closed) return this.closed.then(() => {
-      if (this.routes.size === 0 && this.pluginHandlers.size === 0 && !this.captureUnmatched) throw new Error('dws event listener stopped')
+      if (this.router.size === 0 && !this.captureUnmatched) throw new Error('dws event listener stopped')
       return this.start()
     })
     if (this.readyPromise) return this.readyPromise
     this.state = 'starting'
     this.stopRequested = false
-    this.controller = new AbortController()
     const isScript = /\.(mjs|cjs|js)$/i.test(this.file)
     const profile = this.profile()
     const child = spawn(isScript ? process.execPath : this.file, [
@@ -194,11 +157,11 @@ export class DingtalkInbox {
         const part = text.slice(0, newline)
         text = text.slice(newline + 1)
         if (dropLine) {
-          this.counts.dropped++
+          this.router.drop()
           dropLine = false
         } else {
           outLine += part
-          if (Buffer.byteLength(outLine) > MAX_LINE) this.counts.dropped++
+          if (Buffer.byteLength(outLine) > MAX_LINE) this.router.drop()
           else if (outLine.trim()) this.accept(outLine.trim())
         }
         outLine = ''
@@ -224,19 +187,20 @@ export class DingtalkInbox {
           this.resolveReady = undefined
           this.rejectReady = undefined
           this.onHealthy()
-          void this.pump()
+          this.router.setReady(true)
         }
       }
     })
     child.on('error', (error) => this.fail(`dws event listener failed to start: ${redact(error.message)}`))
     this.closed = new Promise<void>((resolve) => {
       child.on('close', (code, signal) => {
+        this.router.setReady(false)
         clearTimeout(readyTimer)
         clearTimeout(forceTimer)
         if (this.child === child) this.child = undefined
         this.readyPromise = undefined
         this.closed = undefined
-        if (this.stopRequested || (this.routes.size === 0 && this.pluginHandlers.size === 0 && !this.captureUnmatched)) {
+        if (this.stopRequested || (this.router.size === 0 && !this.captureUnmatched)) {
           this.state = 'idle'
           this.onHealthy()
         } else {
@@ -251,84 +215,17 @@ export class DingtalkInbox {
   private accept(line: string): void {
     const message = parseAtMessage(line)
     if (!message) {
-      this.counts.dropped++
+      this.router.drop()
       this.logger.warn('invalid dws event line dropped')
       return
     }
-    this.counts.received++
-    if (this.seen.has(message.eventId)) {
-      this.counts.duplicate++
-      return
-    }
-    if (this.queue.length >= MAX_QUEUE) {
-      this.counts.dropped++
-      this.logger.warn('dws event queue full; message dropped', { eventId: message.eventId })
-      return
-    }
-    this.seen.add(message.eventId)
-    if (this.seen.size > MAX_SEEN) this.seen.delete(this.seen.values().next().value!)
-    this.queue.push(message)
-    if (this.state === 'ready') void this.pump()
-  }
-
-  private async pump(): Promise<void> {
-    if (this.processing || this.state !== 'ready') return
-    this.processing = true
-    try {
-      while (this.queue.length && this.state === 'ready') {
-        const message = this.queue.shift()!
-        const routes = [...this.routes.values()]
-          .filter((route) => route.config.conversationId === message.conversationId)
-          .sort((a, b) => (b.config.priority ?? 0) - (a.config.priority ?? 0) || a.id - b.id)
-        const targetPluginId = this.groupRoutes.get(message.conversationId)
-        let selected: Pick<Route, 'handler' | 'controller'> | undefined = targetPluginId ? this.pluginHandlers.get(targetPluginId) : undefined
-        for (const route of targetPluginId ? [] : routes) {
-          try {
-            if (!route.config.match || route.config.match(message)) {
-              selected = route
-              break
-            }
-          } catch (error) {
-            this.counts.handlerErrors++
-            this.logger.warn('dingtalk route matcher failed', { eventId: message.eventId, error: redact(String(error)) })
-          }
-        }
-        if (!selected) {
-          this.counts.unmatched++
-          try {
-            await this.onUnmatched(message)
-          } catch (error) {
-            this.logger.warn('failed to record unmatched dingtalk message', { eventId: message.eventId, error: redact(String(error)) })
-          }
-          continue
-        }
-        const signal = AbortSignal.any([this.controller.signal, selected.controller.signal, AbortSignal.timeout(HANDLER_TIMEOUT_MS)])
-        let onAbort: (() => void) | undefined
-        try {
-          await Promise.race([
-            Promise.resolve().then(() => selected.handler(message, { signal })),
-            new Promise<never>((_, reject) => {
-              onAbort = () => reject(new Error('handler aborted or timed out'))
-              if (signal.aborted) onAbort()
-              else signal.addEventListener('abort', onAbort, { once: true })
-            }),
-          ])
-          this.counts.dispatched++
-        } catch (error) {
-          this.counts.handlerErrors++
-          this.logger.warn('dingtalk message handler failed', { eventId: message.eventId, error: redact(String(error)) })
-        } finally {
-          if (onAbort) signal.removeEventListener('abort', onAbort)
-        }
-      }
-    } finally {
-      this.processing = false
-    }
+    this.router.accept(message)
   }
 
   private fail(detail: string): void {
     if (this.state === 'failed') return
     this.state = 'failed'
+    this.router.setReady(false)
     this.rejectReady?.(new Error(detail))
     this.resolveReady = undefined
     this.rejectReady = undefined
@@ -337,8 +234,7 @@ export class DingtalkInbox {
 
   async stop(): Promise<void> {
     this.stopRequested = true
-    this.controller.abort()
-    this.queue.length = 0
+    this.router.reset()
     const child = this.child
     if (!child) {
       this.state = 'idle'
