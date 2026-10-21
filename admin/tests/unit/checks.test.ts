@@ -149,8 +149,8 @@ describe('every fail/warn result carries a fix', () => {
 describe('notify checks', () => {
   it('requires the DingTalk service to be enabled', async () => {
     const on = await runChecks(ctx({ snapshot: snapshot({ 'agent-kit-dingtalk': { enabled: true, config: { identity: 'user', dryRun: true } }, 'agent-kit-notify': { enabled: true, config: { channel: 'dingtalk' } } }) }))
-    expect(byId(on, 'agent-kit-notify.channel')).toMatchObject({ status: 'pass', title: '通知渠道：钉钉' })
+    expect(byId(on, 'agent-kit-notify.channel')).toMatchObject({ status: 'pass', title: '默认通知渠道：钉钉' })
     const off = await runChecks(ctx({ snapshot: snapshot({ 'agent-kit-notify': { enabled: true, config: { channel: 'dingtalk' } } }) }))
-    expect(byId(off, 'agent-kit-notify.channel')).toMatchObject({ status: 'fail', fix: expect.stringContaining('启用 钉钉') })
+    expect(byId(off, 'agent-kit-notify.channel')).toMatchObject({ status: 'fail', fix: expect.stringContaining('启用 钉钉'), detail: expect.stringContaining('发往默认渠道的通知会失败') })
   })
 })

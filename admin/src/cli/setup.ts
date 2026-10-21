@@ -160,10 +160,17 @@ async function configureDingtalk(p: Prompter, current: Config, deps: SetupDeps, 
   return config
 }
 
-/** 通知固定发往钉钉。 */
-function configureNotify(io: CliIO, enabledChannels: NotifyChannel[]): Config {
-  if (!enabledChannels.includes('dingtalk')) io.out(msg.notifyChannelNotEnabled(msg.NOTIFY_CHANNEL_TITLES.dingtalk!))
-  return { channel: 'dingtalk' }
+/** 选择默认通知渠道；只有一个可选渠道时直接使用，不提问。 */
+async function configureNotify(p: Prompter, io: CliIO, current: Config, enabledChannels: NotifyChannel[]): Promise<Config> {
+  const channel = NOTIFY_CHANNELS.length === 1
+    ? NOTIFY_CHANNELS[0]!
+    : await p.select(
+        msg.NOTIFY_DEFAULT_CHANNEL_MESSAGE,
+        NOTIFY_CHANNELS.map((value) => ({ value, name: msg.NOTIFY_CHANNEL_TITLES[value] ?? value })),
+        (current.channel as NotifyChannel | undefined) ?? NOTIFY_CHANNELS[0]!,
+      )
+  if (!enabledChannels.includes(channel)) io.out(msg.notifyChannelNotEnabled(msg.NOTIFY_CHANNEL_TITLES[channel] ?? channel))
+  return { channel }
 }
 
 async function configureAgentTasks(p: Prompter, current: Config): Promise<Config> {
@@ -243,7 +250,7 @@ export async function runSetup(opts: { home: string; profileName?: string; io: C
     }
     const config =
       id === 'agent-kit-dingtalk' ? await configureDingtalk(p, current, deps, io, loggedIn, ctx.exec, dws)
-      : id === 'agent-kit-notify' ? configureNotify(io, enabledChannels)
+      : id === 'agent-kit-notify' ? await configureNotify(p, io, current, enabledChannels)
       : id === 'agent-kit-agent-tasks' ? await configureAgentTasks(p, current)
       : id === 'agent-kit-jev' ? await configureJev(p, current, keyStore, io)
       : current
