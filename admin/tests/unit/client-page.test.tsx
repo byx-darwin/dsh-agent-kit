@@ -105,13 +105,39 @@ describe('SettingsPage', () => {
     expect((await api.status()).services.some((service) => service.id === 'agent-kit-notify')).toBe(true)
   })
 
+  it('shows the Feishu card with its form, routes, unmatched panel and App Secret', async () => {
+    const s = status()
+    s.services.splice(2, 0, { id: 'agent-kit-feishu', title: '飞书', enabled: true, phase: 'active', health: { status: 'ok', detail: 'bot: 告警机器人' }, config: { appId: 'cli_x', groupRoutes: [] }, secrets: [{ label: 'App Secret', ref: 'FEISHU_APP_SECRET', configured: false }] })
+    const api = fakeApi(s)
+    api.channelUnmatched = vi.fn(async () => [{ eventId: 'om_1', conversationId: 'oc_1', conversationName: '研发群', preview: '没人处理', receivedAt: 1 }])
+    render(<SettingsPage api={api} t={t} />)
+    const card = await screen.findByRole('region', { name: '飞书' })
+    expect(within(card).getByLabelText(zh['feishu.appId']!)).toHaveProperty('value', 'cli_x')
+    expect(within(card).getByLabelText(zh['feishu.domain']!)).toBeTruthy()
+    expect(within(card).getByRole('region', { name: zh['routes.title']! })).toBeTruthy()
+    expect(within(card).getByText(/App Secret/)).toBeTruthy()
+    fireEvent.click(within(card).getByRole('button', { name: zh['unmatched.refresh']! }))
+    await waitFor(() => expect(api.channelUnmatched).toHaveBeenCalledWith('feishu'))
+    expect(await within(card).findByText('研发群')).toBeTruthy()
+  })
+
+  it('keeps the DingTalk routes and unmatched panels working through the generic components', async () => {
+    const s = status()
+    s.services[1] = { ...s.services[1]!, enabled: true, config: { identity: 'user', groupRoutes: [] } }
+    const api = fakeApi(s)
+    render(<SettingsPage api={api} t={t} />)
+    const card = await screen.findByRole('region', { name: '钉钉' })
+    fireEvent.click(within(card).getByRole('button', { name: zh['unmatched.refresh']! }))
+    await waitFor(() => expect(api.channelUnmatched).toHaveBeenCalledWith('dingtalk'))
+  })
+
   it('shows unmatched group names alongside stable IDs in the DingTalk card', async () => {
     const s = status()
     s.services[1] = { ...s.services[1]!, enabled: true, phase: 'active' }
     const api = fakeApi(s)
-    api.dingtalkUnmatched = vi.fn(async () => [{ eventId: 'e1', conversationId: 'cidA', groupName: '研发群', preview: '待接入插件', receivedAt: 123 }])
+    api.channelUnmatched = vi.fn(async () => [{ eventId: 'e1', conversationId: 'cidA', conversationName: '研发群', preview: '待接入插件', receivedAt: 123 }])
     render(<SettingsPage api={api} t={t} />)
-    fireEvent.click(await screen.findByRole('button', { name: zh['dingtalk.unmatched.refresh']! }))
+    fireEvent.click(await screen.findByRole('button', { name: zh['unmatched.refresh']! }))
     expect(await screen.findByText('研发群')).toBeTruthy()
     expect(screen.getByText('cidA')).toBeTruthy()
     expect(screen.getByText('待接入插件')).toBeTruthy()
@@ -122,12 +148,12 @@ describe('SettingsPage', () => {
     s.services[1] = { ...s.services[1]!, enabled: true, phase: 'active', config: { identity: 'user' } }
     s.services.push({ id: 'business-orders', title: '工单插件', enabled: true, phase: 'active', health: null, config: {}, registered: true })
     const api = fakeApi(s)
-    api.dingtalkUnmatched = vi.fn(async () => [{ eventId: 'e1', conversationId: 'cidOrders', groupName: '工单群', preview: '待处理', receivedAt: 123 }])
+    api.channelUnmatched = vi.fn(async () => [{ eventId: 'e1', conversationId: 'cidOrders', conversationName: '工单群', preview: '待处理', receivedAt: 123 }])
     render(<SettingsPage api={api} t={t} />)
-    fireEvent.click(await screen.findByRole('button', { name: zh['dingtalk.routes.discover']! }))
+    fireEvent.click(await screen.findByRole('button', { name: zh['routes.discover']! }))
     fireEvent.click(await screen.findByRole('button', { name: '工单群 · cidOrders' }))
-    fireEvent.change(screen.getByRole('combobox', { name: zh['dingtalk.routes.plugin']! }), { target: { value: 'business-orders' } })
-    fireEvent.click(screen.getByRole('button', { name: zh['dingtalk.routes.add']! }))
+    fireEvent.change(screen.getByRole('combobox', { name: zh['routes.plugin']! }), { target: { value: 'business-orders' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['routes.add']! }))
     expect(screen.getByText('工单群')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: `${zh.save} 钉钉` }))
     await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('agent-kit-dingtalk', true, {
@@ -140,7 +166,7 @@ describe('SettingsPage', () => {
     s.services.push({ id: 'business-orders', title: '工单插件', enabled: true, phase: 'active', health: null, config: {}, registered: true,
       fields: [{ path: 'forwardTo', label: '工单转发对象', kind: 'dingtalk-target' }] })
     const api = fakeApi(s)
-    api.dingtalkSearchRecipients = vi.fn(async (kind) => kind === 'group'
+    api.channelSearchRecipients = vi.fn(async (_channel, kind) => kind === 'group'
       ? { candidates: [{ name: '工单群', target: { chatId: 'cidOrders' } }], complete: true }
       : { candidates: [{ name: '张三', target: { userId: 'userZ' } }], complete: false })
     render(<SettingsPage api={api} t={t} />)
@@ -155,6 +181,26 @@ describe('SettingsPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: '张三 · userZ' }))
     fireEvent.click(screen.getByRole('button', { name: `${zh.save} 工单插件` }))
     await waitFor(() => expect(api.saveService).toHaveBeenLastCalledWith('business-orders', true, { forwardTo: { userId: 'userZ' } }, 'v2'))
+  })
+
+  it('lets a business card pick a Feishu group by search or enter a user open_id', async () => {
+    const s = status()
+    s.services.push({ id: 'business-orders', title: '工单插件', enabled: true, phase: 'active', health: null, config: {}, registered: true,
+      fields: [{ path: 'forwardTo', label: '工单转发对象', kind: 'feishu-target' }] })
+    const api = fakeApi(s)
+    api.channelSearchRecipients = vi.fn(async () => ({ candidates: [{ name: '工单群', target: { chatId: 'oc_orders' } }], complete: true }))
+    render(<SettingsPage api={api} t={t} />)
+    fireEvent.change(await screen.findByRole('textbox', { name: '工单转发对象' }), { target: { value: '工单' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['recipient.search']! }))
+    await waitFor(() => expect(api.channelSearchRecipients).toHaveBeenCalledWith('feishu', 'group', '工单'))
+    fireEvent.click(await screen.findByRole('button', { name: '工单群 · oc_orders' }))
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} 工单插件` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('business-orders', true, { forwardTo: { chatId: 'oc_orders' } }, 'v1'))
+    fireEvent.change(screen.getByRole('combobox', { name: zh['recipient.kind']! }), { target: { value: 'user' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '工单转发对象' }), { target: { value: 'ou_z' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['recipient.select']! }))
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} 工单插件` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenLastCalledWith('business-orders', true, { forwardTo: { openId: 'ou_z' } }, 'v2'))
   })
 
   it('enables a service and saves with the current version', async () => {

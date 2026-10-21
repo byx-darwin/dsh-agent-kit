@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import type { AdminApi, DingtalkRecipientSearchResult, EntryField, KitId } from './remote.js'
+import type { AdminApi, ChannelRecipientSearchResult, EntryField, KitId } from './remote.js'
 
 export type T = (key: string, vars?: Record<string, string | number>) => string
 type Config = Record<string, unknown>
@@ -92,6 +92,8 @@ function EntryInput({ field, p, id }: { field: EntryField; p: FormProps; id: str
   switch (field.kind ?? 'text') {
     case 'dingtalk-target':
       return <DingtalkTargetInput id={id} value={value} onChange={set} disabled={p.disabled} api={p.api} t={p.t} />
+    case 'feishu-target':
+      return <FeishuTargetInput id={id} value={value} onChange={set} disabled={p.disabled} api={p.api} t={p.t} />
     case 'boolean':
       return <input id={id} type="checkbox" disabled={p.disabled} checked={value === true} onChange={(e) => set(e.target.checked)} />
     case 'number':
@@ -134,7 +136,7 @@ function DingtalkTargetInput({ id, value, onChange, disabled, api, t }: {
   const current = value && typeof value === 'object' && !Array.isArray(value) ? value as Config : {}
   const [kind, setKind] = useState<'group' | 'user'>(current.userId || current.openDingtalkId ? 'user' : 'group')
   const [query, setQuery] = useState('')
-  const [result, setResult] = useState<DingtalkRecipientSearchResult>()
+  const [result, setResult] = useState<ChannelRecipientSearchResult>()
   const [error, setError] = useState<string>()
   const [loading, setLoading] = useState(false)
   const selected = current.chatId ?? current.userId ?? current.openDingtalkId ?? (Array.isArray(current.chatIds) ? current.chatIds.join(', ') : undefined)
@@ -144,7 +146,7 @@ function DingtalkTargetInput({ id, value, onChange, disabled, api, t }: {
     setError(undefined)
     setResult(undefined)
     try {
-      setResult(await api.dingtalkSearchRecipients(kind, query.trim()))
+      setResult(await api.channelSearchRecipients('dingtalk', kind, query.trim()))
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -175,6 +177,79 @@ function DingtalkTargetInput({ id, value, onChange, disabled, api, t }: {
   )
 }
 
+/** 飞书机器人：App ID 与域名；App Secret 走卡片下方的密钥面板。 */
+function FeishuForm(p: FormProps) {
+  const domain = (p.config.domain as string | undefined) ?? 'feishu'
+  return (
+    <>
+      {text(p, 'appId', p.t('feishu.appId'))}
+      <Field label={p.t('feishu.domain')}>
+        {(id) => (
+          <select id={id} disabled={p.disabled} value={domain} onChange={(e) => p.onChange({ ...p.config, domain: e.target.value })}>
+            <option value="feishu">{p.t('feishu.domain.feishu')}</option>
+            <option value="lark">{p.t('feishu.domain.lark')}</option>
+          </select>
+        )}
+      </Field>
+    </>
+  )
+}
+
+/** 飞书：按群名搜索机器人所在的群（存 `{ chatId }`），个人只能手动填写 open_id（存 `{ openId }`）。 */
+function FeishuTargetInput({ id, value, onChange, disabled, api, t }: { id: string; value: unknown; onChange(value: unknown): void; disabled: boolean; api?: AdminApi; t: T }) {
+  const current = value && typeof value === 'object' && !Array.isArray(value) ? value as Config : {}
+  const [kind, setKind] = useState<'group' | 'user'>(current.openId ? 'user' : 'group')
+  const [query, setQuery] = useState('')
+  const [openId, setOpenId] = useState('')
+  const [result, setResult] = useState<ChannelRecipientSearchResult>()
+  const [error, setError] = useState<string>()
+  const [loading, setLoading] = useState(false)
+  const selected = current.chatId ?? current.openId
+  const search = async () => {
+    if (!api || query.trim().length < 2) return
+    setLoading(true)
+    setError(undefined)
+    setResult(undefined)
+    try {
+      setResult(await api.channelSearchRecipients('feishu', 'group', query.trim()))
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }
+  return (
+    <div className="agent-kit-target-picker">
+      <select aria-label={t('recipient.kind')} value={kind} disabled={disabled} onChange={(e) => { setKind(e.target.value as 'group' | 'user'); setQuery(''); setResult(undefined) }}>
+        <option value="group">{t('recipient.group')}</option>
+        <option value="user">{t('recipient.user')}</option>
+      </select>
+      {kind === 'group' ? (
+        <div className="agent-kit-target-search">
+          <input id={id} value={query} disabled={disabled} placeholder={t('recipient.groupQuery')} onChange={(e) => setQuery(e.target.value)} />
+          <button type="button" className="agent-kit-btn" disabled={disabled || loading || !api || query.trim().length < 2} onClick={() => void search()}>{t('recipient.search')}</button>
+        </div>
+      ) : (
+        <div className="agent-kit-target-search">
+          <input id={id} value={openId} disabled={disabled} placeholder={t('recipient.openId')} onChange={(e) => setOpenId(e.target.value)} />
+          <button type="button" className="agent-kit-btn" disabled={disabled || !openId.trim()} onClick={() => { onChange({ openId: openId.trim() }); setOpenId('') }}>{t('recipient.select')}</button>
+          <small>{t('recipient.feishuUserHint')}</small>
+        </div>
+      )}
+      {selected != null && <div className="agent-kit-hint">{t('recipient.selected')}（{current.chatId ? t('recipient.group') : t('recipient.user')}）: <code>{String(selected)}</code> <button type="button" className="agent-kit-btn" disabled={disabled} onClick={() => onChange(undefined)}>{t('recipient.clear')}</button></div>}
+      {result && <div className="agent-kit-route-suggestions">
+        {result.candidates.length === 0 && <p className="agent-kit-hint">{t('recipient.empty')}</p>}
+        {result.candidates.map((candidate) => {
+          const candidateId = Object.values(candidate.target)[0]!
+          return <button type="button" className="agent-kit-btn" key={candidateId} disabled={disabled} onClick={() => onChange(candidate.target)}>{candidate.name} · {candidateId}</button>
+        })}
+        {!result.complete && <p className="agent-kit-hint">{t('recipient.incomplete')}</p>}
+      </div>}
+      {error && <p role="alert">{error}</p>}
+    </div>
+  )
+}
+
 /** 业务包登记的行（issue #1）：按登记的 `fields` 渲染表单，未列出的配置项原样保留。 */
 export function EntryForm(p: FormProps & { fields: readonly EntryField[] }) {
   return (
@@ -192,4 +267,5 @@ export const FORMS: Partial<Record<KitId, (p: FormProps) => ReactNode>> = {
   'agent-kit-ws': WsForm,
   'agent-kit-agent-tasks': AgentTasksForm,
   'agent-kit-jev': JevForm,
+  'agent-kit-feishu': FeishuForm,
 }

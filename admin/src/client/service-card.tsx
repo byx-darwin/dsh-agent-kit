@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { EntryForm, FORMS, type T } from './forms.js'
 import type { AdminApi, AdminStatus, CheckResult, KitId, ServiceStatus } from './remote.js'
 import { AdminError } from './remote.js'
-import { DingtalkRoutesPanel } from './dingtalk-routes.js'
+import { ChannelRoutesPanel } from './channel-routes.js'
 
 type Service = ServiceStatus
 
@@ -164,7 +164,7 @@ export function ServiceCard(props: { service: Service; checks: CheckResult[]; st
             {Form ? <Form config={config} onChange={setConfig} disabled={disabled} t={t} /> : <EntryForm fields={service.fields ?? []} config={config} onChange={setConfig} disabled={disabled} t={t} api={props.api} />}
           </div>
         )}
-        {enabled && service.id === 'agent-kit-dingtalk' && <DingtalkRoutesPanel config={config} onChange={setConfig} status={props.status} api={props.api} disabled={disabled} t={t} />}
+        {enabled && (service.id === 'agent-kit-dingtalk' || service.id === 'agent-kit-feishu') && <ChannelRoutesPanel channel={service.id === 'agent-kit-feishu' ? 'feishu' : 'dingtalk'} config={config} onChange={setConfig} status={props.status} api={props.api} disabled={disabled} t={t} />}
         {props.children}
         {message && reloadHint && <p className="agent-kit-hint agent-kit-reload">{reloadHint}</p>}
         {service.secrets?.length ? <EntrySecrets service={service} status={props.status} api={props.api} t={t} onChanged={props.onSecretChanged ?? (() => {})} /> : null}

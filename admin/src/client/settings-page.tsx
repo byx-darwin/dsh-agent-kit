@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { T } from './forms.js'
 import type { AdminApi, AdminStatus, KeyTarget } from './remote.js'
 import { DingtalkAuthPanel } from './dingtalk-auth.js'
-import { DingtalkUnmatchedPanel } from './dingtalk-unmatched.js'
+import { ChannelUnmatchedPanel } from './channel-unmatched.js'
 import { ServiceCard } from './service-card.js'
 
 /** 与 secrets/typesafe-key.ts 里的 SHARED_KEYCHAIN_SERVICE 保持一致：与 gitflow-cli 等工具共享的钥匙串服务名。 */
@@ -153,9 +153,10 @@ export function SettingsPage({ api, t }: { api: AdminApi; t: T }) {
             {s.id === 'agent-kit-dingtalk' && s.enabled && (
               <>
                 <DingtalkAuthPanel api={api} t={t} writable={status.writable} onChanged={refreshAfterConflict} />
-                {status.writable && <DingtalkUnmatchedPanel api={api} t={t} />}
+                {status.writable && <ChannelUnmatchedPanel channel="dingtalk" api={api} t={t} />}
               </>
             )}
+            {s.id === 'agent-kit-feishu' && s.enabled && status.writable && <ChannelUnmatchedPanel channel="feishu" api={api} t={t} />}
           </ServiceCard>
         ))}
       </div>
