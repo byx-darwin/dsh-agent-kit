@@ -259,7 +259,7 @@ export class AgentTasksService extends KitService<AgentTasksCounters> {
 
       if (result.usage && options.onUsage) {
         try { options.onUsage(result.usage) }
-        catch (error) { this.logger.warn('agent task usage observer failed', { traceId, taskId }) }
+        catch (e) { this.logger.warn('agent task usage observer failed', { traceId, taskId, error: e }) }
       }
 
       if (result.stopReason === 'aborted' || signal.aborted) {
