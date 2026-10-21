@@ -1,6 +1,6 @@
 {
   "name": "@baoyx/dsh-agent-kit-admin",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Optional ops tooling for @baoyx/dsh-agent-kit: doctor / setup CLI, dsh Web settings page, and business-package entry registration",
   "license": "MIT",
   "type": "module",
@@ -50,7 +50,7 @@
     "yaml": "^2.9.1"
   },
   "peerDependencies": {
-    "@baoyx/dsh-agent-kit": "^0.2.0",
+    "@baoyx/dsh-agent-kit": "^0.3.0",
     "@deepseek-ai/cordis": "4.0.2 || 4.0.4",
     "@deepseek-ai/dsh-typert-protocol": "0.1.5-rc.3 || 0.1.7-alpha.2 || 0.1.7-rc.2",
     "@deepseek-ai/schemastery": "^3.18.2"

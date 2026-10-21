@@ -56,7 +56,7 @@ describe('config tables', () => {
     const sources: Record<string, string> = {
       agentWs: 'src/ws/connection.ts',
       dingtalk: 'src/dingtalk/errors.ts',
-      notify: 'src/notify/service.ts',
+      notify: 'src/notify/errors.ts',
       agentTasks: 'src/agent-tasks/service.ts',
       jev: 'src/jev/service.ts',
     }

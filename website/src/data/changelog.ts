@@ -6,6 +6,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.3.0',
+    date: '2026-10-21',
+    items: [
+      '新增渠道公共约定 ChannelService 与 ChannelAtMessage，为接入飞书、企业微信做准备；钉钉消息新增 senderId，原有字段不变。',
+      '钉钉收件的路由、去重、队列与超时逻辑抽为与渠道无关的 MessageRouter，行为不变。',
+      'ctx.notify：未指定 targets 时发往默认渠道，指定了则只发这些渠道并行发送；返回 { deliveries }，单个渠道的失败只出现在它自己的结果中。',
+      '删除 notify.use() 运行时切换；status() 改为 { defaultChannel, channels }；login() / logout() 必须指定渠道。',
+      'admin：doctor 与 setup 按默认通知渠道检查与配置。',
+    ],
+  },
+  {
     version: '0.2.0',
     date: '2026-09-28',
     items: [

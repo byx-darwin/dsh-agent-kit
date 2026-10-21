@@ -32,7 +32,7 @@
 |---|---|
 | `ctx.agentWs` | WebSocket 客户端（仅 `wss://`）：可刷新的鉴权请求头、心跳、指数退避重连、并发与背压控制；鉴权失败或指定关闭码时进入 `failed` 状态并可慢速重试 |
 | `ctx.dingtalk` | 通过已登录的钉钉 `dws` CLI，以 `user` 身份发送消息；统一监听群内 @ 消息，并按群 ID / 内容规则下发给业务插件；提供登录状态、设备流登录与退出 |
-| `ctx.notify` | 通知入口：业务包调用 `ctx.notify.send()`，由钉钉发送 |
+| `ctx.notify` | 通知入口：业务包调用 `ctx.notify.send()`，默认发往配置的默认渠道，也可在 `targets` 中按渠道指定 |
 | `ctx.agentTasks` | 调用 dsh 已注册的 subagent provider（如 `claude-code`、`codex`）执行一次性任务：默认只读权限（无法由本包强制的 provider 需运维声明权限上限）、每个任务独立目录、类型化的 JSON Schema 输出、并发与排队上限 |
 | `ctx.jev` | 调用 TypeSafe Jev 或本地部署的 Laya（二选一），返回 Choice / Noul / Score 的类型化判断和概率 |
 
@@ -60,7 +60,7 @@
 └─────────────────────────────────────────────────┘
 ```
 
-`notify` 不直接连接外部系统：它在每次发送时查找 `dingtalk` 并转发，业务包因此只需依赖 `notify`。
+`notify` 不直接连接外部系统：它在每次发送时查找对应的渠道 Service 并转发，业务包因此只需依赖 `notify`。
 
 本包不包含任何业务协议、事件类型、提示词或分类体系，也不保存可靠事件状态；投递可靠性由对端系统负责。一条上游连接只应部署一个实例。
 
@@ -185,7 +185,7 @@ export function apply(ctx: Context, config: Config) {
 
 ### 通知与钉钉登录
 
-`ctx.notify` 将消息转发给已启用的 `ctx.dingtalk`，返回 `{ channel: 'dingtalk', results }`。钉钉行未运行时抛出 `NotifyError`（`channel_unavailable`）；发送失败时抛出 `DingtalkSendError`。
+`ctx.notify.send()` 未指定 `targets` 时发往默认渠道（`agent-kit-notify` 的 `channel`），使用该渠道配置的默认目标；`targets` 中写了哪些渠道就只发这些渠道，并行发送。返回 `{ deliveries: Array<{ channel, results }> }`。只有两种情况直接抛出 `NotifyError`：未指定 `targets` 且默认渠道未运行（`channel_unavailable`）；`targets` 中出现未知渠道（`invalid_channel`）。其他失败（指定的渠道未运行、渠道发送失败）都在对应的 `results[i].error` 中返回，调用方需要逐条检查。
 
 ```ts
 await ctx.notify.send({
@@ -196,7 +196,7 @@ await ctx.notify.send({
 })
 ```
 
-钉钉仅支持已登录的 `user` 身份。`ctx.dingtalk.status()` 查询当前身份状态，`login()` 返回授权链接、验证码与完成状态，`logout()` 仅退出当前账号。admin 设置页可将授权链接显示为二维码；是否能真正授权取决于 dws 与钉钉组织权限。通知服务也提供 `status()`、`login()`、`logout()` 转发到钉钉。
+钉钉仅支持已登录的 `user` 身份。`ctx.dingtalk.status()` 查询当前身份状态，`login()` 返回授权链接、验证码与完成状态，`logout()` 仅退出当前账号。admin 设置页可将授权链接显示为二维码；是否能真正授权取决于 dws 与钉钉组织权限。通知服务的 `status()` 返回 `{ defaultChannel, channels }`；`login(channel)` / `logout(channel)` 必须指定渠道，渠道不需要登录时抛出 `login_unsupported`。
 
 业务插件可调用 `ctx.dingtalk.searchRecipients('group' | 'user', '名称关键词')`，从当前登录账号查找群或个人候选；结果含真实稳定 ID 与完整性标记，不自动选重名候选。业务插件登记设置字段 `kind: 'dingtalk-target'` 时，设置页提供同样的群名/姓名查找，选择后仅保存 `{ chatId }`、`{ userId }` 或 `{ openDingtalkId }` 到该插件自己的配置，再由插件决定哪些业务消息发往该目标。查找本身不发送消息；接收群 @ 的 `groupRoutes` 与主动发送目标互不绑定。
 
@@ -204,6 +204,25 @@ await ctx.notify.send({
 export const inject = ['dingtalk']
 await ctx.dingtalk.send({ title: frame.title, markdown: renderAlert(frame), idempotencyKey: frame.id })
 ```
+
+### 渠道约定
+
+每个渠道 Service 都实现 `ChannelService`（从根入口导入类型）：`send()`、`status()`、`health()`，需要登录的身份另外实现 `login()` / `logout()`。接收群内 @ 消息的渠道提供同样三个方法：
+
+- `onMessage({ conversationId, match?, priority? }, handler)`：按会话注册处理器，每条消息只交给优先级最高的首个匹配处理器；
+- `onPluginMessage(pluginId, handler)`：配合设置页的「会话 → 插件」路由；
+- `unmatchedMessages()`：最近未命中任何路由的消息摘要。
+
+消息至少包含 `ChannelAtMessage` 的字段：`eventId`、`messageId?`、`conversationId`、`senderId?`、`content`、`timestamp?`，渠道特有字段另加（如钉钉的 `senderOpenDingtalkId`）。正文是外部输入，业务插件必须自行校验。
+
+### 从 0.2 升级到 0.3
+
+- `notify.send()` 返回值由 `{ channel, results }` 改为 `{ deliveries: Array<{ channel, results }> }`。
+- 渠道发送失败（如钉钉 `DingtalkSendError`）不再从 `notify.send()` 抛出，改为出现在对应 `results[i].error` 中。
+- 删除 `notify.use()`；要换默认渠道请改配置，临时发往其他渠道请在 `targets` 中指定。
+- `notify.status()` 返回 `{ defaultChannel, channels }`，不再有 `channel`、`source`。
+- `notify.login()` / `logout()` 必须传入渠道名。
+- 钉钉消息新增 `senderId`（与 `senderOpenDingtalkId` 相同），原有字段不变。
 
 ### 群内 @ 消息下发到业务插件
 
@@ -286,13 +305,13 @@ export async function apply(ctx: Context) {
 |---|---|
 | `agentWs` | `pingIntervalMs`、`readTimeoutMs`、`reconnect.initialDelayMs`、`reconnect.maxDelayMs`、`reconnect.jitter`、`stableResetMs`、`fatalRetryDelayMs`、`maxPayloadBytes`、`maxPendingMessages` |
 | `dingtalk` | `identity`（只允许 `user`）、`defaultTarget`、`dwsPath`、`timeoutMs`、`killGraceMs`、`retry.maxAttempts`、`preflightIntervalMs`、`dryRun` |
-| `notify` | `channel`（只允许 `dingtalk`） |
+| `notify` | `channel`（默认渠道，目前可选 `dingtalk`） |
 | `agentTasks` | `workspaceDir`（必填）、`defaultTimeoutMs`、`maxConcurrency`、`maxQueueSize`、`keepWorkdir`、`declaredPermissions`、`toolAllowlist` |
 | `jev` | `provider`、`baseURL`、`apiKeyRef`、`model`、`timeoutMs`、`keychainService`、`keychainAccount` |
 
 - `agentTasks.declaredPermissions`：claude-code、codex 不支持按任务过滤工具，权限由 provider 实例自己的配置决定。运维在这里声明其实际权限上限（`read-only` / `workspace-write`）；未声明或上限高于任务请求的档位时，任务以 `unsupported_permissions` 失败。
 - 代码任务可由业务插件调用 `ctx.agentTasks.run({ ..., worktree: { repository: '/绝对路径/仓库' } })`。Kit 从干净仓库的 `HEAD` 创建独立工作树与 `agent-kit/task-<taskId>` 分支，返回路径与分支；不会自动提交、推送、合并或删除。三个具体项目路径和任务的权限申请属于下游业务插件配置，Kit 设置页不硬编码项目或 provider 列表。
-- `notify.channel` 固定为 `dingtalk`；钉钉行未启用时发送报 `channel_unavailable`。
+- `notify.channel` 是默认渠道；该渠道的行未启用时，未指定 `targets` 的发送报 `channel_unavailable`。
 - `dingtalk.dwsPath` 必须指向可直接执行的文件（可执行二进制、`.exe` 或 `.js`）；不支持 Windows 的 `.cmd`/`.bat` 包装脚本。
 
 TypeSafe Key（`TYPESAFE_API_KEY`）按以下优先级解析，三个平台的落盘位置不同：
