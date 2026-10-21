@@ -1,11 +1,12 @@
 import { AgentTasksConfig } from '@baoyx/dsh-agent-kit/agent-tasks'
 import { DingtalkConfig } from '@baoyx/dsh-agent-kit/dingtalk'
+import { FeishuConfig } from '@baoyx/dsh-agent-kit/feishu'
 import { NotifyConfig } from '@baoyx/dsh-agent-kit/notify'
 import type { ServiceName } from '@baoyx/dsh-agent-kit'
 import { JevConfig } from '@baoyx/dsh-agent-kit/jev'
 import { WsConfig, assertWsConfig } from '@baoyx/dsh-agent-kit/ws'
 
-export type KitId = 'agent-kit-ws' | 'agent-kit-dingtalk' | 'agent-kit-notify' | 'agent-kit-agent-tasks' | 'agent-kit-jev'
+export type KitId = 'agent-kit-ws' | 'agent-kit-dingtalk' | 'agent-kit-feishu' | 'agent-kit-notify' | 'agent-kit-agent-tasks' | 'agent-kit-jev'
 export interface FieldError {
   path: string
   message: string
@@ -46,6 +47,7 @@ function validator(schema: Schema, extra?: (value: never) => void): (config: unk
 export const KIT_ENTRIES: readonly KitEntryMeta[] = [
   { id: 'agent-kit-ws', service: 'agentWs', module: '@baoyx/dsh-agent-kit/ws', title: 'WebSocket', validate: validator(WsConfig as unknown as Schema, assertWsConfig) },
   { id: 'agent-kit-dingtalk', service: 'dingtalk', module: '@baoyx/dsh-agent-kit/dingtalk', title: '钉钉', validate: validator(DingtalkConfig as unknown as Schema) },
+  { id: 'agent-kit-feishu', service: 'feishu', module: '@baoyx/dsh-agent-kit/feishu', title: '飞书', validate: validator(FeishuConfig as unknown as Schema) },
   { id: 'agent-kit-notify', service: 'notify', module: '@baoyx/dsh-agent-kit/notify', title: '通知渠道', validate: validator(NotifyConfig as unknown as Schema) },
   { id: 'agent-kit-agent-tasks', service: 'agentTasks', module: '@baoyx/dsh-agent-kit/agent-tasks', title: 'Agent 任务', validate: validator(AgentTasksConfig as unknown as Schema) },
   { id: 'agent-kit-jev', service: 'jev', module: '@baoyx/dsh-agent-kit/jev', title: 'Jev 判断', validate: validator(JevConfig as unknown as Schema) },

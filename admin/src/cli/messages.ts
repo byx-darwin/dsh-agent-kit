@@ -46,6 +46,7 @@ export const SELECT_SERVICES_MESSAGE = '要启用哪些 Service？'
 export const KIT_TITLES: Record<string, string> = {
   'agent-kit-ws': 'WebSocket 客户端',
   'agent-kit-dingtalk': '钉钉推送',
+  'agent-kit-feishu': '飞书机器人（收发消息）',
   'agent-kit-notify': '通知入口：发往默认渠道，也可按调用指定渠道（业务包通过 ctx.notify 发送）',
   'agent-kit-agent-tasks': 'Agent 任务',
   'agent-kit-jev': 'Jev 判断',
@@ -108,7 +109,7 @@ export function dingtalkTestMarkdown(now = new Date()): string {
 
 // ---- notify ----
 
-export const NOTIFY_CHANNEL_TITLES: Record<string, string> = { dingtalk: '钉钉' }
+export const NOTIFY_CHANNEL_TITLES: Record<string, string> = { dingtalk: '钉钉', feishu: '飞书' }
 export const NOTIFY_DEFAULT_CHANNEL_MESSAGE = '默认通知渠道（send() 未指定 targets 时发往这里）'
 export function notifyChannelNotEnabled(channel: string): string {
   return `注意：${channel} 没有启用，发往它的通知会失败；可以稍后在设置页启用。\n`

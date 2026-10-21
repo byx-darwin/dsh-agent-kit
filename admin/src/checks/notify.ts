@@ -1,13 +1,14 @@
+import type { KitId } from '../profile/index.js'
 import type { Check } from './types.js'
 
-const TITLES: Record<string, string> = { dingtalk: '钉钉' }
+const TITLES: Record<string, string> = { dingtalk: '钉钉', feishu: '飞书' }
 
 /** 默认通知渠道对应的渠道行应已启用，否则未指定 targets 的通知会报 channel_unavailable。 */
 export const notifyChecks: Check = (ctx) => {
   const scope = 'agent-kit-notify' as const
   const channel = ((ctx.snapshot.entries[scope].config ?? {}) as { channel?: string }).channel
   if (!channel) return []
-  const id = `agent-kit-${channel}` as 'agent-kit-dingtalk'
+  const id = `agent-kit-${channel}` as KitId
   const enabled = ctx.snapshot.entries[id]?.enabled === true
   const title = TITLES[channel] ?? channel
   return [

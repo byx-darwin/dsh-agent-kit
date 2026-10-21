@@ -42,6 +42,8 @@ function fakeApi(
     dingtalkAuth: vi.fn(async () => ({ installed: true, authenticated: false })),
     dingtalkUnmatched: vi.fn(async () => []),
     dingtalkSearchRecipients: vi.fn(async () => ({ candidates: [], complete: true })),
+    channelUnmatched: vi.fn(async () => []),
+    channelSearchRecipients: vi.fn(async () => ({ candidates: [], complete: true })),
     dingtalkLogin: vi.fn(async () => ({ state: 'waiting' as const })),
     dingtalkLoginCancel: vi.fn(async () => ({ cancelled: true as const })),
     dingtalkLogout: vi.fn(async () => ({ installed: true, authenticated: false })),
@@ -441,7 +443,7 @@ describe('AGENT_KIT_REMOTE descriptors (issue #3)', () => {
       ['status', []],
       ['saveService', ['id', 'enabled', 'config', 'expectedVersion']],
       ['setSecret', ['target', 'value', 'ref']],
-      ['clearSecret', ['target', 'ref']], ['dingtalkAuth', []], ['dingtalkUnmatched', []], ['dingtalkSearchRecipients', ['kind', 'query']], ['dingtalkLogin', []], ['dingtalkLoginCancel', []], ['dingtalkLogout', []],
+      ['clearSecret', ['target', 'ref']], ['dingtalkAuth', []], ['dingtalkUnmatched', []], ['dingtalkSearchRecipients', ['kind', 'query']], ['channelUnmatched', ['channel']], ['channelSearchRecipients', ['channel', 'kind', 'query']], ['dingtalkLogin', []], ['dingtalkLoginCancel', []], ['dingtalkLogout', []],
     ])
   })
 })

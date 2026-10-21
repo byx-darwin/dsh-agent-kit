@@ -97,6 +97,20 @@ describe('AgentKitAdmin', () => {
     expect(await admin.clearSecret('credentials', 'MY_LAYA')).toEqual({ configured: false })
   })
 
+  it('shows the Feishu App Secret on its row and accepts it in setSecret', async () => {
+    const admin = await setup('127.0.0.1')
+    const s = await admin.status()
+    expect(s.services.find((x) => x.id === 'agent-kit-feishu')).toMatchObject({ title: '飞书', secrets: [{ label: 'App Secret', ref: 'FEISHU_APP_SECRET', configured: false }] })
+    expect(await admin.setSecret('credentials', 'app-secret', 'FEISHU_APP_SECRET')).toEqual({ configured: true, source: 'credentials' })
+  })
+
+  it('serves unmatched messages and recipient search per channel and rejects unknown channels', async () => {
+    const admin = await setup('127.0.0.1')
+    await expect(admin.channelUnmatched('feishu')).rejects.toThrow(/not running|未运行/)
+    await expect(admin.channelUnmatched('email' as never)).rejects.toThrow(/bad_request/)
+    await expect(admin.channelSearchRecipients('email' as never, 'group', 'ab')).rejects.toThrow(/bad_request/)
+  })
+
   it('rejects an unsupported key target as bad_request', async () => {
     const admin = await setup('127.0.0.1')
     await expect(admin.setSecret('keychain' as never, 'v')).rejects.toThrow(/bad_request/)

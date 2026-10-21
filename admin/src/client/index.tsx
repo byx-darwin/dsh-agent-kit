@@ -33,6 +33,8 @@ export function apply(ctx: ClientContext): void {
     dingtalkAuth: async () => (await ready, api.dingtalkAuth()),
     dingtalkUnmatched: async () => (await ready, api.dingtalkUnmatched()),
     dingtalkSearchRecipients: async (...a: Parameters<typeof api.dingtalkSearchRecipients>) => (await ready, api.dingtalkSearchRecipients(...a)),
+    channelUnmatched: async (...a: Parameters<typeof api.channelUnmatched>) => (await ready, api.channelUnmatched(...a)),
+    channelSearchRecipients: async (...a: Parameters<typeof api.channelSearchRecipients>) => (await ready, api.channelSearchRecipients(...a)),
     dingtalkLogin: async () => (await ready, api.dingtalkLogin()),
     dingtalkLoginCancel: async () => (await ready, api.dingtalkLoginCancel()),
     dingtalkLogout: async () => (await ready, api.dingtalkLogout()),

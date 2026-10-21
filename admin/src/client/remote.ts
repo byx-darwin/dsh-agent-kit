@@ -1,6 +1,21 @@
 import type { ClientContext, RemoteResult } from './host-types.js'
 
-export type KitId = 'agent-kit-ws' | 'agent-kit-dingtalk' | 'agent-kit-notify' | 'agent-kit-agent-tasks' | 'agent-kit-jev'
+export type KitId = 'agent-kit-ws' | 'agent-kit-dingtalk' | 'agent-kit-feishu' | 'agent-kit-notify' | 'agent-kit-agent-tasks' | 'agent-kit-jev'
+export type AdminChannel = 'dingtalk' | 'feishu'
+export interface ChannelUnmatchedMessage {
+  eventId: string
+  messageId?: string
+  conversationId: string
+  conversationName?: string
+  senderId?: string
+  preview: string
+  receivedAt: number
+  timestamp?: number
+}
+export interface ChannelRecipientSearchResult {
+  candidates: Array<{ name: string; target: Record<string, string> }>
+  complete: boolean
+}
 export type KeyTarget = 'keychain' | 'credentials'
 export interface CheckResult {
   id: string
@@ -87,6 +102,8 @@ export interface AdminApi {
   dingtalkAuth(): Promise<DingtalkAuthStatus>
   dingtalkUnmatched(): Promise<DingtalkUnmatchedMessage[]>
   dingtalkSearchRecipients(kind: 'group' | 'user', query: string): Promise<DingtalkRecipientSearchResult>
+  channelUnmatched(channel: AdminChannel): Promise<ChannelUnmatchedMessage[]>
+  channelSearchRecipients(channel: AdminChannel, kind: 'group' | 'user', query: string): Promise<ChannelRecipientSearchResult>
   dingtalkLogin(): Promise<DingtalkLoginState>
   dingtalkLoginCancel(): Promise<{ cancelled: true }>
   dingtalkLogout(): Promise<DingtalkAuthStatus>
@@ -129,6 +146,8 @@ export const AGENT_KIT_REMOTE = {
     method('dingtalkAuth', []),
     method('dingtalkUnmatched', []),
     method('dingtalkSearchRecipients', ['kind', 'query']),
+    method('channelUnmatched', ['channel']),
+    method('channelSearchRecipients', ['channel', 'kind', 'query']),
     method('dingtalkLogin', []),
     method('dingtalkLoginCancel', []),
     method('dingtalkLogout', []),
@@ -175,6 +194,8 @@ export function createAdminApi(ctx: ClientContext): AdminApi {
     dingtalkAuth: () => unwrap(svc().dingtalkAuth!()),
     dingtalkUnmatched: () => unwrap(svc().dingtalkUnmatched!()),
     dingtalkSearchRecipients: (kind, query) => unwrap(svc().dingtalkSearchRecipients!(kind, query)),
+    channelUnmatched: (channel) => unwrap(svc().channelUnmatched!(channel)),
+    channelSearchRecipients: (channel, kind, query) => unwrap(svc().channelSearchRecipients!(channel, kind, query)),
     dingtalkLogin: () => unwrap(svc().dingtalkLogin!()),
     dingtalkLoginCancel: () => unwrap(svc().dingtalkLoginCancel!()),
     dingtalkLogout: () => unwrap(svc().dingtalkLogout!()),

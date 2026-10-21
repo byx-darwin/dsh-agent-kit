@@ -3,9 +3,10 @@ import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { createCheckContext, runChecks, type CheckResult } from '../checks/index.js'
+import { FEISHU_APP_SECRET_REF } from '@baoyx/dsh-agent-kit/feishu'
 import { isKitError } from '@baoyx/dsh-agent-kit'
 import { redact } from '@baoyx/dsh-agent-kit'
-import type { DingtalkRecipientKind, DingtalkRecipientSearchResult, DingtalkUnmatchedMessage, ServiceHealth } from '@baoyx/dsh-agent-kit'
+import type { ChannelAtMessage, ChannelInbox, ChannelRecipientKind, ChannelRecipientSearchResult, ChannelUnmatchedMessage, DingtalkRecipientKind, DingtalkRecipientSearchResult, DingtalkUnmatchedMessage, ServiceHealth } from '@baoyx/dsh-agent-kit'
 import { KIT_ENTRIES, locateProfile, readKitEntries, writeKitEntries, writePatchEntries, type KitId, type ProfileInfo } from '../profile/index.js'
 import {
   clearSecretRef,
@@ -112,6 +113,14 @@ function layaKeyRef(config: Record<string, unknown> | undefined): string | undef
   const c = (config ?? {}) as { provider?: string; apiKeyRef?: string }
   return c.provider === 'laya' ? (c.apiKeyRef ?? 'LAYA_API_KEY') : undefined
 }
+
+/** 飞书行的 App Secret 引用。 */
+function feishuSecretRef(config: Record<string, unknown> | undefined): string {
+  return ((config ?? {}) as { appSecretRef?: string }).appSecretRef ?? FEISHU_APP_SECRET_REF
+}
+
+const CHANNEL_SERVICES = ['dingtalk', 'feishu'] as const
+type AdminChannel = (typeof CHANNEL_SERVICES)[number]
 
 /**
  * 同上，但供 `setSecret`/`clearSecret` 写入/清除单个钥匙串条目时使用：数组形式的
@@ -357,6 +366,8 @@ export class AgentKitAdmin extends TypertRemoteService {
     // 选 laya 时，Laya Key 作为 jev 行的密钥展示，复用业务行的密钥面板（只存凭据文件）
     const layaRef = layaKeyRef(snapshot.entries['agent-kit-jev'].config)
     const layaSecrets = layaRef ? [{ label: 'Laya API Key', ref: layaRef, ...(await describeSecretRef(layaRef, this.keyStore)) }] : undefined
+    const feishuRef = feishuSecretRef(snapshot.entries['agent-kit-feishu'].config)
+    const feishuSecrets = [{ label: 'App Secret', ref: feishuRef, ...(await describeSecretRef(feishuRef, this.keyStore)) }]
     return {
       profile: profile.name,
       patchReload: profile.patchReload,
@@ -376,6 +387,7 @@ export class AgentKitAdmin extends TypertRemoteService {
             health: health ? { status: health.status, detail: health.detail } : null,
             config: snapshot.entries[meta.id].config,
             ...(meta.id === 'agent-kit-jev' && layaSecrets ? { secrets: layaSecrets } : {}),
+            ...(meta.id === 'agent-kit-feishu' ? { secrets: feishuSecrets } : {}),
             ...this.dependents(registered.entries, meta.id),
           }
         }),
@@ -422,7 +434,8 @@ export class AgentKitAdmin extends TypertRemoteService {
   private async registeredRef(target: KeyTarget, ref: string): Promise<void> {
     if (target !== 'credentials') failWith('bad_request', `secret ${ref} can only be stored in the credentials file`)
     const profile = await this.writable()
-    if (ref === layaKeyRef((await readKitEntries(profile.patchFile)).entries['agent-kit-jev'].config)) return
+    const kit = (await readKitEntries(profile.patchFile)).entries
+    if (ref === layaKeyRef(kit['agent-kit-jev'].config) || ref === feishuSecretRef(kit['agent-kit-feishu'].config)) return
     const { entries } = await collectEntries(profile, this.registry.values())
     if (!entries.some(({ entry, state }) => entrySecretRefs(entry, state.config).some((s) => s.ref === ref))) failWith('bad_request', `unknown secret ref ${ref}`)
   }
@@ -491,27 +504,53 @@ export class AgentKitAdmin extends TypertRemoteService {
     return { ...status, ...(login ? { login: { ...login } } : {}) }
   }
 
+  private channel(name: unknown): AdminChannel {
+    if (!CHANNEL_SERVICES.includes(name as AdminChannel)) failWith('bad_request', `unknown channel ${String(name)}`)
+    return name as AdminChannel
+  }
+
+  private inbox(name: AdminChannel): Pick<ChannelInbox<ChannelAtMessage>, 'unmatchedMessages' | 'searchRecipients'> | undefined {
+    return (this.ctx as unknown as { get(name: string): Pick<ChannelInbox<ChannelAtMessage>, 'unmatchedMessages' | 'searchRecipients'> | undefined }).get(name)
+  }
+
   /** 消息预览可能含敏感业务内容，只允许本机设置页读取。 */
-  async dingtalkUnmatched(): Promise<DingtalkUnmatchedMessage[]> {
+  async channelUnmatched(channel: AdminChannel): Promise<ChannelUnmatchedMessage[]> {
+    const name = this.channel(channel)
     const reason = this.readOnlyReason(await this.locate())
     if (reason) failWith('read_only', reason)
-    const service = (this.ctx as unknown as { get(name: 'dingtalk'): { unmatchedMessages(): Promise<DingtalkUnmatchedMessage[]> } | undefined }).get('dingtalk')
-    return service ? service.unmatchedMessages() : []
+    const service = this.inbox(name)
+    // 钉钉沿用旧行为：未运行时视为没有未匹配消息；飞书未运行则明确报错
+    if (!service) {
+      if (name === 'dingtalk') return []
+      failWith('bad_request', `${name} 未运行，先启用并保存 agent-kit-${name}`)
+    }
+    return service!.unmatchedMessages()
   }
 
   /** 仅本机设置页可查当前登录账号的收件人候选；业务行决定保存到自己的哪个目标字段。 */
-  async dingtalkSearchRecipients(kind: DingtalkRecipientKind, query: string): Promise<DingtalkRecipientSearchResult> {
+  async channelSearchRecipients(channel: AdminChannel, kind: ChannelRecipientKind, query: string): Promise<ChannelRecipientSearchResult> {
+    const name = this.channel(channel)
     const reason = this.readOnlyReason(await this.locate())
     if (reason) failWith('read_only', reason)
     if (kind !== 'group' && kind !== 'user') failWith('bad_request', 'recipient kind must be group or user')
     if (typeof query !== 'string' || query.trim().length < 2 || query.trim().length > 80) failWith('bad_request', 'query must be 2–80 characters')
-    const service = (this.ctx as unknown as { get(name: 'dingtalk'): { searchRecipients(kind: DingtalkRecipientKind, query: string): Promise<DingtalkRecipientSearchResult> } | undefined }).get('dingtalk')
-    if (!service) failWith('bad_request', 'DingTalk service is not running')
+    const service = this.inbox(name)
+    if (!service) failWith('bad_request', name === 'dingtalk' ? 'DingTalk service is not running' : `${name} 未运行，先启用并保存 agent-kit-${name}`)
     try {
       return await service!.searchRecipients(kind, query.trim())
     } catch (error) {
       failWith('bad_request', `recipient search failed: ${redactError(error)}`)
     }
+  }
+
+  /** @deprecated 改用 `channelUnmatched('dingtalk')`。 */
+  async dingtalkUnmatched(): Promise<DingtalkUnmatchedMessage[]> {
+    return this.channelUnmatched('dingtalk') as Promise<DingtalkUnmatchedMessage[]>
+  }
+
+  /** @deprecated 改用 `channelSearchRecipients('dingtalk', …)`。 */
+  async dingtalkSearchRecipients(kind: DingtalkRecipientKind, query: string): Promise<DingtalkRecipientSearchResult> {
+    return this.channelSearchRecipients('dingtalk', kind, query) as Promise<DingtalkRecipientSearchResult>
   }
 
   /** 发起设备码登录，返回验证码与授权链接；授权在浏览器里完成，页面轮询 `dingtalkAuth`。 */
@@ -544,6 +583,6 @@ export class AgentKitAdmin extends TypertRemoteService {
 
 }
 
-for (const method of ['status', 'saveService', 'setSecret', 'clearSecret', 'dingtalkAuth', 'dingtalkUnmatched', 'dingtalkSearchRecipients', 'dingtalkLogin', 'dingtalkLoginCancel', 'dingtalkLogout']) {
+for (const method of ['status', 'saveService', 'setSecret', 'clearSecret', 'dingtalkAuth', 'dingtalkUnmatched', 'dingtalkSearchRecipients', 'channelUnmatched', 'channelSearchRecipients', 'dingtalkLogin', 'dingtalkLoginCancel', 'dingtalkLogout']) {
   markRemote(AgentKitAdmin.prototype, method)
 }
