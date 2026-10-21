@@ -72,7 +72,13 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
     this.sdk = await FeishuService.sdkLoader()
     this.client = this.sdk.createClient(this.sdkOptions())
     if (this.config.dryRun) return
-    const info = await this.client.botInfo(this.controller.signal).catch((e: unknown) => ({ code: -1, msg: redact(String((e as Error)?.message ?? e)) }))
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const info = await Promise.race([
+      this.client.botInfo(this.controller.signal).catch((e: unknown) => ({ code: -1, msg: redact(String((e as Error)?.message ?? e)) })),
+      new Promise<{ code: number; msg: string }>((resolve) => {
+        timer = setTimeout(() => resolve({ code: -1, msg: `timed out after ${this.config.timeoutMs}ms` }), this.config.timeoutMs)
+      }),
+    ]).finally(() => clearTimeout(timer))
     if (info.code !== 0) {
       this.markFailed(`feishu credential check failed: ${info.code} ${info.msg ?? ''}`.trim())
       return
@@ -123,7 +129,7 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
       }
       if (error.retryable && attempt < maxAttempts && !options.signal?.aborted && !this.controller.signal.aborted) {
         this.logger.warn('feishu send failed, retrying', { traceId: options.traceId, attempt, code: error.code })
-        await new Promise((r) => setTimeout(r, 500 * 2 ** attempt))
+        await this.sleep(500 * 2 ** attempt, options.signal)
         continue
       }
       this.recordFailure(error.code)
@@ -132,15 +138,34 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
     }
   }
 
+  /** 可被调用方信号或服务销毁提前唤醒的等待。 */
+  private sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+      const signals = [this.controller.signal, ...(signal ? [signal] : [])]
+      const done = () => {
+        clearTimeout(timer)
+        for (const s of signals) s.removeEventListener('abort', done)
+        resolve()
+      }
+      const timer = setTimeout(done, ms)
+      for (const s of signals) {
+        if (s.aborted) return done()
+        s.addEventListener('abort', done, { once: true })
+      }
+    })
+  }
+
   /** 成功返回 message_id，失败返回分类后的错误。 */
   private async sendOnce(req: Parameters<FeishuClient['createMessage']>[0], signal?: AbortSignal): Promise<string | FeishuSendError> {
     const timeout = AbortSignal.timeout(this.config.timeoutMs)
     const combined = AbortSignal.any([timeout, this.controller.signal, ...(signal ? [signal] : [])])
+    // 已中止则不发起 API 调用
+    if (combined.aborted) return timeout.aborted ? new FeishuSendError('timeout', `feishu send timed out after ${this.config.timeoutMs}ms`) : new FeishuSendError('aborted', 'feishu send aborted')
     try {
       const r = await Promise.race([
         this.client!.createMessage(req, combined),
         new Promise<never>((_, reject) => {
-          const onAbort = () => reject(timeout.aborted ? new FeishuSendError('timeout', `feishu send timed out after ${this.config.timeoutMs}ms`) : Object.assign(new Error('aborted'), { name: 'AbortError' }))
+          const onAbort = () => reject(timeout.aborted ? new FeishuSendError('timeout', `feishu send timed out after ${this.config.timeoutMs}ms`) : new FeishuSendError('aborted', 'feishu send aborted'))
           if (combined.aborted) onAbort()
           else combined.addEventListener('abort', onAbort, { once: true })
         }),

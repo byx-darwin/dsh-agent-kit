@@ -95,6 +95,41 @@ describe('FeishuService send', () => {
     expect('login' in feishu).toBe(false)
   })
 
+  it('times out a hanging send as a retryable timeout', async () => {
+    await root.root.plugin(FeishuService, { ...config, timeoutMs: 1000 })
+    fake.setSend([{ throw: 'hang' }])
+    expect((await root.root.get('feishu')!.send({ text: 'x' })).results[0]).toMatchObject({ ok: false, error: { code: 'timeout', retryable: true } })
+  })
+
+  it('does not call the API when the caller signal is already aborted', async () => {
+    await root.root.plugin(FeishuService, config)
+    const r = await root.root.get('feishu')!.send({ text: 'x', signal: AbortSignal.abort() })
+    expect(r.results[0]).toMatchObject({ ok: false, error: { code: 'aborted', retryable: false } })
+    expect(fake.sends).toHaveLength(0)
+  })
+
+  it('stops retrying when aborted during backoff', async () => {
+    await root.root.plugin(FeishuService, config)
+    fake.setSend([{ code: 99991400, msg: 'rate limited' }, { messageId: 'om_9' }])
+    const ac = new AbortController()
+    const p = root.root.get('feishu')!.send({ text: 'x', idempotencyKey: 'k', signal: ac.signal })
+    await new Promise((r) => setTimeout(r, 100))
+    ac.abort()
+    expect((await p).results[0]).toMatchObject({ ok: false, error: { code: 'aborted', retryable: false } })
+    expect(fake.sends).toHaveLength(1)
+  })
+
+  it('marks the service failed when the credential check fails', async () => {
+    fake = createFakeFeishuSdk({ authCode: 99991663 })
+    restore()
+    restore = useFakeFeishuSdk(fake)
+    await root.root.plugin(FeishuService, config)
+    const feishu = root.root.get('feishu')!
+    expect(feishu.health().status).toBe('failed')
+    expect((await feishu.status()).online).toBe(false)
+    expect(fake.started()).toBe(0)
+  })
+
   it('fails to start without a resolvable secret', async () => {
     delete process.env.FEISHU_APP_SECRET
     FeishuService.keyStore = { credentialsFile: '/nonexistent/credentials.yaml' }

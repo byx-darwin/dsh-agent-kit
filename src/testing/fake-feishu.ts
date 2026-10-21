@@ -5,7 +5,7 @@ export interface FakeFeishuSendStep {
   code?: number
   msg?: string
   messageId?: string
-  throw?: 'network' | 'timeout' | { status: number }
+  throw?: 'network' | 'timeout' | 'hang' | { status: number }
 }
 
 export interface FakeFeishu {
@@ -45,6 +45,7 @@ export function createFakeFeishuSdk(options: {
       sends.push(req)
       const step = steps.length ? steps[Math.min(calls, steps.length - 1)]! : {}
       calls++
+      if (step.throw === 'hang') return new Promise<never>(() => {})
       if (step.throw === 'network') throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })
       if (step.throw === 'timeout') throw Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })
       if (step.throw) throw Object.assign(new Error(`HTTP ${step.throw.status}`), { response: { status: step.throw.status } })
