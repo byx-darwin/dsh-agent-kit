@@ -23,7 +23,18 @@ export interface SubagentCapabilities {
 
 export type SubagentStopReason = 'completed' | 'aborted' | 'error' | 'max-tokens' | 'refusal' | (string & {})
 
+export interface AgentTaskUsage {
+  /** Uncached input; cache reads are separate and must not be counted twice. */
+  inputTokens: number
+  outputTokens: number
+  totalTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+  reasoningTokens?: number
+}
+
 export interface SubagentResult {
+  readonly usage?: AgentTaskUsage
   readonly output: ContentBlock[]
   readonly structured?: unknown
   readonly diagnostic?: string

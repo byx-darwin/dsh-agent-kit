@@ -440,3 +440,7 @@ admin 包在 `admin/` 目录下，有自己的 `npm install`、`npm run typechec
 ## 许可证
 
 [MIT](LICENSE)
+
+### Provider usage accounting
+
+`agentTasks.run` returns optional `usage` with provider-reported counts and invokes `onUsage` once before output validation, so malformed answers can still be accounted for. Missing usage is unknown, not zero. Input excludes cache reads/writes; output includes reasoning, so those subsets must not be added twice. A timed-out transport may return no usage.

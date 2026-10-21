@@ -10,7 +10,7 @@ import { KitService, type ServiceHealth } from '../common/service.js'
 import { AgentTasksConfig, permissionAllows, type Permissions } from './config.js'
 import { extractJson } from './extract-json.js'
 import { ConcurrencyQueue, QueueAbortedError, QueueFullError } from './queue.js'
-import type { ContentBlock, SubagentResult, SubagentRuntime, SubagentStartRequest } from './subagent-types.js'
+import type { AgentTaskUsage, ContentBlock, SubagentResult, SubagentRuntime, SubagentStartRequest } from './subagent-types.js'
 import { renderPrompt, type PromptPart } from './untrusted.js'
 import { createTaskWorktree, type TaskWorktree } from './worktree.js'
 
@@ -40,6 +40,8 @@ interface RunOptionsBase {
   signal?: AbortSignal
   traceId?: string
   onEvent?: (event: AgentTaskEvent) => void
+  /** Called once with actual provider usage, before output validation. */
+  onUsage?: (usage: AgentTaskUsage) => void
   /** 由业务插件选择已知仓库根目录；在专用目录创建并保留一个独立 Git worktree。 */
   worktree?: { repository: string }
 }
@@ -54,6 +56,7 @@ export interface AgentTaskResult<T> {
   text: string
   output: T
   durationMs: number
+  usage?: AgentTaskUsage
   /** worktree 任务的修改不会自动合并；返回路径和分支供业务插件安排审查。 */
   worktree?: TaskWorktree
 }
@@ -254,6 +257,11 @@ export class AgentTasksService extends KitService<AgentTasksCounters> {
         return fail(new AgentTaskError('provider_failed', `provider failed: ${(e as Error)?.message ?? String(e)}`, { retryable: true, cause: e }))
       }
 
+      if (result.usage && options.onUsage) {
+        try { options.onUsage(result.usage) }
+        catch (error) { this.logger.warn('agent task usage observer failed', { traceId, taskId }) }
+      }
+
       if (result.stopReason === 'aborted' || signal.aborted) {
         return fail(new AgentTaskError(signal.aborted ? abortedCode() : 'aborted', 'task aborted'))
       }
@@ -289,7 +297,7 @@ export class AgentTasksService extends KitService<AgentTasksCounters> {
       }
       const durationMs = finish('ok')
       this.logger.info('agent task finished', { traceId, taskId, durationMs, answer: digest(text) })
-      return { sessionId, taskId, text, output: output as T | undefined, durationMs, ...(worktree ? { worktree } : {}) }
+      return { sessionId, taskId, text, output: output as T | undefined, durationMs, ...(result.usage ? { usage: result.usage } : {}), ...(worktree ? { worktree } : {}) }
     } finally {
       clearTimeout(timer)
       release()
