@@ -250,6 +250,20 @@ describe('AgentTasksService', () => {
     expect(existsSync(join(repo, 'partial.txt'))).toBe(false)
   })
 
+  it('reports actual usage once even when output validation fails', async () => {
+    const usage = { inputTokens: 100, cacheReadTokens: 20, outputTokens: 40, reasoningTokens: 10, totalTokens: 160 }
+    provider.handler = () => ({ output: [{ type: 'text', text: 'invalid' }], stopReason: 'completed', usage })
+    const { svc } = await setup()
+    const observed: unknown[] = []
+    await expect(svc().run({ provider: 'fake', title: 't', prompt: 'p', outputSchema: VerdictSchema,
+      onUsage: (value) => observed.push(value) })).rejects.toMatchObject({ code: 'invalid_output' })
+    expect(observed).toEqual([usage])
+    provider.handler = () => ({ output: [{ type: 'text', text: '{"abnormal":false,"reason":"ok"}' }], stopReason: 'completed', usage })
+    const result = await svc().run({ provider: 'fake', title: 't', prompt: 'p', outputSchema: VerdictSchema,
+      onUsage: () => { throw new Error('observer unavailable') } })
+    expect(result.usage).toEqual(usage)
+  })
+
   it('uses provider-native structured output when supported', async () => {
     const native = new FakeSubagentProvider({ name: 'native', capabilities: { toolFilter: true, outputSchema: true } })
     native.handler = () => ({ output: [{ type: 'text', text: 'see structured' }], structured: { abnormal: false, reason: 'ok' }, stopReason: 'completed' })
