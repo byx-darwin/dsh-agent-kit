@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Service, type Context } from '@deepseek-ai/cordis'
-import { DEFAULT_LOGIN_TTL_MS, type ChannelStatus, type LoginSession } from '../common/channel.js'
+import { DEFAULT_LOGIN_TTL_MS, type ChannelService, type ChannelStatus, type LoginSession } from '../common/channel.js'
 import { ConfigError } from '../common/errors.js'
 import { resolveExecutable } from '../common/executable.js'
 import { BASE_ENV_WHITELIST, pickEnv, runProcess, type RunProcessResult } from '../common/process.js'
@@ -73,7 +73,7 @@ export function parseDwsDeviceLogin(text: string): DwsDeviceLogin | undefined {
   return { url, ...(userCode ? { userCode } : {}), ttlMs: seconds > 0 ? seconds * 1000 : DEFAULT_LOGIN_TTL_MS }
 }
 
-export class DingtalkService extends KitService<DingtalkCounters> {
+export class DingtalkService extends KitService<DingtalkCounters> implements ChannelService<DingtalkTarget, DingtalkAt> {
   static Config = DingtalkConfig
   readonly config: DingtalkConfig
   readonly dwsPath: string

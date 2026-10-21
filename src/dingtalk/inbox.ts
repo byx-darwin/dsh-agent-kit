@@ -1,36 +1,18 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { StringDecoder } from 'node:string_decoder'
+import type { ChannelAtMessage, ChannelMessageHandler, ChannelMessageRoute, ChannelMessageSubscription } from '../common/channel.js'
 import { killTree } from '../common/process.js'
 import type { KitLogger } from '../common/logger.js'
 import { redact } from '../common/redact.js'
 
 /** 来自当前 dws user 的群内 @ 消息。正文是外部输入，业务插件必须自行校验。 */
-export interface DingtalkAtMessage {
-  eventId: string
-  messageId?: string
-  conversationId: string
+export interface DingtalkAtMessage extends ChannelAtMessage {
   senderOpenDingtalkId?: string
-  content: string
-  timestamp?: number
 }
 
-export interface DingtalkMessageRoute {
-  /** 群的 openConversationId；不要用群名作持久路由键。 */
-  conversationId: string
-  /** 同群细分规则；省略表示匹配群内所有 @ 消息。 */
-  match?: (message: DingtalkAtMessage) => boolean
-  /** 数值大的规则优先；同优先级按注册顺序。默认 0。 */
-  priority?: number
-}
-
-export type DingtalkMessageHandler = (message: DingtalkAtMessage, context: { signal: AbortSignal }) => void | Promise<void>
-
-export interface DingtalkMessageSubscription {
-  /** dws 发出 ready 标记后完成；监听启动失败时拒绝。 */
-  ready: Promise<void>
-  /** 手动注销；调用方插件卸载时也会自动注销。 */
-  close(): Promise<void>
-}
+export type DingtalkMessageRoute = ChannelMessageRoute<DingtalkAtMessage>
+export type DingtalkMessageHandler = ChannelMessageHandler<DingtalkAtMessage>
+export type DingtalkMessageSubscription = ChannelMessageSubscription
 
 export interface DingtalkInboxStats {
   listener: 'idle' | 'starting' | 'ready' | 'failed'
@@ -71,7 +53,9 @@ export function parseAtMessage(line: string): DingtalkAtMessage | undefined {
     conversationId: data.conversation_id as string,
     content: data.content as string,
     ...(typeof data.message_id === 'string' && data.message_id ? { messageId: data.message_id } : {}),
-    ...(typeof data.sender_open_dingtalk_id === 'string' && data.sender_open_dingtalk_id ? { senderOpenDingtalkId: data.sender_open_dingtalk_id } : {}),
+    ...(typeof data.sender_open_dingtalk_id === 'string' && data.sender_open_dingtalk_id
+      ? { senderOpenDingtalkId: data.sender_open_dingtalk_id, senderId: data.sender_open_dingtalk_id }
+      : {}),
     ...(typeof data.timestamp === 'number' && Number.isFinite(data.timestamp) ? { timestamp: data.timestamp } : {}),
   }
 }

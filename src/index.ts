@@ -4,6 +4,15 @@ export { BASE_ENV_WHITELIST, pickEnv, runProcess, type RunProcessOptions, type R
 export { resolveExecutable } from './common/executable.js'
 export { resolveDshHome } from './common/dsh-home.js'
 export type { HealthStatus, ServiceHealth, ServiceFailedEvent } from './common/service.js'
+export type {
+  ChannelAtMessage,
+  ChannelMessageHandler,
+  ChannelMessageRoute,
+  ChannelMessageSubscription,
+  ChannelSendCommon,
+  ChannelSendResult,
+  ChannelService,
+} from './common/channel.js'
 
 export { AgentWsService, WsConfig, WsError, type AgentWsHandle, type AgentWsCounters, type ConnectOptions, type ConnectionState, type HeadersInit, type MessageContext } from './ws/index.js'
 export {
