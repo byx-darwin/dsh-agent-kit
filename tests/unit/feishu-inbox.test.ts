@@ -38,6 +38,17 @@ describe('parseFeishuEvent', () => {
     expect(parseFeishuEvent(textEvent('om_3', 'oc_1', '', { message_type: 'image', content: JSON.stringify({ image_key: 'k' }) }))).toMatchObject({ content: '', messageType: 'image' })
   })
 
+  it('replaces mention placeholders in a single pass without prefix collisions', () => {
+    const mentions = Array.from({ length: 11 }, (_, i) => ({ key: `@_user_${i + 1}`, id: { open_id: i === 0 ? 'ou_bot' : `ou_${i + 1}` }, name: i === 0 ? 'Bot' : `U${i + 1}` }))
+    const event = textEvent('om_6', 'oc_1', '@_user_1 hi @_user_10 and @_user_11 and @_user_2 @_user_2', { mentions })
+    expect(parseFeishuEvent(event, 'ou_bot')?.content).toBe('hi @U10 and @U11 and @U2 @U2')
+    expect(parseFeishuEvent(textEvent('om_7', 'oc_1', '@_user_2 @_user_2', { mentions }), 'ou_bot')?.content).toBe('@U2 @U2')
+  })
+
+  it('keeps line breaks in text messages', () => {
+    expect(parseFeishuEvent(textEvent('om_8', 'oc_1', '@_user_1 第一行\n  第二行  '), 'ou_bot')?.content).toBe('第一行\n第二行')
+  })
+
   it('accepts the SDK payload wrapped in `event` and rejects malformed payloads', () => {
     expect(parseFeishuEvent({ event: textEvent('om_4', 'oc_1', 'hi') })?.eventId).toBe('om_4')
     expect(parseFeishuEvent({ message: { chat_id: 'oc_1' } })).toBeUndefined()
@@ -124,6 +135,56 @@ describe('FeishuService inbox', () => {
     expect(await feishu.searchRecipients('group', '运维')).toEqual({ candidates: [{ name: '运维值班群', target: { chatId: 'oc_ops' } }], complete: true })
     await expect(feishu.searchRecipients('user', '张三')).rejects.toThrow(/open_id/)
     await expect(feishu.searchRecipients('group', 'x')).rejects.toThrow(/2–80/)
+  })
+
+  it('reports starting (degraded) until the long connection is first ready', async () => {
+    await root.root.plugin(FeishuService, { appId: 'cli_test' })
+    const feishu = root.root.get('feishu')!
+    expect(feishu.health()).toMatchObject({ status: 'degraded', detail: 'feishu long connection starting' })
+    fake.ready()
+    expect(feishu.health().status).toBe('ok')
+  })
+
+  it('recovers from a failed connection and delivers messages held while failed', async () => {
+    await root.root.plugin(FeishuService, { appId: 'cli_test' })
+    const feishu = root.root.get('feishu')!
+    const got: string[] = []
+    feishu.onMessage({ conversationId: 'oc_1' }, (m) => { got.push(m.eventId) })
+    fake.ready()
+    fake.error(new Error('gave up'))
+    await fake.emit(textEvent('om_f', 'oc_1', 'held'))
+    expect(got).toHaveLength(0)
+    fake.ready()
+    expect(feishu.health().status).toBe('ok')
+    await until(() => got.length === 1)
+    expect(got).toEqual(['om_f'])
+  })
+
+  it('holds messages during reconnecting and delivers them after reconnected', async () => {
+    await root.root.plugin(FeishuService, { appId: 'cli_test' })
+    const feishu = root.root.get('feishu')!
+    const got: string[] = []
+    feishu.onMessage({ conversationId: 'oc_1' }, (m) => { got.push(m.eventId) })
+    fake.ready()
+    fake.reconnecting()
+    await fake.emit(textEvent('om_r', 'oc_1', 'held'))
+    expect(got).toHaveLength(0)
+    fake.reconnected()
+    await until(() => got.length === 1)
+  })
+
+  it('resolves subscription.ready after the connection is ready, or immediately if already ready', async () => {
+    await root.root.plugin(FeishuService, { appId: 'cli_test' })
+    const feishu = root.root.get('feishu')!
+    let early = false
+    const sub = feishu.onMessage({ conversationId: 'oc_1' }, () => {})
+    void sub.ready.then(() => { early = true })
+    await Promise.resolve()
+    expect(early).toBe(false)
+    fake.ready()
+    await sub.ready
+    expect(early).toBe(true)
+    await feishu.onMessage({ conversationId: 'oc_2' }, () => {}).ready
   })
 
   it('rejects duplicate group routes', async () => {

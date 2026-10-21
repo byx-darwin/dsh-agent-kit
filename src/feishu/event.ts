@@ -51,8 +51,11 @@ export function parseFeishuEvent(data: unknown, botOpenId?: string): FeishuAtMes
   let text = ''
   if (messageType === 'text' && typeof content.text === 'string') {
     text = content.text
-    for (const m of mentions) text = text.split(m.key).join(m.openId === botOpenId ? '' : `@${m.name}`)
-    text = text.replace(/\s+/g, ' ').trim()
+    // 单次扫描替换占位符，避免 @_user_1 误匹配 @_user_10，也不会重扫已替换的名字
+    const replacements = new Map(mentions.map((m) => [m.key, m.openId === botOpenId ? '' : `@${m.name}`]))
+    text = text.replace(/@_user_\d+/g, (k) => replacements.get(k) ?? k)
+    // 保留换行，只折叠空格/制表符并去掉每行首尾空白
+    text = text.split('\n').map((line) => line.replace(/[ \t]+/g, ' ').trim()).join('\n').trim()
   } else if (messageType === 'post') {
     text = postText(content)
   }

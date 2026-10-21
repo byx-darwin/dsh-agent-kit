@@ -314,6 +314,7 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
   health(): ServiceHealth<FeishuCounters> {
     const counters: FeishuCounters = { ...this.counters, inbox: { listener: this.listener, routes: this.router.size, ...this.router.counters() } }
     if (this.failure) return { status: 'failed', detail: this.failure, counters }
+    if (!this.config.dryRun && this.listener === 'idle') return { status: 'degraded', detail: 'feishu long connection starting', counters }
     if (this.listener === 'reconnecting') return { status: 'degraded', detail: 'feishu long connection reconnecting', counters }
     if (counters.lastFailureAt !== null && (this.lastSuccessAt === null || counters.lastFailureAt > this.lastSuccessAt)) {
       return { status: 'degraded', detail: `last send failed: ${counters.lastErrorCode}`, counters }
