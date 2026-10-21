@@ -58,11 +58,12 @@ const enable = (id: string, config: Record<string, unknown>, extra: Patch = {}):
 describe('bundle patch.yml in a real dsh loader', () => {
   it('registers every service disabled by default', async () => {
     const c = await start([])
-    for (const name of ['agentWs', 'dingtalk', 'notify', 'agentTasks', 'jev']) expect(c.get(name)).toBeUndefined()
+    for (const name of ['agentWs', 'dingtalk', 'feishu', 'notify', 'agentTasks', 'jev']) expect(c.get(name)).toBeUndefined()
     const ids = BUNDLE_PATCHES.flatMap((p: any) => p.insert ?? []).map((e: any) => [e.id, e.name, e.disabled])
     expect(ids).toEqual([
       ['agent-kit-ws', '@baoyx/dsh-agent-kit/ws', true],
       ['agent-kit-dingtalk', '@baoyx/dsh-agent-kit/dingtalk', true],
+      ['agent-kit-feishu', '@baoyx/dsh-agent-kit/feishu', true],
       ['agent-kit-notify', '@baoyx/dsh-agent-kit/notify', true],
       ['agent-kit-agent-tasks', '@baoyx/dsh-agent-kit/agent-tasks', true],
       ['agent-kit-jev', '@baoyx/dsh-agent-kit/jev', true],

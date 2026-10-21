@@ -17,6 +17,9 @@
     - id: agent-kit-dingtalk
       name: '@baoyx/dsh-agent-kit/dingtalk'
       disabled: true
+    - id: agent-kit-feishu
+      name: '@baoyx/dsh-agent-kit/feishu'
+      disabled: true
     - id: agent-kit-notify
       name: '@baoyx/dsh-agent-kit/notify'
       disabled: true

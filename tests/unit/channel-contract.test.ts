@@ -5,8 +5,8 @@ import type { DingtalkService } from '../../src/dingtalk/service.js'
 import type { DingtalkAt, DingtalkTarget } from '../../src/dingtalk/args.js'
 
 describe('channel contract', () => {
-  it('lists only implemented channels', () => {
-    expect(CHANNEL_NAMES).toEqual(['dingtalk'])
+  it('lists the implemented channels', () => {
+    expect(CHANNEL_NAMES).toEqual(['dingtalk', 'feishu'])
   })
 
   it('DingtalkService satisfies ChannelService and its message types extend the shared ones', () => {

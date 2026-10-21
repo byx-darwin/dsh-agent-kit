@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DingtalkService } from '../../src/dingtalk/service.js'
+import { FeishuService } from '../../src/feishu/service.js'
 import { NotifyService } from '../../src/notify/service.js'
 import { createFakeDws } from '../../src/testing/fake-dws.js'
+import { createFakeFeishuSdk, useFakeFeishuSdk } from '../../src/testing/fake-feishu.js'
 import { createRoot, type TestRoot } from '../helpers.js'
 
 describe('NotifyService', () => {
@@ -18,6 +20,25 @@ describe('NotifyService', () => {
     await root.dispose()
     dws.cleanup()
     process.env = { ...savedEnv }
+  })
+
+  it('sends to DingTalk with its default target and to a named Feishu group in one call', async () => {
+    process.env.FEISHU_APP_SECRET = 'secret-value'
+    const fake = createFakeFeishuSdk()
+    const restore = useFakeFeishuSdk(fake)
+    try {
+      await root.root.plugin(DingtalkService, { dwsPath: dws.path, identity: 'user', defaultTarget: { chatId: 'cidA' } })
+      await root.root.plugin(FeishuService, { appId: 'cli_test' })
+      await root.root.plugin(NotifyService, { channel: 'dingtalk' })
+      const notify = root.root.get('notify')!
+      const r = await notify.send({ text: 'hello', targets: { dingtalk: 'default', feishu: { chatId: 'oc_ops' } } })
+      expect(r.deliveries.map((d) => [d.channel, d.results[0]!.ok])).toEqual([['dingtalk', true], ['feishu', true]])
+      expect(fake.sends[0]!.data.receive_id).toBe('oc_ops')
+      await expect(notify.login('feishu')).rejects.toMatchObject({ code: 'login_unsupported' })
+      expect((await notify.status()).channels.feishu).toMatchObject({ running: true, identity: 'bot' })
+    } finally {
+      restore()
+    }
   })
 
   it('sends to the default channel with its default target when no targets are given', async () => {
@@ -67,7 +88,7 @@ describe('NotifyService', () => {
   it('rejects unknown channels in targets', async () => {
     await root.root.plugin(NotifyService, { channel: 'dingtalk' })
     const notify = root.root.get('notify')!
-    await expect(notify.send({ text: 'hello', targets: { feishu: { chatId: 'x' } } as never })).rejects.toMatchObject({ code: 'invalid_channel' })
+    await expect(notify.send({ text: 'hello', targets: { wecom: { chatId: 'x' } } as never })).rejects.toMatchObject({ code: 'invalid_channel' })
   })
 
   it('reports the default channel and each channel without runtime switching', async () => {
@@ -75,7 +96,9 @@ describe('NotifyService', () => {
     await root.root.plugin(NotifyService, { channel: 'dingtalk' })
     const notify = root.root.get('notify')!
     const status = await notify.status()
-    expect(status).toEqual({ defaultChannel: 'dingtalk', channels: { dingtalk: expect.objectContaining({ running: true, online: true }) } })
+    expect(status.defaultChannel).toBe('dingtalk')
+    expect(status.channels.dingtalk).toMatchObject({ running: true, online: true })
+    expect(status.channels.feishu).toMatchObject({ running: false })
     expect('use' in notify).toBe(false)
     expect(notify.health()).toMatchObject({ status: 'ok', detail: 'default channel: dingtalk' })
   })

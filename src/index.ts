@@ -45,6 +45,21 @@ export {
   type TargetResult,
 } from './dingtalk/index.js'
 export {
+  FeishuService,
+  FeishuConfig,
+  FeishuSendError,
+  FEISHU_APP_SECRET_REF,
+  buildCreateMessage,
+  parseFeishuEvent,
+  type FeishuAt,
+  type FeishuAtMessage,
+  type FeishuCounters,
+  type FeishuErrorCode,
+  type FeishuSendOptions,
+  type FeishuSendResult,
+  type FeishuTarget,
+} from './feishu/index.js'
+export {
   NotifyService,
   NotifyConfig,
   NotifyError,

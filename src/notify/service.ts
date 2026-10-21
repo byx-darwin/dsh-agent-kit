@@ -1,5 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ChannelSendCommon, ChannelService, ChannelStatus, LoginSession } from '../common/channel.js'
+import type { FeishuTarget } from '../feishu/config.js'
+import type { FeishuAt } from '../feishu/message.js'
 import { digest } from '../common/redact.js'
 import { KitService, type ServiceHealth } from '../common/service.js'
 import type { DingtalkAt, DingtalkTarget } from '../dingtalk/args.js'
@@ -15,11 +17,13 @@ export const DEFAULT_TARGET = 'default' as const
 /** 按渠道给出的发送目标；写 `'default'` 时该渠道使用自己配置的默认目标。 */
 export interface NotifyTargets {
   dingtalk?: DingtalkTarget | typeof DEFAULT_TARGET
+  feishu?: FeishuTarget | typeof DEFAULT_TARGET
 }
 
 /** 按渠道给出的 @ 人。 */
 export interface NotifyAts {
   dingtalk?: DingtalkAt
+  feishu?: FeishuAt
 }
 
 export interface NotifySendOptions extends ChannelSendCommon {

@@ -5,7 +5,7 @@ import type { HealthStatus } from './service.js'
 
 /** 渠道名称；类型为后续渠道预留，`CHANNEL_NAMES` 只列出已实现的渠道。 */
 export type ChannelName = 'dingtalk' | 'feishu' | 'wecom'
-export const CHANNEL_NAMES: readonly ChannelName[] = ['dingtalk']
+export const CHANNEL_NAMES: readonly ChannelName[] = ['dingtalk', 'feishu']
 
 /** 各渠道 `send()` 共有的参数；目标与 @ 由各渠道自己定义。 */
 export interface ChannelSendCommon {
