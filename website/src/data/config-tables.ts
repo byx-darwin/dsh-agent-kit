@@ -1,6 +1,7 @@
 // 由本包源码中的 schemastery schema 生成配置项表，避免网站与代码脱节。
 import { WsConfig } from '../../../src/ws/config'
 import { DingtalkConfig } from '../../../src/dingtalk/config'
+import { FeishuConfig } from '../../../src/feishu/config'
 import { NotifyConfig } from '../../../src/notify/config'
 import { AgentTasksConfig } from '../../../src/agent-tasks/config'
 import { JevConfig } from '../../../src/jev/service'
@@ -38,6 +39,7 @@ const SCHEMAS: Record<ServiceId, SchemaNode> = {
   notify: NotifyConfig as unknown as SchemaNode,
   agentTasks: AgentTasksConfig as unknown as SchemaNode,
   jev: JevConfig as unknown as SchemaNode,
+  feishu: FeishuConfig as unknown as SchemaNode,
 }
 
 const isEnum = (n: SchemaNode) => n.type === 'union' && !!n.list?.length && n.list.every((x) => x.type === 'const')

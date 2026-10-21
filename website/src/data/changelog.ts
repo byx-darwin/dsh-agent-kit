@@ -14,6 +14,9 @@ export const CHANGELOG: ChangelogEntry[] = [
       'ctx.notify：未指定 targets 时发往默认渠道，指定了则只发这些渠道并行发送；返回 { deliveries }，单个渠道的失败只出现在它自己的结果中。',
       '删除 notify.use() 运行时切换；status() 改为 { defaultChannel, channels }；login() / logout() 必须指定渠道。',
       'admin：doctor 与 setup 按默认通知渠道检查与配置。',
+      '新增 ctx.feishu：飞书机器人（自建应用）身份，进程内使用 @larksuiteoapi/node-sdk（可选依赖）；发送文本或 Markdown 卡片，长连接接收群内 @ 机器人与私聊机器人的消息并按会话分发。',
+      '新增 ChannelInbox 约定与通用的未命中消息存储；notify 的 targets 可写 \'default\' 表示使用该渠道的默认目标。',
+      'admin：设置页新增飞书卡片（App ID、域名、App Secret、会话路由、未命中消息），doctor 检查 SDK、凭据与机器人能力，setup 引导配置；钉钉的路由与未命中面板改为通用组件。',
     ],
   },
   {

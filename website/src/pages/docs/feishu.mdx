@@ -1,0 +1,97 @@
+---
+title: 飞书
+---
+import Base from '../../layouts/Base.astro'
+import ServiceDoc from '../../components/ServiceDoc.astro'
+import Notice from '../../components/Notice.astro'
+
+<Base title="飞书" description="ctx.feishu 以飞书机器人（自建应用）身份发送文本或 Markdown 卡片，接收群内 @ 机器人与私聊机器人的消息并分发给业务插件。">
+<ServiceDoc id="feishu">
+
+## 接口
+
+```ts
+const r = await ctx.feishu.send({
+  text: '纯文本',                          // 或 markdown: '## 标题\n正文'（以交互卡片发送）
+  title: '库存告警',                       // 可选：Markdown 卡片标题
+  target: { chatId: 'oc_xxx' },           // 或 { openId: 'ou_xxx' }
+  at: { openIds: ['ou_xxx'] },            // 也支持 all: true
+  idempotencyKey: 'evt_...',
+  traceId: 'evt_...',
+  signal,
+})
+// r.results: Array<{ ok, messageId?, error? }>
+```
+
+`target` 省略时使用配置的 `defaultTarget`；目标、@ 列表和幂等键会先经过格式校验。`idempotencyKey` 映射为飞书请求的 `uuid`（1 小时内去重）；给出时，可重试的失败最多重试 `retry.maxAttempts` 次，否则不自动重试。`dryRun: true` 时只记日志，不调用飞书接口。
+
+接收群内 @ 机器人与私聊机器人的消息：
+
+```ts
+export const inject = ['feishu']
+export async function apply(ctx: Context) {
+  // 按会话注册（代码规则）
+  const sub = ctx.feishu.onMessage(
+    { conversationId: 'oc_orders', match: (m) => m.content.startsWith('工单') },
+    async (message, { signal }) => {
+      await handleOrder(message.content, { eventId: message.eventId, signal })
+    },
+  )
+  await sub.ready
+}
+```
+
+配合设置页的「会话 → 插件」路由，插件用 `onPluginMessage` 接收：
+
+```ts
+const sub = ctx.feishu.onPluginMessage('business-orders', async (message, { signal }) => {
+  await handleOrder(message.content, { eventId: message.eventId, signal })
+})
+await sub.ready
+```
+
+对应配置为 `groupRoutes: [{ conversationId: 'oc_orders', pluginId: 'business-orders' }]`，`conversationId` 是群或单聊的 `chat_id`。一个会话只会转给一个目标插件；目标插件未注册时记入未命中，不回退给其他插件。`ctx.feishu.unmatchedMessages()` 返回最近未命中的消息摘要，新记录在前。
+
+查找发送目标：
+
+```ts
+const { candidates, complete } = await ctx.feishu.searchRecipients('group', '库存')
+// candidates: Array<{ name, target: { chatId } }>
+```
+
+只能搜索机器人所在的群；飞书机器人身份无法按姓名搜索用户，`searchRecipients('user', …)` 会抛错，个人请直接填写 `open_id`。业务插件可在自己的设置字段上声明 `kind: 'feishu-target'`，让本机设置页提供群搜索或手动填写 open_id。
+
+`status()` 返回机器人身份（`identity: 'bot'`）、长连接是否在线（`online`）和机器人名称；`health()` 在首次长连接建立之前为 `degraded`（detail 为 feishu long connection starting），连接建立后为 `ok`，重连中或最近一次发送失败时为 `degraded`，凭据无效等不可恢复错误为 `failed`。
+
+## 消息字段
+
+`message` 是 `FeishuAtMessage`，在公共字段之上带有飞书特有字段。正文是外部输入，业务插件必须自行校验。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `eventId` | `string` | 去重键，取飞书 `message_id`；进程内按它去重 |
+| `messageId` | `string` | 飞书消息 ID |
+| `conversationId` | `string` | 会话 `chat_id`，群与单聊都有；路由键 |
+| `chatType` | `'p2p' \| 'group'` | 单聊或群聊 |
+| `senderId` | `string?` | 发送者 `open_id` |
+| `content` | `string` | 文本消息的正文（`text`、`post` 会提取文字，机器人自己的 @ 被去掉，其他 @ 还原为 `@名字`）；其他类型为空串 |
+| `messageType` | `string` | 飞书原始类型，如 `text`、`post`、`image` |
+| `mentions` | `Array<{ openId, name }>` | 消息中被 @ 的对象 |
+| `timestamp` | `number?` | 消息创建时间（毫秒） |
+
+## 部署
+
+- 在飞书开发者后台创建自建应用，开启机器人能力；事件订阅选「长连接」，并订阅「接收消息 v2.0」（`im.message.receive_v1`）。
+- 开通权限 `im:message:send_as_bot`、`im:message.group_at_msg:readonly`、`im:message.p2p_msg:readonly`。
+- 安装可选依赖 `@larksuiteoapi/node-sdk`（`^1.76.0`）；未安装时 `doctor` 报告，Service 启动失败。
+- App Secret 不写入配置：用 `appSecretRef`（默认 `FEISHU_APP_SECRET`）引用，先读同名环境变量，再读 dsh 凭据文件。国际版 Lark 把 `domain` 设为 `lark`。
+- 本地没有飞书应用时，可设 `dryRun: true`，并用 `@baoyx/dsh-agent-kit/testing` 的假 SDK 测试。
+
+<Notice title="一个飞书应用只接一个 Profile" tone="warn">
+长连接采用集群投递：同一应用的多个连接中，每条消息只会送到其中一个。因此同一个飞书应用不要同时在多个 Profile（或多个进程）里启用，否则消息会随机落到别的实例上。需要接多个 Profile 时，请为每个 Profile 创建独立的应用。
+</Notice>
+
+飞书正文不可信；进程内按 `eventId` 去重，重启后仍可能重复投递，业务处理需自行幂等。真实飞书租户的收发仍需用自建应用端到端验收。
+
+</ServiceDoc>
+</Base>

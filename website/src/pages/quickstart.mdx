@@ -24,7 +24,8 @@ export const link = (path) => withBasePath(import.meta.env.BASE_URL, path)
 - Node.js `^22.19` 或 `>=24`。
 - [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh) CLI `0.1.5-rc.3`。当前为预发布版本，dsh 与 cordis 相关依赖需锁定到与之一致的版本。
 - 使用钉钉推送：已安装并登录 `dws`（`dingtalk-workspace-cli`，已验证 `1.0.62`），仅支持 `user` 身份。
-- 使用通知服务：同时启用钉钉行。
+- 使用通知服务：同时启用默认渠道（钉钉或飞书）的行。
+- 使用飞书：安装可选依赖 `@larksuiteoapi/node-sdk`（`^1.76.0`），详见[飞书文档](/docs/feishu)。
 - `dws` 可以先不装：admin 包的 `setup` 会在你确认后安装。
 - 使用 Agent 任务：安装 `@deepseek-ai/dsh-subagent-claude-code` 和/或 `@deepseek-ai/dsh-subagent-codex`，并完成 Claude Code / Codex 的原生登录。
 - 使用 Jev 判断：安装 `@typesafe-ai/sdk`，并准备好 TypeSafe API Key（存放位置见本页最后一节）；或者改用本地部署的 Laya，只需要它的服务地址，见 <a href={link('/docs/jev')}>Jev 判断</a>。
@@ -64,7 +65,7 @@ dsh plugin --profile my-agent add ./my-business-plugin-0.1.0.tgz
 1. **选择 Profile**：在 `$DSH_HOME/profiles` 下查找装了 `@baoyx/dsh-agent-kit` 的 Profile；只有一个时自动选中，有多个时让你选。
 2. **选择要启用的 Service**：已启用的默认勾选。
 3. **安装缺少的 dws**：启用了钉钉、而 `dws` 不在 `PATH` 中时，展示 `npm i -g dingtalk-workspace-cli@1.0.62` 并请你确认。
-4. **逐个配置**：当前值作为默认值。钉钉固定为 `user` 身份，可以按群名搜索群，未登录时可以拉起 `dws auth login`；通知固定发往钉钉；Agent 任务需要声明权限上限；Jev 的 Key 输入时不回显。
+4. **逐个配置**：当前值作为默认值。钉钉固定为 `user` 身份，可以按群名搜索群，未登录时可以拉起 `dws auth login`；通知的默认渠道可选钉钉或飞书；Agent 任务需要声明权限上限；Jev 的 Key 输入时不回显。
 5. **预览改动并确认**：以差异视图展示 `cordis.patch.yml` 的改动，确认后才写入。密钥单独保存，不会出现在差异里。
 6. **自动运行 doctor**：检查刚写入的配置。
 

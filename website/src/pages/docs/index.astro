@@ -12,7 +12,7 @@ const remainingServices = SERVICES.filter((s) => s.id !== 'agentWs')
 <Base title="文档" description="dsh-agent-kit 五类能力的接口、配置与错误码，以及配置引导、安全和通用约定。">
   <p class="eyebrow">文档</p>
   <h1>五类能力，一套约定</h1>
-  <p class="lead">底层的五个 Service 都在 <code>@baoyx/dsh-agent-kit</code> 中。钉钉仅支持已登录的 user 身份；业务包通常只 inject <code>notify</code>。doctor、setup 与设置页在可选的 <code>@baoyx/dsh-agent-kit-admin</code> 中。</p>
+  <p class="lead">底层的六个 Service 都在 <code>@baoyx/dsh-agent-kit</code> 中。钉钉仅支持已登录的 user 身份，飞书使用机器人身份；业务包通常只 inject <code>notify</code>。doctor、setup 与设置页在可选的 <code>@baoyx/dsh-agent-kit-admin</code> 中。</p>
 
   <div class="grid-2">
     <ServiceCard numeral={agentWs.numeral} verb={agentWs.verb} name={`${agentWs.name} · ${agentWs.context}`} summary={agentWs.summary} href={`/docs/${agentWs.slug}`} />

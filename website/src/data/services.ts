@@ -1,16 +1,16 @@
-// 五个 Service 的展示元数据，顺序与 patch.yml 中的 loader 行一致。配置项表由 config-tables.ts 从源码 schema 生成；
+// 六个 Service 的展示元数据，顺序与 patch.yml 中的 loader 行一致。配置项表由 config-tables.ts 从源码 schema 生成；
 // 这里只补充 schema 里没有的内容：编号、摘要、跨字段约束、错误码，以及缺少 description 的字段说明。
 
-export type ServiceId = 'agentWs' | 'dingtalk' | 'notify' | 'agentTasks' | 'jev'
+export type ServiceId = 'agentWs' | 'dingtalk' | 'notify' | 'agentTasks' | 'jev' | 'feishu'
 
 export interface ServiceError {
   code: string
   /** 是否可重试：「是」「否」「视情况」。 */
-  retryable: '是' | '否' | '视情况'
+  retryable: '是' | '否' | '视情况' | 'HTTP 5xx 时是'
   meaning: string
 }
 
-export type ServiceNumeral = '壹' | '贰' | '叁' | '肆' | '伍'
+export type ServiceNumeral = '壹' | '贰' | '叁' | '肆' | '伍' | '陆'
 
 export interface ServiceMeta {
   id: ServiceId
@@ -108,7 +108,7 @@ export const SERVICES: ServiceMeta[] = [
     summary: '通知入口：业务包通过 ctx.notify.send() 发送，默认发往配置的默认渠道，也可按调用指定渠道。',
     kitId: 'agent-kit-notify',
     notes: [
-      'channel 是默认渠道（目前为 dingtalk）；默认渠道的行需要启用，否则未指定 targets 的 send() 抛出 channel_unavailable。',
+      'channel 是默认渠道（dingtalk 或 feishu）；默认渠道的行需要启用，否则未指定 targets 的 send() 抛出 channel_unavailable。',
       '本 Service 不 inject 钉钉，而是在发送时查找：启用、停用渠道行也不会重新加载 notify。',
       'status() 返回默认渠道与各渠道的实时登录状态；login(channel) / logout(channel) 必须指定渠道。',
     ],
@@ -179,6 +179,36 @@ export const SERVICES: ServiceMeta[] = [
       INVALID_CONFIG,
     ],
     descriptions: {},
+  },
+  {
+    id: 'feishu',
+    numeral: '陆',
+    verb: '收发',
+    name: '飞书',
+    context: 'ctx.feishu',
+    slug: 'feishu',
+    summary: '飞书机器人：发送文本或 Markdown 卡片，接收群内 @ 机器人与私聊机器人的消息并按会话分发给业务插件。',
+    kitId: 'agent-kit-feishu',
+    notes: [
+      '机器人（自建应用）身份；需安装可选依赖 @larksuiteoapi/node-sdk ^1.76.0。',
+      'App Secret 通过 appSecretRef 引用（默认 FEISHU_APP_SECRET），先读环境变量，再读 dsh 凭据文件。',
+      '长连接接收：同一飞书应用的多个连接只有一个会收到某条消息，一个应用只接一个 Profile。',
+      '开发者后台需开启机器人能力、事件订阅选长连接，并开通 im:message:send_as_bot、im:message.group_at_msg:readonly、im:message.p2p_msg:readonly。',
+    ],
+    errors: [
+      { code: 'invalid_target', retryable: '否', meaning: '目标（chatId / openId）格式非法，或接收方不在应用可用范围、群已解散。' },
+      { code: 'auth_failed', retryable: '否', meaning: 'App ID / App Secret 无效，或访问令牌无法获取。' },
+      { code: 'permission_denied', retryable: '否', meaning: '应用未开通所需权限、机器人能力未启用或机器人不在群里。' },
+      { code: 'rate_limited', retryable: '是', meaning: '触发飞书频率限制。' },
+      { code: 'timeout', retryable: '是', meaning: '单次请求超过 timeoutMs。' },
+      { code: 'aborted', retryable: '否', meaning: '调用方 signal 中止或 Service 卸载。' },
+      { code: 'network', retryable: '是', meaning: '网络错误，请求未得到飞书响应。' },
+      { code: 'api_error', retryable: 'HTTP 5xx 时是' as never, meaning: '其余飞书接口错误；HTTP 5xx 时可重试。' },
+      INVALID_CONFIG,
+    ],
+    descriptions: {
+      'retry.maxAttempts': '给出幂等键时，可重试失败的最多重试次数。',
+    },
   },
 ]
 

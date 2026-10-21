@@ -2,7 +2,7 @@
 
 官网：https://byx-darwin.github.io/dsh-agent-kit/
 
-构建常驻 Agent Worker 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件工具包：WebSocket 接入、钉钉 user 推送与通知、Claude Code / Codex 任务委托、TypeSafe Jev（或本地 Laya）校验。
+构建常驻 Agent Worker 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件工具包：WebSocket 接入、钉钉 user / 飞书机器人推送与通知、Claude Code / Codex 任务委托、TypeSafe Jev（或本地 Laya）校验。
 
 > **状态：`0.2.0` 已发布到 npm：[`@baoyx/dsh-agent-kit`](https://www.npmjs.com/package/@baoyx/dsh-agent-kit) 与 [`@baoyx/dsh-agent-kit-admin`](https://www.npmjs.com/package/@baoyx/dsh-agent-kit-admin)。** 历史设计文档可能包含已移除的方案，以当前代码和官网文档为准。
 
@@ -21,10 +21,10 @@
 
 | 包 | 目录 | 作用 |
 |---|---|---|
-| `@baoyx/dsh-agent-kit` | 仓库根目录 | 给业务包用的库：五个 Service 与测试工具。业务包只依赖它 |
+| `@baoyx/dsh-agent-kit` | 仓库根目录 | 给业务包用的库：六个 Service 与测试工具。业务包只依赖它 |
 | `@baoyx/dsh-agent-kit-admin` | [`admin/`](admin/README.md) | 可选的运维工具：`dsh-agent-kit doctor` / `setup` 命令行、dsh Web「设置 → Agent Kit」页、业务包设置入口的登记。见下文「运维工具（可选）」 |
 
-不装 admin 包时，五个 Service 照常工作，配置直接写在 Profile 的 `cordis.patch.yml` 中。
+不装 admin 包时，六个 Service 照常工作，配置直接写在 Profile 的 `cordis.patch.yml` 中。
 
 ## 功能
 
@@ -32,15 +32,16 @@
 |---|---|
 | `ctx.agentWs` | WebSocket 客户端（仅 `wss://`）：可刷新的鉴权请求头、心跳、指数退避重连、并发与背压控制；鉴权失败或指定关闭码时进入 `failed` 状态并可慢速重试 |
 | `ctx.dingtalk` | 通过已登录的钉钉 `dws` CLI，以 `user` 身份发送消息；统一监听群内 @ 消息，并按群 ID / 内容规则下发给业务插件；提供登录状态、设备流登录与退出 |
-| `ctx.notify` | 通知入口：业务包调用 `ctx.notify.send()`，默认发往配置的默认渠道，也可在 `targets` 中按渠道指定 |
+| `ctx.feishu` | 飞书机器人（自建应用）：发送文本或 Markdown 卡片；长连接接收群内 @ 机器人与私聊机器人的消息，按会话 ID 下发给业务插件 |
+| `ctx.notify` | 通知入口：业务包调用 `ctx.notify.send()`，默认发往配置的默认渠道（钉钉或飞书），也可在 `targets` 中按渠道指定 |
 | `ctx.agentTasks` | 调用 dsh 已注册的 subagent provider（如 `claude-code`、`codex`）执行一次性任务：默认只读权限（无法由本包强制的 provider 需运维声明权限上限）、每个任务独立目录、类型化的 JSON Schema 输出、并发与排队上限 |
 | `ctx.jev` | 调用 TypeSafe Jev 或本地部署的 Laya（二选一），返回 Choice / Noul / Score 的类型化判断和概率 |
 
-- 五个 Service 默认禁用，按需启用；未启用的 Service 不校验配置，也不影响其他 Service。
+- 六个 Service 默认禁用，按需启用；未启用的 Service 不校验配置，也不影响其他 Service。
 - 每个 Service 提供 `health()`；进入 `failed` 时触发 `agent-kit/service-failed` 事件，便于接入外部监控。
 - 所有错误都是 `KitError`，带 `code` 与 `retryable`，调用方据此决定是否重试。
 
-导入路径：根入口 `@baoyx/dsh-agent-kit` 导出全部 Service 类、配置、错误类型与工具函数；另有子路径 `@baoyx/dsh-agent-kit/ws`、`/dingtalk`、`/notify`、`/agent-tasks`、`/jev`、`/secrets` 和 `/testing`。
+导入路径：根入口 `@baoyx/dsh-agent-kit` 导出全部 Service 类、配置、错误类型与工具函数；另有子路径 `@baoyx/dsh-agent-kit/ws`、`/dingtalk`、`/feishu`、`/notify`、`/agent-tasks`、`/jev`、`/secrets` 和 `/testing`。
 
 ## 架构
 
@@ -50,7 +51,8 @@
 │        │ inject                                 │
 │        ▼                                        │
 │  @baoyx/dsh-agent-kit（各 Service 单独启用）         │
-│    agentWs · dingtalk · notify · agentTasks · jev│
+│    agentWs · dingtalk · feishu · notify ·        │
+│    agentTasks · jev                             │
 │        │                                        │
 │        ▼                                        │
 │  dsh：subagent-claude-code / subagent-codex、    │
@@ -69,7 +71,8 @@
 - Node.js `^22.19` 或 `>=24`
 - [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh) CLI `0.1.5-rc.3` 或 `0.1.7-alpha.2`（均为预发布版本，dsh 与 cordis 相关依赖需锁定到与所用 dsh 一致的版本；以下示例以 `0.1.5-rc.3` 为准，使用 0.1.7 时把版本号一并替换）
 - 使用 `ctx.dingtalk`：已安装并登录 `dws`（已验证 `dingtalk-workspace-cli@1.0.62`），仅支持 `user` 身份
-- 使用 `ctx.notify`：同时启用 `ctx.dingtalk`
+- 使用 `ctx.feishu`：安装 `@larksuiteoapi/node-sdk`（^1.76.0），在飞书开发者后台创建自建应用并开启机器人能力，事件订阅选长连接并订阅「接收消息 v2.0」，开通 im:message:send_as_bot、im:message.group_at_msg:readonly、im:message.p2p_msg:readonly；App Secret 用 appSecretRef 引用（默认 FEISHU_APP_SECRET）。
+- 使用 `ctx.notify`：同时启用默认渠道（钉钉或飞书）的 Service
 - 本包运行时不会安装上述 CLI；可以手动安装，或用 admin 包的 `setup` 在你确认后安装（见「运维工具（可选）」）
 - 使用 `ctx.agentTasks`：安装 `@deepseek-ai/dsh-subagent-claude-code` 和/或 `@deepseek-ai/dsh-subagent-codex`（`ctx.subagents` 与子进程服务由 dsh 的 base bundle 提供），并完成 Claude Code / Codex 的原生登录（provider 会剔除名字含 KEY / TOKEN / SECRET / PASSWORD 的环境变量，依赖这类变量鉴权时需在 provider 的 Config `env` 中显式给出）
 - 使用 `ctx.jev`：安装 `@typesafe-ai/sdk`，并设置环境变量 `TYPESAFE_API_KEY`；macOS 上也可以用 `keychainService` 从钥匙串读取，推荐与 gitflow-cli 等工具共享的服务名 `ai.typesafe.api-key`（保存：`security add-generic-password -a "$USER" -s ai.typesafe.api-key -U -w`）。改用本地 Laya 时配置 `provider: laya` 与 `baseURL`，不需要 TypeSafe Key
@@ -121,7 +124,7 @@ dsh --profile my-agent --no-open
 
 `@deepseek-ai/cordis` 的版本与目标 dsh 依赖的版本保持一致（dsh `0.1.5-rc.3` 对应 `4.0.2`，`0.1.7-alpha.2` 对应 `4.0.4`）。开发期可以用 `link:` 指向本包的本地 checkout。
 
-插件示例（发通知推荐用 `ctx.notify`，由已登录的钉钉 user 身份发送）：
+插件示例（发通知推荐用 `ctx.notify`，由默认渠道（已登录的钉钉 user 或飞书机器人）发送）：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -138,7 +141,7 @@ export function apply(ctx: Context, config: Config) {
     concurrency: 2,
     onMessage: async (frame, { signal }) => {
       if (frame.type === 'alert') {
-        // 通知固定由已登录的钉钉 user 身份发送
+        // 通知发往默认渠道
         await ctx.notify.send({
           title: frame.title,
           markdown: renderAlert(frame),
@@ -194,7 +197,12 @@ await ctx.notify.send({
   targets: { dingtalk: { chatId: 'cidxxxx' } },
   idempotencyKey: frame.id,
 })
+
+// 钉钉发往配置的默认群，飞书发往指定群
+await ctx.notify.send({ text: '库存告警', targets: { dingtalk: 'default', feishu: { chatId: 'oc_xxx' } } })
 ```
+
+`targets` 中某渠道写 `'default'`，表示发往该渠道并使用其配置的默认目标。
 
 钉钉仅支持已登录的 `user` 身份。`ctx.dingtalk.status()` 查询当前身份状态，`login()` 返回授权链接、验证码与完成状态，`logout()` 仅退出当前账号。admin 设置页可将授权链接显示为二维码；是否能真正授权取决于 dws 与钉钉组织权限。通知服务的 `status()` 返回 `{ defaultChannel, channels }`；`login(channel)` / `logout(channel)` 必须指定渠道，渠道不需要登录时抛出 `login_unsupported`。
 
@@ -207,13 +215,14 @@ await ctx.dingtalk.send({ title: frame.title, markdown: renderAlert(frame), idem
 
 ### 渠道约定
 
-每个渠道 Service 都实现 `ChannelService`（从根入口导入类型）：`send()`、`status()`、`health()`，需要登录的身份另外实现 `login()` / `logout()`。接收群内 @ 消息的渠道提供同样三个方法：
+每个渠道 Service 都实现 `ChannelService`（从根入口导入类型）：`send()`、`status()`、`health()`，需要登录的身份另外实现 `login()` / `logout()`。接收群内 @ 消息的渠道实现 `ChannelInbox` 接口，提供同样的四个方法：
 
 - `onMessage({ conversationId, match?, priority? }, handler)`：按会话注册处理器，每条消息只交给优先级最高的首个匹配处理器；
 - `onPluginMessage(pluginId, handler)`：配合设置页的「会话 → 插件」路由；
-- `unmatchedMessages()`：最近未命中任何路由的消息摘要。
+- `unmatchedMessages()`：最近未命中任何路由的消息摘要；
+- `searchRecipients(kind, query)`：按名称查找可作为发送目标的群或个人候选（飞书机器人只能搜群）。
 
-消息至少包含 `ChannelAtMessage` 的字段：`eventId`、`messageId?`、`conversationId`、`senderId?`、`content`、`timestamp?`，渠道特有字段另加（如钉钉的 `senderOpenDingtalkId`）。正文是外部输入，业务插件必须自行校验。
+消息至少包含 `ChannelAtMessage` 的字段：`eventId`、`messageId?`、`conversationId`、`senderId?`、`content`、`timestamp?`，渠道特有字段另加（如钉钉的 `senderOpenDingtalkId`、飞书的 `chatType`）。正文是外部输入，业务插件必须自行校验。
 
 ### 从 0.2 升级到 0.3
 
@@ -225,6 +234,8 @@ await ctx.dingtalk.send({ title: frame.title, markdown: renderAlert(frame), idem
 - 钉钉消息新增 `senderId`（与 `senderOpenDingtalkId` 相同），原有字段不变。
 - `notify.channel` getter 已删除，改用 `notify.defaultChannel`。
 - 调用方传入的 `signal` 中止后，`notify.send()` 不再 reject，中止会作为对应渠道结果中的错误返回（钉钉为 `code: 'aborted'`）。
+- admin 的远程方法 dingtalkUnmatched / dingtalkSearchRecipients 改为 channelUnmatched(channel) / channelSearchRecipients(channel, …)，旧方法保留一个版本。
+- 钉钉未命中记录新增 conversationName、senderId 字段，原 groupName、senderOpenDingtalkId 保留；降级到旧版本后，新记录中的会话名与发送者会丢失。
 - 依赖范围 `^0.2.0` 不会自动升级到 0.3，需要改为 `^0.3.0`。
 
 ### 群内 @ 消息下发到业务插件
@@ -263,6 +274,50 @@ export async function apply(ctx: Context) {
 
 监听仅覆盖 @ 当前登录 user 的群消息，不监听群内所有消息。未命中的消息（包括尚无任何业务路由时）保留最近 200 条，记录群 ID、可查到的群名、时间、事件 ID 与最多 240 字正文预览；群名查询失败不影响群 ID。dsh Profile 下按 dws 账号分别保存于 `.agent-kit/dingtalk-unmatched/<账号哈希>.json`（目录 `0700`、文件 `0600`），设置页钉钉卡片可在本机查看，插件可调用 `ctx.dingtalk.unmatchedMessages()` 读取。不会自动转发给兜底插件。事件在进程内按 `eventId` 做有界去重；重启后的重复投递仍需业务插件按 `eventId` 保证幂等。`dryRun: true` 不允许启动真实监听。业务插件可用 `subscription.close()` 提前注销；处理器异常只影响该消息，不会把它转给下一个插件。
 
+### 飞书
+
+`ctx.feishu` 以飞书机器人（自建应用）身份发送消息，并通过长连接接收群内 @ 机器人与私聊机器人的消息。在 Profile 的 `cordis.patch.yml` 中启用 `agent-kit-feishu`：
+
+```yaml
+- id: agent-kit-feishu
+  disabled: false
+  config:
+    appId: cli_xxxx                 # App Secret 通过 appSecretRef 引用，默认读环境变量 FEISHU_APP_SECRET，再读 dsh 凭据文件
+    domain: feishu                  # 国际版 Lark 填 lark
+    groupRoutes:
+      - { conversationId: oc_orders, pluginId: business-orders }
+```
+
+业务插件用 `onPluginMessage`（或代码规则 `onMessage`）接收；`conversationId` 是群或单聊的 `chat_id`：
+
+```ts
+export const inject = ['feishu']
+export async function apply(ctx: Context) {
+  const subscription = ctx.feishu.onPluginMessage('business-orders', async (message, { signal }) => {
+    await handleOrder(message.content, { signal, eventId: message.eventId })
+  })
+  await subscription.ready
+}
+```
+
+发送：`await ctx.feishu.send({ markdown: '## 标题\n正文', target: { chatId: 'oc_xxx' } })`；`text` 发纯文本，`markdown` 以交互卡片发送，`target` 也可以是 `{ openId }`。
+
+消息 `FeishuAtMessage` 在 `ChannelAtMessage` 的基础上增加：
+
+| 字段 | 说明 |
+|---|---|
+| `chatType` | `'p2p'`（私聊）或 `'group'`（群聊） |
+| `messageType` | 飞书原始消息类型，如 `text`、`post`、`image`；非文本类消息的 `content` 为空 |
+| `mentions` | 消息中被 @ 的对象：`Array<{ openId, name }>` |
+
+`senderId` 是发送者的 `open_id`，`eventId` 取飞书 `message_id`。错误为 `FeishuSendError`，`code` 为 `invalid_target`、`auth_failed`、`permission_denied`、`rate_limited`、`timeout`、`aborted`、`network`、`api_error`；其中 `rate_limited`、`timeout`、`network` 可重试，`api_error` 在 HTTP 5xx 时可重试，`aborted`（调用方中止或 Service 卸载）不可重试。
+
+注意：
+
+- **一个飞书应用只接一个 Profile**：长连接是集群投递，同一应用的多个连接中每条消息只送达其中一个，多个 Profile 共用一个应用会让消息随机落到别的实例上。
+- 飞书机器人身份不能按姓名搜索用户：`searchRecipients('group', …)` 只返回机器人所在的群，个人请直接填写 `open_id`。
+- 需要安装可选依赖 `@larksuiteoapi/node-sdk`，开通的权限见「环境要求」。未命中路由的消息同样保留最近记录，可在设置页飞书卡片查看或调用 `ctx.feishu.unmatchedMessages()`。
+
 ### 本地开发与测试
 
 没有 `dws` 或 Agent 登录态时，可以把钉钉设为 `dryRun: true`，并使用 `@baoyx/dsh-agent-kit/testing` 导出的假 dws、本地 WebSocket 服务端、假 provider 与 Jev mock。
@@ -271,7 +326,7 @@ export async function apply(ctx: Context) {
 
 ## 配置
 
-各 Service 的可变参数都是 cordis.yml 中经过校验的配置字段。本包的 bundle 以禁用状态注册五个 loader 行（`agent-kit-ws`、`agent-kit-dingtalk`、`agent-kit-notify`、`agent-kit-agent-tasks`、`agent-kit-jev`），在 Profile 的 `cordis.patch.yml` 中按 id 启用并给出配置：
+各 Service 的可变参数都是 cordis.yml 中经过校验的配置字段。本包的 bundle 以禁用状态注册六个 loader 行（`agent-kit-ws`、`agent-kit-dingtalk`、`agent-kit-feishu`、`agent-kit-notify`、`agent-kit-agent-tasks`、`agent-kit-jev`），在 Profile 的 `cordis.patch.yml` 中按 id 启用并给出配置：
 
 ```yaml
 - id: agent-kit-ws
@@ -281,10 +336,17 @@ export async function apply(ctx: Context) {
   config:
     identity: user
     defaultTarget: { chatId: cidxxxx }
+- id: agent-kit-feishu
+  disabled: false
+  config:
+    appId: cli_xxxx                            # App Secret 不写在这里：设置环境变量 FEISHU_APP_SECRET
+    domain: feishu                             # 国际版 Lark 填 lark
+    groupRoutes:
+      - { conversationId: oc_orders, pluginId: business-orders }
 - id: agent-kit-notify
   disabled: false
   config:
-    channel: dingtalk                          # 固定为钉钉；需要启用钉钉行
+    channel: dingtalk                          # 默认渠道：dingtalk 或 feishu；需要启用对应渠道的行
 - id: agent-kit-agent-tasks
   disabled: false
   config:
@@ -308,7 +370,8 @@ export async function apply(ctx: Context) {
 |---|---|
 | `agentWs` | `pingIntervalMs`、`readTimeoutMs`、`reconnect.initialDelayMs`、`reconnect.maxDelayMs`、`reconnect.jitter`、`stableResetMs`、`fatalRetryDelayMs`、`maxPayloadBytes`、`maxPendingMessages` |
 | `dingtalk` | `identity`（只允许 `user`）、`defaultTarget`、`dwsPath`、`timeoutMs`、`killGraceMs`、`retry.maxAttempts`、`preflightIntervalMs`、`dryRun` |
-| `notify` | `channel`（默认渠道，目前可选 `dingtalk`） |
+| `feishu` | `appId`（必填）、`appSecretRef`、`domain`、`defaultTarget`、`groupRoutes`、`timeoutMs`、`retry.maxAttempts`、`dryRun` |
+| `notify` | `channel`（默认渠道，`dingtalk` 或 `feishu`） |
 | `agentTasks` | `workspaceDir`（必填）、`defaultTimeoutMs`、`maxConcurrency`、`maxQueueSize`、`keepWorkdir`、`declaredPermissions`、`toolAllowlist` |
 | `jev` | `provider`、`baseURL`、`apiKeyRef`、`model`、`timeoutMs`、`keychainService`、`keychainAccount` |
 
@@ -363,13 +426,14 @@ npx @baoyx/dsh-agent-kit-admin doctor --profile my-agent
 
 - 安装：如果启用了钉钉而 `dws` 不在 `PATH` 中，`setup` 会展示 `npm i -g dingtalk-workspace-cli@1.0.62`，确认后安装。
 - 钉钉：固定 `user` 身份；未登录时可以拉起 `dws auth login`，可配置默认目标与 `dryRun`。
-- 通知：固定发往钉钉，钉钉行未启用时会提示。
+- 飞书：检查可选依赖 `@larksuiteoapi/node-sdk`，引导填写 App ID、域名、默认目标，App Secret 只写入密钥存储；
+- 通知：选择默认渠道（钉钉或飞书），所选渠道的行未启用时会提示。
 
 `setup` 只会修改 Profile 目录下的 `cordis.patch.yml`；`doctor` 只读，不修改任何文件，`--json` 输出机器可读的体检报告，可接入 CI。`doctor` 的 `agent-kit-notify.channel` 检查在所选渠道的行未启用时失败。两者都会在 `$DSH_HOME/profiles` 下扫描带有基础包（bundles 里含 `@baoyx/dsh-agent-kit`）的 Profile；只有一个候选时自动选中，有多个时需要 `--profile` 指定。
 
 ### 设置页
 
-Profile 中装了 admin 包并启动后，dsh Web「设置 → Agent Kit」里有五个 Service 卡片。钉钉仅支持 `user` 身份，通知固定发往钉钉；可以启停、编辑配置、查看健康状态与体检结果，效果与 CLI 等价：
+Profile 中装了 admin 包并启动后，dsh Web「设置 → Agent Kit」里有各 Service 的卡片。钉钉仅支持 `user` 身份，飞书使用机器人身份，通知发往所选的默认渠道；可以启停、编辑配置、查看健康状态与体检结果，效果与 CLI 等价：
 
 - 保存时按乐观并发（`version`）比较，若与他人（包括另开终端手改 `cordis.patch.yml`）冲突会提示「已被修改」并自动刷新为最新内容，需要重新确认后再保存。
 - **只读闸门默认关闭（fail closed）**：只有 dsh Web 确认自己绑定在 `webServer.host === '127.0.0.1'` 时设置页才可写；未绑定回环地址（例如以 `--host 0.0.0.0` 之类的方式对外暴露）或压根没加载 `webServer` 服务时，设置页一律降级为只读，避免把配置写入接口暴露给公网。dsh CLI 自身也拒绝 `--host 0.0.0.0`（"it would expose remote code execution to the network"），二者是两道独立的防线。
@@ -439,8 +503,9 @@ export function apply(ctx: Context) {
 ## 路线图
 
 - [x] 完成设计文档中的「实施前需核实」项
-- [x] 五个 Service 的首个实现与测试
+- [x] 六个 Service 的首个实现与测试
 - [x] 钉钉 user 推送与通知（`ctx.dingtalk`、`ctx.notify`）
+- [x] 飞书机器人推送与接收（`ctx.feishu`）
 - [x] 渠道登录状态与设备流登录（`status()` / `login()` / `logout()`）
 - [x] 运维工具拆分为可选的 `@baoyx/dsh-agent-kit-admin`
 - [x] 发布 `0.2.0` 到 npm
