@@ -80,6 +80,22 @@ describe('NotifyService', () => {
     expect(notify.health()).toMatchObject({ status: 'ok', detail: 'default channel: dingtalk' })
   })
 
+  it("treats 'default' as naming the channel while letting it use its own default target", async () => {
+    await root.root.plugin(DingtalkService, { dwsPath: dws.path, identity: 'user', defaultTarget: { chatId: 'cidA' } })
+    await root.root.plugin(NotifyService, { channel: 'dingtalk' })
+    const notify = root.root.get('notify')!
+    const r = await notify.send({ text: 'hello', targets: { dingtalk: 'default' } })
+    expect(r.deliveries).toMatchObject([{ channel: 'dingtalk', results: [{ ok: true }] }])
+    expect(dws.calls().some((call) => call.args.some((a) => a.includes('cidA')))).toBe(true)
+  })
+
+  it("reports a channel named with 'default' that is not running as a failed delivery instead of throwing", async () => {
+    await root.root.plugin(NotifyService, { channel: 'dingtalk' })
+    const notify = root.root.get('notify')!
+    const r = await notify.send({ text: 'hello', targets: { dingtalk: 'default' } })
+    expect(r.deliveries).toEqual([{ channel: 'dingtalk', results: [{ ok: false, error: expect.objectContaining({ code: 'channel_unavailable' }) }] }])
+  })
+
   it('requires a channel name for login and logout', async () => {
     await root.root.plugin(NotifyService, { channel: 'dingtalk' })
     const notify = root.root.get('notify')!

@@ -49,6 +49,7 @@ export {
   NotifyConfig,
   NotifyError,
   NOTIFY_CHANNELS,
+  DEFAULT_TARGET,
   DEFAULT_LOGIN_TTL_MS,
   type ChannelName,
   type ChannelNotRunning,

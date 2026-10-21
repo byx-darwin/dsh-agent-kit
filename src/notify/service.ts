@@ -9,9 +9,12 @@ import { NotifyError } from './errors.js'
 
 export { NotifyError, type NotifyErrorCode } from './errors.js'
 
-/** 按渠道给出的发送目标；缺省的渠道使用其配置中的默认目标。 */
+/** `targets` 中某渠道写 `'default'`：发往该渠道，并使用其配置的默认目标。 */
+export const DEFAULT_TARGET = 'default' as const
+
+/** 按渠道给出的发送目标；写 `'default'` 时该渠道使用自己配置的默认目标。 */
 export interface NotifyTargets {
-  dingtalk?: DingtalkTarget
+  dingtalk?: DingtalkTarget | typeof DEFAULT_TARGET
 }
 
 /** 按渠道给出的 @ 人。 */
@@ -20,7 +23,7 @@ export interface NotifyAts {
 }
 
 export interface NotifySendOptions extends ChannelSendCommon {
-  /** 写了哪些渠道就只发这些渠道；缺省或为空时发往默认渠道。 */
+  /** 写了哪些渠道就只发这些渠道（值可为 'default'）；缺省或为空时发往默认渠道。 */
   targets?: NotifyTargets
   at?: NotifyAts
 }
@@ -114,8 +117,13 @@ export class NotifyService extends KitService<NotifyCounters> {
       throw channelUnavailable(this.defaultChannel)
     }
     const common: ChannelSendCommon = { title: options.title, markdown: options.markdown, text: options.text, idempotencyKey: options.idempotencyKey, traceId: options.traceId, signal: options.signal }
+    const targets = options.targets as Partial<Record<NotifyChannel, unknown>> | undefined
+    const ats = options.at as Partial<Record<NotifyChannel, unknown>> | undefined
     const deliveries = await deliver(
-      channels.map((channel) => ({ channel, service: this.service(channel), target: (options.targets as Partial<Record<NotifyChannel, unknown>> | undefined)?.[channel], at: (options.at as Partial<Record<NotifyChannel, unknown>> | undefined)?.[channel] })),
+      channels.map((channel) => {
+        const target = targets?.[channel]
+        return { channel, service: this.service(channel), target: target === DEFAULT_TARGET ? undefined : target, at: ats?.[channel] }
+      }),
       common,
     )
     for (const d of deliveries) {

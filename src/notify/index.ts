@@ -2,6 +2,7 @@ export {
   NotifyService as default,
   NotifyService,
   NotifyError,
+  DEFAULT_TARGET,
   type ChannelNotRunning,
   type NotifyAts,
   type NotifyCounters,
