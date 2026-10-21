@@ -121,6 +121,7 @@ function feishuSecretRef(config: Record<string, unknown> | undefined): string {
 
 const CHANNEL_SERVICES = ['dingtalk', 'feishu'] as const
 type AdminChannel = (typeof CHANNEL_SERVICES)[number]
+const CHANNEL_TITLES: Record<AdminChannel, string> = { dingtalk: 'DingTalk', feishu: 'Feishu' }
 
 /**
  * 同上，但供 `setSecret`/`clearSecret` 写入/清除单个钥匙串条目时使用：数组形式的
@@ -519,12 +520,9 @@ export class AgentKitAdmin extends TypertRemoteService {
     const reason = this.readOnlyReason(await this.locate())
     if (reason) failWith('read_only', reason)
     const service = this.inbox(name)
-    // 钉钉沿用旧行为：未运行时视为没有未匹配消息；飞书未运行则明确报错
-    if (!service) {
-      if (name === 'dingtalk') return []
-      failWith('bad_request', `${name} 未运行，先启用并保存 agent-kit-${name}`)
-    }
-    return service!.unmatchedMessages()
+    // 各渠道一致：服务未运行时视为没有未匹配消息
+    if (!service) return []
+    return service.unmatchedMessages()
   }
 
   /** 仅本机设置页可查当前登录账号的收件人候选；业务行决定保存到自己的哪个目标字段。 */
@@ -535,9 +533,9 @@ export class AgentKitAdmin extends TypertRemoteService {
     if (kind !== 'group' && kind !== 'user') failWith('bad_request', 'recipient kind must be group or user')
     if (typeof query !== 'string' || query.trim().length < 2 || query.trim().length > 80) failWith('bad_request', 'query must be 2–80 characters')
     const service = this.inbox(name)
-    if (!service) failWith('bad_request', name === 'dingtalk' ? 'DingTalk service is not running' : `${name} 未运行，先启用并保存 agent-kit-${name}`)
+    if (!service) failWith('bad_request', `${CHANNEL_TITLES[name]} service is not running`)
     try {
-      return await service!.searchRecipients(kind, query.trim())
+      return await service.searchRecipients(kind, query.trim())
     } catch (error) {
       failWith('bad_request', `recipient search failed: ${redactError(error)}`)
     }

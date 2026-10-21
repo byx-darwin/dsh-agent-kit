@@ -104,9 +104,18 @@ describe('AgentKitAdmin', () => {
     expect(await admin.setSecret('credentials', 'app-secret', 'FEISHU_APP_SECRET')).toEqual({ configured: true, source: 'credentials' })
   })
 
+  it('rejects an unknown secret ref and accepts a custom Feishu appSecretRef', async () => {
+    const admin = await setup('127.0.0.1')
+    await expect(admin.setSecret('credentials', 'v', 'SOME_UNKNOWN_REF')).rejects.toThrow(/unknown secret ref/)
+    const { version } = await admin.status()
+    await admin.saveService('agent-kit-feishu', true, { appId: 'cli_x', appSecretRef: 'MY_FEISHU' }, version)
+    expect(await admin.setSecret('credentials', 'v', 'MY_FEISHU')).toEqual({ configured: true, source: 'credentials' })
+  })
+
   it('serves unmatched messages and recipient search per channel and rejects unknown channels', async () => {
     const admin = await setup('127.0.0.1')
-    await expect(admin.channelUnmatched('feishu')).rejects.toThrow(/not running|未运行/)
+    expect(await admin.channelUnmatched('feishu')).toEqual([])
+    await expect(admin.channelSearchRecipients('feishu', 'group', 'ab')).rejects.toThrow(/Feishu service is not running/)
     await expect(admin.channelUnmatched('email' as never)).rejects.toThrow(/bad_request/)
     await expect(admin.channelSearchRecipients('email' as never, 'group', 'ab')).rejects.toThrow(/bad_request/)
   })
