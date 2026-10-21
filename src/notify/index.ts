@@ -3,11 +3,14 @@ export {
   NotifyService,
   NotifyError,
   type ChannelNotRunning,
+  type NotifyAts,
   type NotifyCounters,
   type NotifyErrorCode,
   type NotifySendOptions,
   type NotifySendResult,
   type NotifyStatus,
+  type NotifyTargets,
 } from './service.js'
+export type { NotifyDelivery } from './deliver.js'
 export { NotifyConfig, NOTIFY_CHANNELS, type NotifyChannel } from './config.js'
 export { DEFAULT_LOGIN_TTL_MS, type ChannelName, type ChannelStatus, type LoginSession } from '../common/channel.js'

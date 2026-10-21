@@ -100,8 +100,8 @@ describe('bundle patch.yml in a real dsh loader', () => {
         status = await bctx.notify.status()
       },
     })
-    expect(sent).toMatchObject({ channel: 'dingtalk', results: [{ ok: true }] })
-    expect(status).toMatchObject({ channel: 'dingtalk', channels: { dingtalk: { online: true } } })
+    expect(sent).toMatchObject({ deliveries: [{ channel: 'dingtalk', results: [{ ok: true }] }] })
+    expect(status).toMatchObject({ defaultChannel: 'dingtalk', channels: { dingtalk: { online: true } } })
   })
 
   it('routes group @ messages to the matching business plugins through one dws listener', async () => {

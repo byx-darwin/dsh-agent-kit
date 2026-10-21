@@ -6,10 +6,10 @@ export type NotifyChannel = ChannelName
 export const NOTIFY_CHANNELS = CHANNEL_NAMES
 
 export interface NotifyConfig {
-  /** 通知发往钉钉。 */
+  /** 默认渠道：`send()` 未指定 `targets` 时发往这里。 */
   channel: NotifyChannel
 }
 
 export const NotifyConfig: z<ConfigInput<NotifyConfig>, NotifyConfig> = z.object({
-  channel: z.const('dingtalk').default('dingtalk').description('通知固定发往钉钉'),
+  channel: z.union(NOTIFY_CHANNELS.map((c) => z.const(c))).default('dingtalk').description('默认渠道：send() 未指定 targets 时发往这里'),
 }) as z<ConfigInput<NotifyConfig>, NotifyConfig>

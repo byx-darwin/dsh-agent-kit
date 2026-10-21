@@ -1,43 +1,33 @@
 import type { Context } from '@deepseek-ai/cordis'
-import type { ChannelStatus, LoginSession } from '../common/channel.js'
-import { KitError, type KitErrorOptions } from '../common/errors.js'
+import type { ChannelSendCommon, ChannelService, ChannelStatus, LoginSession } from '../common/channel.js'
 import { digest } from '../common/redact.js'
 import { KitService, type ServiceHealth } from '../common/service.js'
 import type { DingtalkAt, DingtalkTarget } from '../dingtalk/args.js'
-import type { DingtalkService } from '../dingtalk/service.js'
 import { NOTIFY_CHANNELS, NotifyConfig, type NotifyChannel } from './config.js'
+import { channelUnavailable, deliver, requireLogin, requireLogout, type NotifyDelivery } from './deliver.js'
+import { NotifyError } from './errors.js'
 
-export type NotifyErrorCode = 'channel_unavailable' | 'invalid_channel'
+export { NotifyError, type NotifyErrorCode } from './errors.js'
 
-export class NotifyError extends KitError {
-  declare readonly code: NotifyErrorCode
-
-  constructor(code: NotifyErrorCode, message: string, options: KitErrorOptions = {}) {
-    super('notify', code, message, options)
-    this.name = 'NotifyError'
-  }
+/** 按渠道给出的发送目标；缺省的渠道使用其配置中的默认目标。 */
+export interface NotifyTargets {
+  dingtalk?: DingtalkTarget
 }
 
-export interface NotifySendOptions {
-  title?: string
-  /** Markdown 正文，与 `text` 二选一。 */
-  markdown?: string
-  text?: string
-  /** 缺省使用钉钉配置的 defaultTarget。 */
-  targets?: { dingtalk?: DingtalkTarget }
-  /** 钉钉 @ 人。 */
-  at?: { dingtalk?: DingtalkAt }
-  /** 透传给钉钉 user 身份用于去重与重试。 */
-  idempotencyKey?: string
-  traceId?: string
-  signal?: AbortSignal
+/** 按渠道给出的 @ 人。 */
+export interface NotifyAts {
+  dingtalk?: DingtalkAt
+}
+
+export interface NotifySendOptions extends ChannelSendCommon {
+  /** 写了哪些渠道就只发这些渠道；缺省或为空时发往默认渠道。 */
+  targets?: NotifyTargets
+  at?: NotifyAts
 }
 
 export interface NotifySendResult {
-  /** 实际发往的渠道。 */
-  channel: NotifyChannel
-  /** 渠道自己的逐目标结果。 */
-  results: Array<{ ok: boolean; messageId?: string; error?: KitError }>
+  /** 每个渠道一项，顺序与发送的渠道顺序一致。 */
+  deliveries: NotifyDelivery<NotifyChannel>[]
 }
 
 /** 未运行的渠道（对应的行未启用或启动失败）。 */
@@ -48,12 +38,9 @@ export interface ChannelNotRunning {
 }
 
 export interface NotifyStatus {
-  /** 当前生效的渠道。 */
-  channel: NotifyChannel
-  /** `config`：来自配置；`runtime`：运行中被 `use()` 切换过（重启或修改配置后回到配置值）。 */
-  source: 'config' | 'runtime'
-  /** 每个渠道的登录状态。 */
-  channels: Record<NotifyChannel, (ChannelStatus & { running: true }) | ChannelNotRunning>
+  defaultChannel: NotifyChannel
+  /** 每个渠道是否运行及登录状态。 */
+  channels: Partial<Record<NotifyChannel, (ChannelStatus & { running: true }) | ChannelNotRunning>>
 }
 
 export interface NotifyCounters {
@@ -69,22 +56,18 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-type Channel = DingtalkService
-
 /**
- * 通知入口：业务包调用 `ctx.notify.send()` 发往钉钉。
+ * 通知入口：业务包调用 `ctx.notify.send()`，未指定 `targets` 时发往默认渠道，指定了则只发这些渠道。
  *
- * - 切换渠道：修改本行配置的 `channel`，或在运行中调用 `use()`。两种方式都不重载本服务与依赖它的
- *   业务插件：修改配置时在本 fiber 的 `internal/update` 钩子里原地换上新值（不调用 `next()`，否决
- *   cordis 默认的重启）；`use()` 只改内存中的选择，重启或配置变更后回到配置值。
+ * - 修改本行配置的 `channel`（默认渠道）不重载本服务与依赖它的业务插件：在本 fiber 的 `internal/update`
+ *   钩子里原地换上新值（不调用 `next()`，否决 cordis 默认的重启）。
  * - 不 inject 渠道服务，而是在发送时用 `ctx.get()` 取：cordis 的 inject 都是必需的，inject 了渠道就
  *   意味着停用任一渠道都会连带卸载本服务以及所有依赖它的业务插件。
- * - `status()` 给出每个渠道的实时登录状态；`login()` / `logout()` 转给对应渠道。
+ * - 多渠道时并行发送；某个渠道未运行或失败只体现在它自己的结果里，不影响其他渠道。
  */
 export class NotifyService extends KitService<NotifyCounters> {
   static Config = NotifyConfig
   private current: NotifyConfig
-  private override?: NotifyChannel
   private lastSuccessAt: number | null = null
   private readonly counters: NotifyCounters = { success: 0, failure: 0, lastFailureAt: null, lastErrorCode: null }
 
@@ -93,11 +76,10 @@ export class NotifyService extends KitService<NotifyCounters> {
     this.current = config
     const self = this
     ctx.on('internal/update', function (next, _noSave, _restart) {
-      // this 为本插件的 fiber；next 已经过 NotifyConfig 解析。配置是运维的最新决定，覆盖 use() 的临时选择。
+      // this 为本插件的 fiber；next 已经过 NotifyConfig 解析。
       self.current = next as NotifyConfig
-      self.override = undefined
       ;(this as unknown as { config: NotifyConfig }).config = self.current
-      self.logger.info('notify channel updated from config', { channel: self.current.channel })
+      self.logger.info('notify default channel updated from config', { channel: self.current.channel })
     })
   }
 
@@ -105,47 +87,46 @@ export class NotifyService extends KitService<NotifyCounters> {
     return this.current
   }
 
-  /** 当前生效的渠道。 */
-  get channel(): NotifyChannel {
-    return this.override ?? this.current.channel
+  /** 默认渠道。 */
+  get defaultChannel(): NotifyChannel {
+    return this.current.channel
   }
 
-  /** 运行中切换渠道，立即生效；重启或修改配置后回到配置值。要长期切换请改配置。 */
-  use(channel: NotifyChannel): void {
-    if (!NOTIFY_CHANNELS.includes(channel)) throw new NotifyError('invalid_channel', `unknown channel ${String(channel)}`)
-    this.override = channel === this.current.channel ? undefined : channel
-    this.logger.info('notify channel switched at runtime', { channel })
+  private service(name: NotifyChannel): ChannelService | undefined {
+    return (this.ctx as unknown as { get(name: string): ChannelService | undefined }).get(name)
   }
 
-  private service(name: NotifyChannel): Channel | undefined {
-    return (this.ctx as unknown as { get(name: string): Channel | undefined }).get(name)
-  }
-
-  private require(name: NotifyChannel): Channel {
+  private require(name: NotifyChannel): ChannelService {
     const svc = this.service(name)
-    if (!svc) throw new NotifyError('channel_unavailable', `${name} is not running; enable agent-kit-${name}`, { details: { channel: name } })
+    if (!svc) throw channelUnavailable(name)
     return svc
   }
 
   async send(options: NotifySendOptions): Promise<NotifySendResult> {
-    const channel = this.channel
-    this.logger.info('notify send', { traceId: options.traceId, channel, body: digest(options.markdown ?? options.text ?? '') })
-    try {
-      const svc = this.require(channel)
-      const common = { title: options.title, markdown: options.markdown, text: options.text, idempotencyKey: options.idempotencyKey, traceId: options.traceId, signal: options.signal }
-      const r = await svc.send({ ...common, target: options.targets?.dingtalk, at: options.at?.dingtalk })
-      const results = r.results.map((x) => ({ ok: x.ok, ...(x.messageId ? { messageId: x.messageId } : {}), ...(x.error ? { error: x.error } : {}) }))
-      const failed = results.find((x) => !x.ok)
+    const named = Object.entries(options.targets ?? {}).filter(([, target]) => target !== undefined).map(([name]) => name)
+    for (const name of named) {
+      if (!NOTIFY_CHANNELS.includes(name as NotifyChannel)) throw new NotifyError('invalid_channel', `unknown channel ${name}`, { details: { channel: name } })
+    }
+    const channels = named.length > 0 ? (named as NotifyChannel[]) : [this.defaultChannel]
+    this.logger.info('notify send', { traceId: options.traceId, channels, body: digest(options.markdown ?? options.text ?? '') })
+    if (named.length === 0 && !this.service(this.defaultChannel)) {
+      this.recordFailure('channel_unavailable')
+      throw channelUnavailable(this.defaultChannel)
+    }
+    const common: ChannelSendCommon = { title: options.title, markdown: options.markdown, text: options.text, idempotencyKey: options.idempotencyKey, traceId: options.traceId, signal: options.signal }
+    const deliveries = await deliver(
+      channels.map((channel) => ({ channel, service: this.service(channel), target: (options.targets as Partial<Record<NotifyChannel, unknown>> | undefined)?.[channel], at: (options.at as Partial<Record<NotifyChannel, unknown>> | undefined)?.[channel] })),
+      common,
+    )
+    for (const d of deliveries) {
+      const failed = d.results.find((x) => !x.ok)
       if (failed) this.recordFailure(failed.error?.code ?? 'send_failed')
       else this.recordSuccess()
-      return { channel, results }
-    } catch (e) {
-      this.recordFailure((e as KitError).code ?? 'send_failed')
-      throw e
     }
+    return { deliveries }
   }
 
-  /** 当前渠道与每个渠道的实时登录状态。 */
+  /** 默认渠道与每个渠道的实时登录状态。 */
   async status(): Promise<NotifyStatus> {
     const entries = await Promise.all(
       NOTIFY_CHANNELS.map(async (name) => {
@@ -154,17 +135,17 @@ export class NotifyService extends KitService<NotifyCounters> {
         return [name, { ...(await svc.status()), running: true }] as const
       }),
     )
-    return { channel: this.channel, source: this.override ? 'runtime' : 'config', channels: Object.fromEntries(entries) as NotifyStatus['channels'] }
+    return { defaultChannel: this.defaultChannel, channels: Object.fromEntries(entries) as NotifyStatus['channels'] }
   }
 
-  /** 登录指定渠道（缺省为当前渠道），见各渠道的 `login()`。 */
-  async login(channel: NotifyChannel = this.channel, options: { signal?: AbortSignal } = {}): Promise<LoginSession> {
-    return this.require(channel).login(options)
+  /** 登录指定渠道；渠道不需要登录（如机器人）时抛出 `login_unsupported`。 */
+  async login(channel: NotifyChannel, options: { signal?: AbortSignal } = {}): Promise<LoginSession> {
+    return requireLogin(channel, this.require(channel))(options)
   }
 
-  /** 退出指定渠道（缺省为当前渠道）的登录，见各渠道的 `logout()`。 */
-  async logout(channel: NotifyChannel = this.channel): Promise<ChannelStatus> {
-    return this.require(channel).logout()
+  /** 退出指定渠道的登录；渠道不需要登录时抛出 `login_unsupported`。 */
+  async logout(channel: NotifyChannel): Promise<ChannelStatus> {
+    return requireLogout(channel, this.require(channel))()
   }
 
   private recordSuccess(): void {
@@ -180,14 +161,15 @@ export class NotifyService extends KitService<NotifyCounters> {
 
   health(): ServiceHealth<NotifyCounters> {
     const counters = { ...this.counters }
-    const channel = this.channel
+    const channel = this.defaultChannel
     const svc = this.service(channel)
-    if (!svc) return { status: 'failed', detail: `channel ${channel} is not running`, counters }
-    if (svc.health().status === 'failed') return { status: 'failed', detail: `channel ${channel}: ${svc.health().detail}`, counters }
+    if (!svc) return { status: 'failed', detail: `default channel ${channel} is not running`, counters }
+    const channelHealth = svc.health()
+    if (channelHealth.status === 'failed') return { status: 'failed', detail: `default channel ${channel}: ${channelHealth.detail}`, counters }
     if (counters.lastFailureAt !== null && (this.lastSuccessAt === null || counters.lastFailureAt > this.lastSuccessAt)) {
       return { status: 'degraded', detail: `last send failed: ${counters.lastErrorCode}`, counters }
     }
-    return { status: 'ok', detail: `channel: ${channel}${this.override ? ' (runtime)' : ''}`, counters }
+    return { status: 'ok', detail: `default channel: ${channel}`, counters }
   }
 }
 

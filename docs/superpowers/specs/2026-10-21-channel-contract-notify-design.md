@@ -133,7 +133,7 @@
 ### 4. 错误处理
 
 - 错误仍为 `KitError`，带 `code` 与 `retryable`。
-- `NotifyErrorCode` 新增 `login_unsupported`（不可重试），保留 `channel_unavailable`、`invalid_channel`。
+- `NotifyErrorCode` 新增 `login_unsupported`（不可重试）与 `send_failed`（可重试，渠道 `send()` 抛出非 `KitError` 异常时包装使用），保留 `channel_unavailable`、`invalid_channel`。
 - 直接抛错的情况只有两种：未指定渠道且默认渠道未运行；`targets` 中出现未知渠道名（`invalid_channel`）。
 - 渠道 `send()` 抛出异常（而不是返回失败结果）时，`notify` 将其转为该渠道的失败结果，不影响其他渠道。
 - `MessageRouter` 中 handler 抛错或超时：记日志、计数，不影响其他消息；日志只记正文摘要。
@@ -145,7 +145,8 @@
   - `notify.send()` 返回值改为 `{ deliveries }`；
   - 删除 `notify.use()`；
   - `notify.status()` 返回 `{ defaultChannel, channels }`，不再有 `channel`、`source`；
-  - `notify.login()` / `logout()` 必须传入渠道。
+  - `notify.login()` / `logout()` 必须传入渠道；
+  - 渠道发送失败（如钉钉 `DingtalkSendError`）不再从 `notify.send()` 抛出，改为出现在对应 `deliveries[i].results[j].error` 中；
 - 已知使用方 iproost 不读取 `send()` 返回值、不调用 `use()`，读取的钉钉消息字段全部保留，预计无需修改代码。
 - 是否在飞书接入后再一起发布，实施完成后再定。
 

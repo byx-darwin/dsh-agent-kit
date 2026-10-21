@@ -50,12 +50,15 @@ export {
   type ChannelNotRunning,
   type ChannelStatus,
   type LoginSession,
+  type NotifyAts,
   type NotifyChannel,
   type NotifyCounters,
+  type NotifyDelivery,
   type NotifyErrorCode,
   type NotifySendOptions,
   type NotifySendResult,
   type NotifyStatus,
+  type NotifyTargets,
 } from './notify/index.js'
 export {
   AgentTasksService,

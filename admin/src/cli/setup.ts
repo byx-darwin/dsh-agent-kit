@@ -224,8 +224,8 @@ export async function runSetup(opts: { home: string; profileName?: string; io: C
   const enabled = await p.checkbox(msg.SELECT_SERVICES_MESSAGE, ids.map((id) => ({ value: id, name: msg.KIT_TITLES[id]!, checked: snap.entries[id].enabled })))
 
   // 先装好渠道 CLI，后面的登录检查、按群名搜索才用得上
-  const channelRows = { dingtalk: 'agent-kit-dingtalk' } as const
-  const enabledChannels = NOTIFY_CHANNELS.filter((c) => enabled.includes(channelRows[c]))
+  const channelRows: Partial<Record<NotifyChannel, KitId>> = { dingtalk: 'agent-kit-dingtalk' }
+  const enabledChannels = NOTIFY_CHANNELS.filter((c): c is ChannelCliId & NotifyChannel => c in CHANNEL_CLIS && enabled.includes(channelRows[c]!))
   await installMissingClis(p, io, deps, ctx.findExecutable, enabledChannels)
   const dws = ctx.findExecutable('dws')
   const loggedIn =
