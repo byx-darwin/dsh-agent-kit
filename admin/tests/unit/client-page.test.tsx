@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { SettingsPage } from '../../src/client/settings-page.js'
 import { AGENT_KIT_REMOTE, createAdminApi, type AdminApi, type AdminStatus } from '../../src/client/remote.js'
 import { en, zh } from '../../src/client/locale.js'
@@ -522,6 +522,11 @@ describe('DingTalk sign-in panel', () => {
     })
 
   it('shows the signed-in account and signs out after confirmation', async () => {
+    // 到期时间写死在 10-24；固定“现在”为一个月前，否则临近该日期（不足 3 天）时面板会正确地显示“即将过期”。
+    // 只伪造 Date，不伪造定时器，findByText / waitFor 照常轮询。
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-24T20:00:00+08:00'))
+    onTestFinished(() => { vi.useRealTimers() })
     const api = fakeApi(withDingtalk())
     api.dingtalkAuth = vi.fn(async () => ({ installed: true, authenticated: true, user: '张三', corp: '示例公司', expiresAt: '2026-09-24T21:30:00+08:00', refreshExpiresAt: '2026-10-24T19:30:00+08:00' }))
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
