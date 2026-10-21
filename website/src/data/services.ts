@@ -203,7 +203,7 @@ export const SERVICES: ServiceMeta[] = [
       { code: 'timeout', retryable: '是', meaning: '单次请求超过 timeoutMs。' },
       { code: 'aborted', retryable: '否', meaning: '调用方 signal 中止或 Service 卸载。' },
       { code: 'network', retryable: '是', meaning: '网络错误，请求未得到飞书响应。' },
-      { code: 'api_error', retryable: 'HTTP 5xx 时是' as never, meaning: '其余飞书接口错误；HTTP 5xx 时可重试。' },
+      { code: 'api_error', retryable: 'HTTP 5xx 时是', meaning: '其余飞书接口错误；HTTP 5xx 时可重试。' },
       INVALID_CONFIG,
     ],
     descriptions: {

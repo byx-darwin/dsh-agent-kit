@@ -307,7 +307,7 @@ export async function apply(ctx: Context) {
 | 字段 | 说明 |
 |---|---|
 | `chatType` | `'p2p'`（私聊）或 `'group'`（群聊） |
-| `messageType` | 飞书原始消息类型，如 `text`、`post`、`image`；非文本类消息的 `content` 为空 |
+| `messageType` | 飞书原始消息类型，如 `text`、`post`、`image`；`text` 消息的 `content` 去掉机器人自己的 @、其他 @ 还原为 `@名字`；`post` 只提取 `text` / `a` 节点文字（有标题时为第一行，不含 @）；其他类型为空串 |
 | `mentions` | 消息中被 @ 的对象：`Array<{ openId, name }>` |
 
 `senderId` 是发送者的 `open_id`，`eventId` 取飞书 `message_id`。错误为 `FeishuSendError`，`code` 为 `invalid_target`、`auth_failed`、`permission_denied`、`rate_limited`、`timeout`、`aborted`、`network`、`api_error`；其中 `rate_limited`、`timeout`、`network` 可重试，`api_error` 在 HTTP 5xx 时可重试，`aborted`（调用方中止或 Service 卸载）不可重试。

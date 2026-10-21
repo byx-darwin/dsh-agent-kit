@@ -13,7 +13,7 @@ import Notice from '../../components/Notice.astro'
 ```ts
 const r = await ctx.feishu.send({
   text: '纯文本',                          // 或 markdown: '## 标题\n正文'（以交互卡片发送）
-  title: '库存告警',                       // 可选：Markdown 卡片标题
+  title: '库存告警',                       // 可选：Markdown 为卡片标题，纯文本为正文第一行
   target: { chatId: 'oc_xxx' },           // 或 { openId: 'ou_xxx' }
   at: { openIds: ['ou_xxx'] },            // 也支持 all: true
   idempotencyKey: 'evt_...',
@@ -23,7 +23,7 @@ const r = await ctx.feishu.send({
 // r.results: Array<{ ok, messageId?, error? }>
 ```
 
-`target` 省略时使用配置的 `defaultTarget`；目标、@ 列表和幂等键会先经过格式校验。`idempotencyKey` 映射为飞书请求的 `uuid`（1 小时内去重）；给出时，可重试的失败最多重试 `retry.maxAttempts` 次，否则不自动重试。`dryRun: true` 时只记日志，不调用飞书接口。
+`text` 与 `markdown` 二选一；纯文本发送时若给出 `title`，它会作为第一行加在正文前。`target` 省略时使用配置的 `defaultTarget`；目标、@ 列表和幂等键会先经过格式校验。`idempotencyKey` 映射为飞书请求的 `uuid`（1 小时内去重）；给出时，可重试的失败最多重试 `retry.maxAttempts` 次，否则不自动重试。`dryRun: true` 时只记日志，不调用飞书接口。
 
 接收群内 @ 机器人与私聊机器人的消息：
 
@@ -74,7 +74,7 @@ const { candidates, complete } = await ctx.feishu.searchRecipients('group', '库
 | `conversationId` | `string` | 会话 `chat_id`，群与单聊都有；路由键 |
 | `chatType` | `'p2p' \| 'group'` | 单聊或群聊 |
 | `senderId` | `string?` | 发送者 `open_id` |
-| `content` | `string` | 文本消息的正文（`text`、`post` 会提取文字，机器人自己的 @ 被去掉，其他 @ 还原为 `@名字`）；其他类型为空串 |
+| `content` | `string` | `text` 消息：去掉机器人自己的 @，其他 @ 还原为 `@名字`；`post` 消息：只提取 `text` / `a` 节点的文字（有标题时标题为第一行），不含 @ 节点；其他类型为空串 |
 | `messageType` | `string` | 飞书原始类型，如 `text`、`post`、`image` |
 | `mentions` | `Array<{ openId, name }>` | 消息中被 @ 的对象 |
 | `timestamp` | `number?` | 消息创建时间（毫秒） |
