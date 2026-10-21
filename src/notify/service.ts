@@ -120,7 +120,12 @@ export class NotifyService extends KitService<NotifyCounters> {
     )
     for (const d of deliveries) {
       const failed = d.results.find((x) => !x.ok)
-      if (failed) this.recordFailure(failed.error?.code ?? 'send_failed')
+      if (failed) {
+        const code = failed.error?.code ?? 'send_failed'
+        // 渠道失败不再抛出，这里留一条日志（不含消息正文）。
+        this.logger.warn('notify delivery failed', { traceId: options.traceId, channel: d.channel, code })
+        this.recordFailure(code)
+      }
       else this.recordSuccess()
     }
     return { deliveries }

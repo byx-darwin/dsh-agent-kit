@@ -223,6 +223,9 @@ await ctx.dingtalk.send({ title: frame.title, markdown: renderAlert(frame), idem
 - `notify.status()` 返回 `{ defaultChannel, channels }`，不再有 `channel`、`source`。
 - `notify.login()` / `logout()` 必须传入渠道名。
 - 钉钉消息新增 `senderId`（与 `senderOpenDingtalkId` 相同），原有字段不变。
+- `notify.channel` getter 已删除，改用 `notify.defaultChannel`。
+- 调用方传入的 `signal` 中止后，`notify.send()` 不再 reject，中止会作为对应渠道结果中的错误返回（钉钉为 `code: 'aborted'`）。
+- 依赖范围 `^0.2.0` 不会自动升级到 0.3，需要改为 `^0.3.0`。
 
 ### 群内 @ 消息下发到业务插件
 

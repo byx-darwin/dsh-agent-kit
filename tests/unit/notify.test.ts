@@ -46,6 +46,22 @@ describe('NotifyService', () => {
     const r = await notify.send({ text: 'hello', targets: { dingtalk: { chatId: 'cidA' } } })
     expect(r.deliveries).toEqual([{ channel: 'dingtalk', results: [{ ok: false, error: expect.objectContaining({ code: 'channel_unavailable' }) }] }])
     expect(notify.health()).toMatchObject({ status: 'failed' })
+    expect(root.logs.some((l) => l.includes('notify delivery failed'))).toBe(true)
+  })
+
+  it('turns a DingtalkSendError into a failed result instead of rejecting, and degrades health', async () => {
+    await root.root.plugin(DingtalkService, { dwsPath: dws.path, identity: 'user', defaultTarget: { chatId: 'cidA' } })
+    await root.root.plugin(NotifyService, { channel: 'dingtalk' })
+    dws.setScenario({ send: [{ mode: 'fail', category: 'server', message: 'boom' }] })
+    const notify = root.root.get('notify')!
+    // 不带 idempotencyKey，钉钉不重试，测试保持快速。
+    const result = await notify.send({ text: 'x' })
+    expect(result.deliveries).toHaveLength(1)
+    const first = result.deliveries[0]!.results[0]!
+    expect(first.ok).toBe(false)
+    // 假 dws 的 server 类失败 => exit_nonzero，且 server 属于可重试类别。
+    expect(first.error).toMatchObject({ code: 'exit_nonzero', retryable: true })
+    expect(notify.health()).toMatchObject({ status: 'degraded' })
   })
 
   it('rejects unknown channels in targets', async () => {

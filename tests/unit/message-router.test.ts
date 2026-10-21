@@ -86,7 +86,7 @@ describe('MessageRouter', () => {
     expect(r.counters()).toMatchObject({ handlerErrors: 1, dispatched: 1 })
   })
 
-  it('aborts an in-flight handler on reset and on route close', async () => {
+  it('aborts an in-flight handler when its route closes', async () => {
     const { r } = router()
     const signals: AbortSignal[] = []
     const close = r.register({ conversationId: 'c1' }, (_m, { signal }) => { signals.push(signal); return new Promise(() => {}) })
@@ -97,8 +97,28 @@ describe('MessageRouter', () => {
     expect(signals[0]!.aborted).toBe(true)
     expect(r.size).toBe(0)
     close()
+  })
+
+  it('reset aborts the in-flight handler, clears the queue, and dispatch resumes after setReady(true)', async () => {
+    const { r } = router()
+    const signals: AbortSignal[] = []
+    const seen: string[] = []
+    r.register({ conversationId: 'c1' }, (m, { signal }) => {
+      if (m.eventId === 'e1') { signals.push(signal); return new Promise(() => {}) }
+      seen.push(m.eventId)
+    })
+    r.setReady(true)
+    r.accept(msg('e1', 'c1'))
+    r.accept(msg('e2', 'c1'))
+    await until(() => signals.length === 1)
     r.reset()
-    expect(r.size).toBe(0)
+    expect(signals[0]!.aborted).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(seen).toEqual([])
+    r.setReady(true)
+    r.accept(msg('e3', 'c1'))
+    await until(() => seen.length === 1)
+    expect(seen).toEqual(['e3'])
   })
 
   it('rejects invalid routes', () => {
