@@ -2,9 +2,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { execFileSync } from 'node:child_process'
 import { realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
+import { Service, type Context } from '@deepseek-ai/cordis'
 import type { JSONSchemaType } from 'ajv'
 import { AgentTasksService, type AgentTaskEvent } from '../../src/agent-tasks/service.js'
 import type { AgentTasksConfig } from '../../src/agent-tasks/config.js'
@@ -12,6 +12,7 @@ import { extractJson } from '../../src/agent-tasks/extract-json.js'
 import { ConcurrencyQueue, QueueAbortedError, QueueFullError } from '../../src/agent-tasks/queue.js'
 import { isUntrusted, renderPrompt, untrusted } from '../../src/agent-tasks/untrusted.js'
 import { FakeSubagentProvider, FakeSubagentRuntime } from '../../src/testing/fake-subagent.js'
+import type { SubagentProvider } from '../../src/agent-tasks/subagent-types.js'
 import { createRoot, deferred, until, type TestRoot } from '../helpers.js'
 
 interface Verdict {
@@ -142,6 +143,45 @@ describe('AgentTasksService', () => {
     execFileSync('git', ['-C', repo, '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-m', 'initial'])
     return repo
   }
+
+  it('runs through provider.start with an absolute cwd when subagents has no start (dsh 0.2)', async () => {
+    // dsh 0.2 的 subagents 只保留 getProvider / list / registerProvider，去掉了 start(name, request)
+    class ModernRuntime extends Service {
+      constructor(ctx: Context, private readonly config: { providers: SubagentProvider[] }) {
+        super(ctx, 'subagents')
+      }
+      getProvider(name: string) { return this.config.providers.find((p) => p.name === name) }
+      list() { return this.config.providers.map((p) => p.name) }
+    }
+    provider.handler = () => ({ output: [{ type: 'text', text: '{"abnormal":false,"reason":"ok"}' }], stopReason: 'completed' })
+    await t.root.plugin(ModernRuntime as never, { providers: [provider] } as never)
+    await t.root.plugin(AgentTasksService, { workspaceDir: join(workspace, 'tasks') } as never)
+    let consumer!: Context
+    await t.root.inject(['agentTasks'], (ctx) => { consumer = ctx })
+    const result = await consumer.agentTasks.run({ provider: 'fake', title: 't', prompt: 'p', outputSchema: VerdictSchema })
+    expect(result.output).toEqual({ abnormal: false, reason: 'ok' })
+    const request = provider.requests[0] as unknown as { cwd?: string; parent: { session: { header: { cwd: string } } } }
+    expect(request.cwd).toBe(request.parent.session.header.cwd)
+    const tasksRoot = join(workspace, 'tasks')
+    expect(isAbsolute(request.cwd!)).toBe(true)
+    expect(request.cwd!.startsWith(tasksRoot) || request.cwd!.startsWith(await realpath(tasksRoot))).toBe(true)
+  })
+
+  it('rejects a dsh 0.2 provider that has no one-shot start', async () => {
+    class ModernRuntime extends Service {
+      constructor(ctx: Context, private readonly config: { providers: SubagentProvider[] }) {
+        super(ctx, 'subagents')
+      }
+      getProvider(name: string) { return this.config.providers.find((p) => p.name === name) }
+      list() { return this.config.providers.map((p) => p.name) }
+    }
+    const continuableOnly = { name: 'local', capabilities: { toolFilter: true }, inheritsParentContext: false } as unknown as SubagentProvider
+    await t.root.plugin(ModernRuntime as never, { providers: [continuableOnly] } as never)
+    await t.root.plugin(AgentTasksService, { workspaceDir: join(workspace, 'tasks') } as never)
+    let consumer!: Context
+    await t.root.inject(['agentTasks'], (ctx) => { consumer = ctx })
+    await expect(consumer.agentTasks.run({ provider: 'local', title: 't', prompt: 'p' })).rejects.toMatchObject({ code: 'provider_failed', message: expect.stringContaining('one-shot') })
+  })
 
   it('applies defaults and validates config', async () => {
     const { svc } = await setup()

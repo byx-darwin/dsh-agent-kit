@@ -67,11 +67,16 @@ export interface SubagentProvider {
   readonly name: string
   readonly capabilities: SubagentCapabilities
   readonly inheritsParentContext: boolean
-  start(request: SubagentStartRequest & { descriptor: unknown }): Promise<SubagentRun>
+  /**
+   * 一次性执行。dsh 0.1 由运行时转调并附带 `descriptor`；dsh 0.2 起本包直接调用，并按 0.2 的
+   * `ResolvedSubagentStartRequest` 附带绝对路径 `cwd`。0.2 中只支持可续接会话的 provider 没有此方法。
+   */
+  start?(request: SubagentStartRequest & { descriptor?: unknown; cwd?: string }): Promise<SubagentRun>
 }
 
 export interface SubagentRuntime {
   getProvider(name: string): SubagentProvider | undefined
   list(): string[]
-  start(name: string, request: SubagentStartRequest): Promise<SubagentRun>
+  /** dsh 0.1 才有；0.2 改为面向会话的 `startActivation()`，本包改为直接调用 provider 的 `start()`。 */
+  start?(name: string, request: SubagentStartRequest): Promise<SubagentRun>
 }

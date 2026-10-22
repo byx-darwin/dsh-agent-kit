@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
+import { Service, type Context } from '@deepseek-ai/cordis'
 import { boot, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { createFakeDws } from '../../src/testing/fake-dws.js'
 import { FakeSubagentProvider } from '../../src/testing/fake-subagent.js'
@@ -55,6 +55,30 @@ async function start(profilePatches: Patch[]) {
 
 const enable = (id: string, config: Record<string, unknown>, extra: Patch = {}): Patch => ({ id: `agent-kit-${id}`, disabled: false, config, ...extra })
 
+/**
+ * 配置错误的行：dsh 0.1 整体启动失败；dsh 0.2 起只有这一行失败，其余照常启动，对应 Service 不存在。两种都接受。
+ */
+async function expectRowFails(patches: Patch[], service: string, message: RegExp): Promise<void> {
+  let booted: Context
+  try {
+    booted = await start(patches)
+  } catch (e) {
+    expect((e as Error).message).toMatch(message)
+    ctx = undefined
+    return
+  }
+  expect(booted.get(service), service).toBeUndefined()
+  await booted.fiber.dispose()
+  ctx = undefined
+}
+
+/** dsh 0.2 的 subagents 依赖 workingDirectory（真实环境由 dsh 基础 bundle 提供）；测试里用最小替身。0.1 不依赖它，多提供无害。 */
+class FakeWorkingDirectory extends Service {
+  constructor(ctx: Context) {
+    super(ctx, 'workingDirectory')
+  }
+}
+
 describe('bundle patch.yml in a real dsh loader', () => {
   it('registers every service disabled by default', async () => {
     const c = await start([])
@@ -78,12 +102,10 @@ describe('bundle patch.yml in a real dsh loader', () => {
     expect(c.get('jev')).toBeUndefined()
   })
 
-  it('fails to boot when an enabled service has invalid config', async () => {
-    await expect(start([enable('dingtalk', { identity: 'bot' })])).rejects.toThrow(/expected|failed to load|did not activate/)
-    ctx = undefined
+  it('does not start a service whose config is invalid', async () => {
+    await expectRowFails([enable('dingtalk', { identity: 'bot' })], 'dingtalk', /expected|failed to load|did not activate/)
     delete process.env.TYPESAFE_API_KEY
-    await expect(start([enable('jev', {})])).rejects.toThrow(/TYPESAFE_API_KEY|failed to load|did not activate/)
-    ctx = undefined
+    await expectRowFails([enable('jev', {})], 'jev', /TYPESAFE_API_KEY|failed to load|did not activate/)
   })
 
   it('notify sends through the DingTalk user service for a plugin that injects only notify', async () => {
@@ -139,6 +161,8 @@ describe('bundle patch.yml in a real dsh loader', () => {
       enable('agent-tasks', { workspaceDir, maxConcurrency: 1 }),
       enable('jev', {}),
     ])
+    await c.plugin(FakeWorkingDirectory as never, {} as never)
+    await until(() => !!c.get('agentTasks'), 5000, 'agentTasks did not start')
     for (const name of ['agentWs', 'dingtalk', 'agentTasks', 'jev', 'subagents']) expect(c.get(name), name).toBeDefined()
 
     const provider = new FakeSubagentProvider({ name: 'fake', capabilities: { toolFilter: true } })

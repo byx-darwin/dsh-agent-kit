@@ -10,7 +10,7 @@ import { KitService, type ServiceHealth } from '../common/service.js'
 import { AgentTasksConfig, permissionAllows, type Permissions } from './config.js'
 import { extractJson } from './extract-json.js'
 import { ConcurrencyQueue, QueueAbortedError, QueueFullError } from './queue.js'
-import type { AgentTaskUsage, ContentBlock, SubagentResult, SubagentRuntime, SubagentStartRequest } from './subagent-types.js'
+import type { AgentTaskUsage, ContentBlock, SubagentProvider, SubagentResult, SubagentRun, SubagentRuntime, SubagentStartRequest } from './subagent-types.js'
 import { renderPrompt, type PromptPart } from './untrusted.js'
 import { createTaskWorktree, type TaskWorktree } from './worktree.js'
 
@@ -241,7 +241,7 @@ export class AgentTasksService extends KitService<AgentTasksCounters> {
       let result: SubagentResult
       let sessionId: string
       try {
-        const run = await this.subagents.start(options.provider, request)
+        const run = await this.startRun(options.provider, provider!, request, taskDir)
         sessionId = run.id
         emit({ type: 'started', taskId, sessionId })
         try {
@@ -314,6 +314,19 @@ export class AgentTasksService extends KitService<AgentTasksCounters> {
       this.validators.set(schema, fn)
     }
     return fn
+  }
+
+  /**
+   * dsh 0.1：经运行时 `start(name, request)`，由它校验并附带 descriptor。
+   * dsh 0.2：运行时不再提供一次性启动，直接调用 provider 的 `start()`，并补上 0.2 要求的绝对 `cwd`
+   * （与父会话的工作目录相同）。
+   */
+  private startRun(name: string, provider: SubagentProvider, request: SubagentStartRequest, cwd: string): Promise<SubagentRun> {
+    if (typeof this.subagents.start === 'function') return this.subagents.start(name, request)
+    if (typeof provider.start !== 'function') {
+      return Promise.reject(new Error(`subagent provider ${JSON.stringify(name)} does not support one-shot start`))
+    }
+    return provider.start({ ...request, cwd })
   }
 
   health(): ServiceHealth<AgentTasksCounters> {
