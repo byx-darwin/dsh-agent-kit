@@ -71,7 +71,7 @@ export function apply(ctx: Context, config: Config) {
 
   <section>
     <h2>五类能力</h2>
-    <p>底层由六个 Cordis Service 实现，钉钉使用已登录的 user 身份，飞书使用机器人身份。</p>
+    <p>底层由七个 Cordis Service 实现，钉钉使用已登录的 user 身份，飞书、企业微信使用机器人身份。</p>
     <div class="grid-2">
       <ServiceCard numeral={agentWs.numeral} verb={agentWs.verb} name={`${agentWs.name} · ${agentWs.context}`} summary={agentWs.summary} href={`/docs/${agentWs.slug}`} />
       {
@@ -96,7 +96,7 @@ export function apply(ctx: Context, config: Config) {
   <section class="narrow">
     <h2>按需启用</h2>
     <p>
-      六个 Service 在本包的 bundle 中以禁用状态注册。只有在 Profile 的 <code>cordis.patch.yml</code> 中启用的 Service 才会加载并校验配置；使用通知时启用默认渠道（钉钉或飞书）和 notify 即可。
+      七个 Service 在本包的 bundle 中以禁用状态注册。只有在 Profile 的 <code>cordis.patch.yml</code> 中启用的 Service 才会加载并校验配置；使用通知时启用默认渠道（钉钉、飞书或企业微信）和 notify 即可。
     </p>
     <pre><code>{patchExample}</code></pre>
     <p>装了可选的运维工具 <code>@baoyx/dsh-agent-kit-admin</code> 时，也可以用 <code>setup</code> 交互式生成这段配置，或在 dsh Web 的设置页里直接勾选。</p>

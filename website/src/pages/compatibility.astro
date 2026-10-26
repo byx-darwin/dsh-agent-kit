@@ -7,7 +7,7 @@ const ci = 'https://github.com/byx-darwin/dsh-agent-kit/actions/workflows/ci.yml
 const peers = pkg.peerDependencies as Record<string, string>
 const optional = (pkg.peerDependenciesMeta ?? {}) as Record<string, { optional?: boolean }>
 
-const OPTIONAL_FOR: Record<string, string> = { '@typesafe-ai/sdk': ' Jev ', '@larksuiteoapi/node-sdk': '飞书' }
+const OPTIONAL_FOR: Record<string, string> = { '@typesafe-ai/sdk': ' Jev ', '@larksuiteoapi/node-sdk': '飞书', '@wecom/aibot-node-sdk': '企业微信' }
 
 const runtime: { name: string; version: string; note: string }[] = [
   { name: 'Node.js', version: pkg.engines.node, note: '本包的 engines 声明' },

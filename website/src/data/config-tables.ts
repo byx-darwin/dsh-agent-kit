@@ -2,6 +2,7 @@
 import { WsConfig } from '../../../src/ws/config'
 import { DingtalkConfig } from '../../../src/dingtalk/config'
 import { FeishuConfig } from '../../../src/feishu/config'
+import { WecomConfig } from '../../../src/wecom/config'
 import { NotifyConfig } from '../../../src/notify/config'
 import { AgentTasksConfig } from '../../../src/agent-tasks/config'
 import { JevConfig } from '../../../src/jev/service'
@@ -40,6 +41,7 @@ const SCHEMAS: Record<ServiceId, SchemaNode> = {
   agentTasks: AgentTasksConfig as unknown as SchemaNode,
   jev: JevConfig as unknown as SchemaNode,
   feishu: FeishuConfig as unknown as SchemaNode,
+  wecom: WecomConfig as unknown as SchemaNode,
 }
 
 const isEnum = (n: SchemaNode) => n.type === 'union' && !!n.list?.length && n.list.every((x) => x.type === 'const')

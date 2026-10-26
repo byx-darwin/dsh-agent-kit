@@ -19,20 +19,20 @@ const r = await ctx.notify.send({
   traceId: 'evt_...',
   signal,
 })
-// r: { deliveries: Array<{ channel: 'dingtalk' | 'feishu', results: Array<{ ok, messageId?, error? }> }> }
+// r: { deliveries: Array<{ channel: 'dingtalk' | 'feishu' | 'wecom', results: Array<{ ok, messageId?, error? }> }> }
 ```
 
 ```ts
-// 钉钉发往配置的默认群，飞书发往指定群
-await ctx.notify.send({ text: '库存告警', targets: { dingtalk: 'default', feishu: { chatId: 'oc_xxx' } } })
+// 钉钉发往配置的默认群，飞书、企业微信发往指定群
+await ctx.notify.send({ text: '库存告警', targets: { dingtalk: 'default', feishu: { chatId: 'oc_xxx' }, wecom: { chatId: 'wrk…' } } })
 ```
 
-业务包只需 inject `notify`。启用 `agent-kit-notify` 与要用的渠道行（`agent-kit-dingtalk`、`agent-kit-feishu`）；notify 的 `channel` 是默认渠道，可选 `dingtalk` 或 `feishu`。不写 `targets` 时发往默认渠道并使用其默认目标，写了哪些渠道就只发这些渠道。默认渠道未运行时抛出 `channel_unavailable`；指定的渠道未运行或发送失败，在该渠道的 `results[i].error` 中返回。
+业务包只需 inject `notify`。启用 `agent-kit-notify` 与要用的渠道行（`agent-kit-dingtalk`、`agent-kit-feishu`、`agent-kit-wecom`）；notify 的 `channel` 是默认渠道，可选 `dingtalk`、`feishu` 或 `wecom`。不写 `targets` 时发往默认渠道并使用其默认目标，写了哪些渠道就只发这些渠道。默认渠道未运行时抛出 `channel_unavailable`；指定的渠道未运行或发送失败，在该渠道的 `results[i].error` 中返回。企业微信只能向已给机器人发过消息的会话主动发送，否则该渠道的结果为 `not_interacted`。
 
 `status()` 返回默认渠道与每个渠道的运行、登录状态；`login(channel)` / `logout(channel)` 必须指定渠道，渠道不需要登录时抛出 `login_unsupported`。`notify` 不 inject 渠道 Service，而是在发送时查找它，因此停用渠道不会卸载只依赖 `notify` 的业务插件。
 
 <Notice title="渠道行要单独启用" tone="warn">
-`notify` 只负责转发，真正发送由对应渠道的 Service 完成（钉钉为已登录的 user，飞书为机器人）。`doctor` 会检查默认渠道的行是否启用。
+`notify` 只负责转发，真正发送由对应渠道的 Service 完成（钉钉为已登录的 user，飞书、企业微信为机器人）。`doctor` 会检查默认渠道的行是否启用。
 </Notice>
 
 </ServiceDoc>

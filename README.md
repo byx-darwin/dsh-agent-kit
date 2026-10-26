@@ -21,10 +21,10 @@
 
 | 包 | 目录 | 作用 |
 |---|---|---|
-| `@baoyx/dsh-agent-kit` | 仓库根目录 | 给业务包用的库：六个 Service 与测试工具。业务包只依赖它 |
+| `@baoyx/dsh-agent-kit` | 仓库根目录 | 给业务包用的库：七个 Service 与测试工具。业务包只依赖它 |
 | `@baoyx/dsh-agent-kit-admin` | [`admin/`](admin/README.md) | 可选的运维工具：`dsh-agent-kit doctor` / `setup` 命令行、dsh Web「设置 → Agent Kit」页、业务包设置入口的登记。见下文「运维工具（可选）」 |
 
-不装 admin 包时，六个 Service 照常工作，配置直接写在 Profile 的 `cordis.patch.yml` 中。
+不装 admin 包时，七个 Service 照常工作，配置直接写在 Profile 的 `cordis.patch.yml` 中。
 
 ## 功能
 
@@ -33,15 +33,16 @@
 | `ctx.agentWs` | WebSocket 客户端（仅 `wss://`）：可刷新的鉴权请求头、心跳、指数退避重连、并发与背压控制；鉴权失败或指定关闭码时进入 `failed` 状态并可慢速重试 |
 | `ctx.dingtalk` | 通过已登录的钉钉 `dws` CLI，以 `user` 身份发送消息；统一监听群内 @ 消息，并按群 ID / 内容规则下发给业务插件；提供登录状态、设备流登录与退出 |
 | `ctx.feishu` | 飞书机器人（自建应用）：发送文本或 Markdown 卡片；长连接接收群内 @ 机器人与私聊机器人的消息，按会话 ID 下发给业务插件 |
-| `ctx.notify` | 通知入口：业务包调用 `ctx.notify.send()`，默认发往配置的默认渠道（钉钉或飞书），也可在 `targets` 中按渠道指定 |
+| `ctx.wecom` | 企业微信智能机器人：以 Markdown 发送消息，长连接接收群内 @ 机器人与单聊消息，按会话分发；可直接回复收到的消息 |
+| `ctx.notify` | 通知入口：业务包调用 `ctx.notify.send()`，默认发往配置的默认渠道（钉钉、飞书或企业微信），也可在 `targets` 中按渠道指定 |
 | `ctx.agentTasks` | 调用 dsh 已注册的 subagent provider（如 `claude-code`、`codex`）执行一次性任务：默认只读权限（无法由本包强制的 provider 需运维声明权限上限）、每个任务独立目录、类型化的 JSON Schema 输出、并发与排队上限 |
 | `ctx.jev` | 调用 TypeSafe Jev 或本地部署的 Laya（二选一），返回 Choice / Noul / Score 的类型化判断和概率 |
 
-- 六个 Service 默认禁用，按需启用；未启用的 Service 不校验配置，也不影响其他 Service。
+- 七个 Service 默认禁用，按需启用；未启用的 Service 不校验配置，也不影响其他 Service。
 - 每个 Service 提供 `health()`；进入 `failed` 时触发 `agent-kit/service-failed` 事件，便于接入外部监控。
 - 所有错误都是 `KitError`，带 `code` 与 `retryable`，调用方据此决定是否重试。
 
-导入路径：根入口 `@baoyx/dsh-agent-kit` 导出全部 Service 类、配置、错误类型与工具函数；另有子路径 `@baoyx/dsh-agent-kit/ws`、`/dingtalk`、`/feishu`、`/notify`、`/agent-tasks`、`/jev`、`/secrets` 和 `/testing`。
+导入路径：根入口 `@baoyx/dsh-agent-kit` 导出全部 Service 类、配置、错误类型与工具函数；另有子路径 `@baoyx/dsh-agent-kit/ws`、`/dingtalk`、`/feishu`、`/wecom`、`/notify`、`/agent-tasks`、`/jev`、`/secrets` 和 `/testing`。
 
 ## 架构
 
@@ -51,7 +52,7 @@
 │        │ inject                                 │
 │        ▼                                        │
 │  @baoyx/dsh-agent-kit（各 Service 单独启用）         │
-│    agentWs · dingtalk · feishu · notify ·        │
+│    agentWs · dingtalk · feishu · wecom · notify ·        │
 │    agentTasks · jev                             │
 │        │                                        │
 │        ▼                                        │
@@ -73,7 +74,8 @@
 - dsh `0.2` 起，某一行配置有误时 dsh 不再整体启动失败：只有这一行不运行，其余照常启动。请用 `doctor` 或设置页查看各行状态
 - 使用 `ctx.dingtalk`：已安装并登录 `dws`（已验证 `dingtalk-workspace-cli@1.0.62`），仅支持 `user` 身份
 - 使用 `ctx.feishu`：安装 `@larksuiteoapi/node-sdk`（^1.76.0），在飞书开发者后台创建自建应用并开启机器人能力，事件订阅选长连接并订阅「接收消息 v2.0」，开通 im:message:send_as_bot、im:message.group_at_msg:readonly、im:message.p2p_msg:readonly；App Secret 用 appSecretRef 引用（默认 FEISHU_APP_SECRET）。
-- 使用 `ctx.notify`：同时启用默认渠道（钉钉或飞书）的 Service
+- 使用 `ctx.wecom`：安装 `@wecom/aibot-node-sdk`（^1.0.7）；在企业微信管理后台为智能机器人开启 API 模式并选择长连接；Secret 用 `secretRef` 引用（默认 `WECOM_BOT_SECRET`）。主动发送前需对方先给机器人发过消息。
+- 使用 `ctx.notify`：同时启用默认渠道（钉钉、飞书或企业微信）的 Service
 - 本包运行时不会安装上述 CLI；可以手动安装，或用 admin 包的 `setup` 在你确认后安装（见「运维工具（可选）」）
 - 使用 `ctx.agentTasks`：安装 `@deepseek-ai/dsh-subagent-claude-code` 和/或 `@deepseek-ai/dsh-subagent-codex`（`ctx.subagents` 与子进程服务由 dsh 的 base bundle 提供），并完成 Claude Code / Codex 的原生登录（provider 会剔除名字含 KEY / TOKEN / SECRET / PASSWORD 的环境变量，依赖这类变量鉴权时需在 provider 的 Config `env` 中显式给出）
 - 使用 `ctx.jev`：安装 `@typesafe-ai/sdk`，并设置环境变量 `TYPESAFE_API_KEY`；macOS 上也可以用 `keychainService` 从钥匙串读取，推荐与 gitflow-cli 等工具共享的服务名 `ai.typesafe.api-key`（保存：`security add-generic-password -a "$USER" -s ai.typesafe.api-key -U -w`）。改用本地 Laya 时配置 `provider: laya` 与 `baseURL`，不需要 TypeSafe Key
@@ -125,7 +127,7 @@ dsh --profile my-agent --no-open
 
 `@deepseek-ai/cordis` 的版本与目标 dsh 依赖的版本保持一致（dsh `0.1.5-rc.3` 对应 `4.0.2`，`0.1.7-alpha.2` 对应 `4.0.4`，`0.2.1-rc.2` 对应 `4.0.5`）。开发期可以用 `link:` 指向本包的本地 checkout。
 
-插件示例（发通知推荐用 `ctx.notify`，由默认渠道（已登录的钉钉 user 或飞书机器人）发送）：
+插件示例（发通知推荐用 `ctx.notify`，由默认渠道（已登录的钉钉 user、飞书或企业微信机器人）发送）：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -218,12 +220,18 @@ await ctx.dingtalk.send({ title: frame.title, markdown: renderAlert(frame), idem
 
 每个渠道 Service 都实现 `ChannelService`（从根入口导入类型）：`send()`、`status()`、`health()`，需要登录的身份另外实现 `login()` / `logout()`。接收群内 @ 消息的渠道实现 `ChannelInbox` 接口，提供同样的四个方法：
 
-- `onMessage({ conversationId, match?, priority? }, handler)`：按会话注册处理器，每条消息只交给优先级最高的首个匹配处理器；
+- `onMessage({ conversationId, match?, priority? }, handler)`：按会话注册处理器，每条消息只交给优先级最高的首个匹配处理器；处理函数签名为 `(message, { signal, reply })`；
 - `onPluginMessage(pluginId, handler)`：配合设置页的「会话 → 插件」路由；
 - `unmatchedMessages()`：最近未命中任何路由的消息摘要；
-- `searchRecipients(kind, query)`：按名称查找可作为发送目标的群或个人候选（飞书机器人只能搜群）。
+- `searchRecipients(kind, query)`：按名称查找可作为发送目标的群或个人候选（飞书机器人只能搜群；企业微信只能在说过话的会话里查，名称就是会话 ID）。
 
-消息至少包含 `ChannelAtMessage` 的字段：`eventId`、`messageId?`、`conversationId`、`senderId?`、`content`、`timestamp?`，渠道特有字段另加（如钉钉的 `senderOpenDingtalkId`、飞书的 `chatType`）。正文是外部输入，业务插件必须自行校验。
+处理函数的第二个参数 `{ signal, reply }`：`signal` 在超时、注销或服务停止时触发；`reply(options)` 回复这条消息，参数与 `send()` 相同（`target` 由 Service 决定，`at` 为该渠道自己的结构），失败写在返回结果里，不抛错。三个渠道的回复方式：
+
+- 钉钉：发回原群；单聊（`conversationId` 以 `cidme` 开头）改为回复发送者的 `openDingtalkId`——这条规则是推断的，尚未用真实事件验证；
+- 飞书：发回原消息所在的 `chat_id`；
+- 企业微信：基于收到的消息帧回复（须在 24 小时内，同一条消息不能重复回复），不要求会话先「说过话」。
+
+消息至少包含 `ChannelAtMessage` 的字段：`eventId`、`messageId?`、`conversationId`、`senderId?`、`content`、`timestamp?`，渠道特有字段另加（如钉钉的 `senderOpenDingtalkId`、飞书与企业微信的 `chatType`）。正文是外部输入，业务插件必须自行校验。
 
 ### 从 0.2 升级到 0.3
 
@@ -319,6 +327,52 @@ export async function apply(ctx: Context) {
 - 飞书机器人身份不能按姓名搜索用户：`searchRecipients('group', …)` 返回机器人所在的群以及机器人可见的公开群，个人请直接填写 `open_id`。选中机器人不在的群时，发送会报 `permission_denied`（230002）。
 - 需要安装可选依赖 `@larksuiteoapi/node-sdk`，开通的权限见「环境要求」。未命中路由的消息同样保留最近记录，可在设置页飞书卡片查看或调用 `ctx.feishu.unmatchedMessages()`。
 
+### 企业微信
+
+`ctx.wecom` 以企业微信智能机器人身份发送 Markdown 消息，并通过长连接接收群内 @ 机器人与单聊机器人的消息。在 Profile 的 `cordis.patch.yml` 中启用 `agent-kit-wecom`：
+
+```yaml
+- id: agent-kit-wecom
+  disabled: false
+  config:
+    botId: aibxxxx                  # Secret 通过 secretRef 引用，默认读环境变量 WECOM_BOT_SECRET，再读 dsh 凭据文件
+    groupRoutes:
+      - { conversationId: wrk_orders, pluginId: business-orders }
+```
+
+业务插件用 `onPluginMessage`（或代码规则 `onMessage`）接收，并用 `reply` 直接回复；`conversationId` 群聊为 `chatid`，单聊为对方的 `userid`：
+
+```ts
+export const inject = ['wecom']
+export async function apply(ctx: Context) {
+  const subscription = ctx.wecom.onPluginMessage('business-orders', async (message, { signal, reply }) => {
+    const result = await handleOrder(message.content, { signal, eventId: message.eventId })
+    await reply({ markdown: `已处理：${result}` })
+  })
+  await subscription.ready
+}
+```
+
+发送：`await ctx.wecom.send({ markdown: '## 标题\n正文', target: { chatId: 'wrk_xxx' } })`；`text` 与 `markdown` 都以 Markdown 发送，`target` 也可以是 `{ userId }`。`at` 为 `{ userIds?, all? }`，渲染为正文末尾的 `<@userid>` / `<@all>`；智能机器人的 Markdown 是否支持这种提及尚未核实（官方文档只在 webhook 的 text / markdown 中给出 `<@userid>`，`@all` 只用于 text），可能只显示为普通文字，待真机走查确认。
+
+消息 `WecomAtMessage` 在 `ChannelAtMessage` 的基础上增加：
+
+| 字段 | 说明 |
+|---|---|
+| `chatType` | `'group'`（群聊）或 `'single'`（单聊） |
+| `messageType` | 企业微信原始 `msgtype`；`text` 取文字（群消息去掉开头的 @ 机器人，规则为尽力而为），`mixed` 拼接其中的文字，`voice` 取转写文字，其他类型为空串 |
+| `quote` | 被引用消息的文字（有则带） |
+
+`senderId` 是发送者的 `userid`，`eventId` 取企业微信 `msgid`。错误为 `WecomSendError`，`code` 为 `invalid_target`、`auth_failed`、`not_interacted`、`rate_limited`、`not_connected`、`timeout`、`aborted`、`api_error`；其中 `rate_limited`、`not_connected`、`timeout` 可重试，其余不可重试。
+
+注意：
+
+- **主动发送前需对方先给机器人发过消息**：Service 在本机记录说过话的会话（最多 500 个），向没有记录的会话主动发送会得到 `not_interacted`，先在群里 @ 机器人一次即可；每会话每分钟 30 条、每小时 1000 条，超出为 `rate_limited`。`searchRecipients` 只能在这些会话里查，名称就是会话 ID。
+- `idempotencyKey` 只在本进程内去重，发送失败不会自动重试；`timeout` 不代表未送达。
+- **一个机器人只接一个 Profile**：同一机器人只能有一条长连接，被其他连接挤下线后不会自动重连，状态进入 `failed`，需要重载该行。
+- 机器人创建者不是企业超级管理员时，`userid` 为加密 ID，不要假设它的格式。
+- 需要安装可选依赖 `@wecom/aibot-node-sdk`，开通方式见「环境要求」。未命中路由的消息同样保留最近记录，可在设置页企业微信卡片查看或调用 `ctx.wecom.unmatchedMessages()`。
+
 ### 本地开发与测试
 
 没有 `dws` 或 Agent 登录态时，可以把钉钉设为 `dryRun: true`，并使用 `@baoyx/dsh-agent-kit/testing` 导出的假 dws、本地 WebSocket 服务端、假 provider 与 Jev mock。
@@ -327,7 +381,7 @@ export async function apply(ctx: Context) {
 
 ## 配置
 
-各 Service 的可变参数都是 cordis.yml 中经过校验的配置字段。本包的 bundle 以禁用状态注册六个 loader 行（`agent-kit-ws`、`agent-kit-dingtalk`、`agent-kit-feishu`、`agent-kit-notify`、`agent-kit-agent-tasks`、`agent-kit-jev`），在 Profile 的 `cordis.patch.yml` 中按 id 启用并给出配置：
+各 Service 的可变参数都是 cordis.yml 中经过校验的配置字段。本包的 bundle 以禁用状态注册七个 loader 行（`agent-kit-ws`、`agent-kit-dingtalk`、`agent-kit-feishu`、`agent-kit-wecom`、`agent-kit-notify`、`agent-kit-agent-tasks`、`agent-kit-jev`），在 Profile 的 `cordis.patch.yml` 中按 id 启用并给出配置：
 
 ```yaml
 - id: agent-kit-ws
@@ -344,10 +398,16 @@ export async function apply(ctx: Context) {
     domain: feishu                             # 国际版 Lark 填 lark
     groupRoutes:
       - { conversationId: oc_orders, pluginId: business-orders }
+- id: agent-kit-wecom
+  disabled: false
+  config:
+    botId: aibxxxx                             # Secret 不写在这里：设置环境变量 WECOM_BOT_SECRET
+    groupRoutes:
+      - { conversationId: wrk_orders, pluginId: business-orders }
 - id: agent-kit-notify
   disabled: false
   config:
-    channel: dingtalk                          # 默认渠道：dingtalk 或 feishu；需要启用对应渠道的行
+    channel: dingtalk                          # 默认渠道：dingtalk、feishu 或 wecom；需要启用对应渠道的行
 - id: agent-kit-agent-tasks
   disabled: false
   config:
@@ -372,7 +432,8 @@ export async function apply(ctx: Context) {
 | `agentWs` | `pingIntervalMs`、`readTimeoutMs`、`reconnect.initialDelayMs`、`reconnect.maxDelayMs`、`reconnect.jitter`、`stableResetMs`、`fatalRetryDelayMs`、`maxPayloadBytes`、`maxPendingMessages` |
 | `dingtalk` | `identity`（只允许 `user`）、`defaultTarget`、`dwsPath`、`timeoutMs`、`killGraceMs`、`retry.maxAttempts`、`preflightIntervalMs`、`dryRun` |
 | `feishu` | `appId`（必填）、`appSecretRef`、`domain`、`defaultTarget`、`groupRoutes`、`timeoutMs`、`retry.maxAttempts`、`dryRun` |
-| `notify` | `channel`（默认渠道，`dingtalk` 或 `feishu`） |
+| `wecom` | `botId`（必填）、`secretRef`、`defaultTarget`、`groupRoutes`、`timeoutMs`、`wsUrl`、`dryRun` |
+| `notify` | `channel`（默认渠道，`dingtalk`、`feishu` 或 `wecom`） |
 | `agentTasks` | `workspaceDir`（必填）、`defaultTimeoutMs`、`maxConcurrency`、`maxQueueSize`、`keepWorkdir`、`declaredPermissions`、`toolAllowlist` |
 | `jev` | `provider`、`baseURL`、`apiKeyRef`、`model`、`timeoutMs`、`keychainService`、`keychainAccount` |
 
@@ -428,13 +489,14 @@ npx @baoyx/dsh-agent-kit-admin doctor --profile my-agent
 - 安装：如果启用了钉钉而 `dws` 不在 `PATH` 中，`setup` 会展示 `npm i -g dingtalk-workspace-cli@1.0.62`，确认后安装。
 - 钉钉：固定 `user` 身份；未登录时可以拉起 `dws auth login`，可配置默认目标与 `dryRun`。
 - 飞书：检查可选依赖 `@larksuiteoapi/node-sdk`，引导填写 App ID、域名，App Secret 只写入密钥存储；
-- 通知：选择默认渠道（钉钉或飞书），所选渠道的行未启用时会提示。
+- 企业微信：检查可选依赖 `@wecom/aibot-node-sdk`，引导填写 BotID，Secret 只写入密钥存储；可选的连接测试需要确认（建连会占用机器人唯一的长连接，可能挤掉运行中的 Agent）；`doctor` 不在线检查连接，原因相同；
+- 通知：选择默认渠道（钉钉、飞书或企业微信），所选渠道的行未启用时会提示。
 
 `setup` 只会修改 Profile 目录下的 `cordis.patch.yml`；`doctor` 只读，不修改任何文件，`--json` 输出机器可读的体检报告，可接入 CI。`doctor` 的 `agent-kit-notify.channel` 检查在所选渠道的行未启用时失败。两者都会在 `$DSH_HOME/profiles` 下扫描带有基础包（bundles 里含 `@baoyx/dsh-agent-kit`）的 Profile；只有一个候选时自动选中，有多个时需要 `--profile` 指定。
 
 ### 设置页
 
-Profile 中装了 admin 包并启动后，dsh Web「设置 → Agent Kit」里有各 Service 的卡片。钉钉仅支持 `user` 身份，飞书使用机器人身份，通知发往所选的默认渠道；可以启停、编辑配置、查看健康状态与体检结果，效果与 CLI 等价：
+Profile 中装了 admin 包并启动后，dsh Web「设置 → Agent Kit」里有各 Service 的卡片。钉钉仅支持 `user` 身份，飞书、企业微信使用机器人身份，通知发往所选的默认渠道；可以启停、编辑配置、查看健康状态与体检结果，效果与 CLI 等价：
 
 - 保存时按乐观并发（`version`）比较，若与他人（包括另开终端手改 `cordis.patch.yml`）冲突会提示「已被修改」并自动刷新为最新内容，需要重新确认后再保存。
 - **只读闸门默认关闭（fail closed）**：只有 dsh Web 确认自己绑定在 `webServer.host === '127.0.0.1'` 时设置页才可写；未绑定回环地址（例如以 `--host 0.0.0.0` 之类的方式对外暴露）或压根没加载 `webServer` 服务时，设置页一律降级为只读，避免把配置写入接口暴露给公网。dsh CLI 自身也拒绝 `--host 0.0.0.0`（"it would expose remote code execution to the network"），二者是两道独立的防线。
@@ -504,9 +566,10 @@ export function apply(ctx: Context) {
 ## 路线图
 
 - [x] 完成设计文档中的「实施前需核实」项
-- [x] 六个 Service 的首个实现与测试
+- [x] 首批 6 个 Service 的首个实现与测试
 - [x] 钉钉 user 推送与通知（`ctx.dingtalk`、`ctx.notify`）
 - [x] 飞书机器人推送与接收（`ctx.feishu`）
+- [x] 企业微信智能机器人收发与消息回复（`ctx.wecom`、`reply()`）
 - [x] 渠道登录状态与设备流登录（`status()` / `login()` / `logout()`）
 - [x] 运维工具拆分为可选的 `@baoyx/dsh-agent-kit-admin`
 - [x] 发布 `0.2.0` 到 npm

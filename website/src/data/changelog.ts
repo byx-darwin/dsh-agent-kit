@@ -18,6 +18,9 @@ export const CHANGELOG: ChangelogEntry[] = [
       '新增 ctx.feishu：飞书机器人（自建应用）身份，进程内使用 @larksuiteoapi/node-sdk（可选依赖）；发送文本或 Markdown 卡片，长连接接收群内 @ 机器人与私聊机器人的消息并按会话分发。',
       '新增 ChannelInbox 约定与通用的未命中消息存储；notify 的 targets 可写 \'default\' 表示使用该渠道的默认目标。',
       'admin：设置页新增飞书卡片（App ID、域名、App Secret、会话路由、未命中消息），doctor 检查 SDK、凭据与机器人能力，setup 引导配置；钉钉的路由与未命中面板改为通用组件。',
+      '新增 ctx.wecom：企业微信智能机器人（长连接），进程内使用 @wecom/aibot-node-sdk（可选依赖）；以 Markdown 发送，接收群内 @ 机器人与单聊消息并按会话分发，记录与机器人说过话的会话作为主动发送目标。',
+      '消息处理函数的第二个参数新增 reply()：钉钉、飞书发回原会话，企业微信基于收到的消息回复。',
+      'admin：设置页新增企业微信卡片，收件人选择组件改为三个渠道共用；doctor 检查 SDK、BotID 与 Secret（不在线检查，避免挤掉运行中的连接），setup 提供需确认的连接测试。',
     ],
   },
   {

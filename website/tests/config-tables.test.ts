@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { WsConfig } from '../../src/ws/config'
 import { DingtalkConfig } from '../../src/dingtalk/config'
 import { FeishuConfig } from '../../src/feishu/config'
+import { WecomConfig } from '../../src/wecom/config'
 import { NotifyConfig } from '../../src/notify/config'
 import { AgentTasksConfig } from '../../src/agent-tasks/config'
 import { JevConfig } from '../../src/jev/service'
@@ -22,6 +23,7 @@ describe('config tables', () => {
     ['agentTasks', AgentTasksConfig],
     ['jev', JevConfig],
     ['feishu', FeishuConfig],
+    ['wecom', WecomConfig],
   ] as const)('%s rows cover exactly the schema leaf fields', (id, schema) => {
     expect(configRows(id).map((r) => r.path).sort()).toEqual(leafPaths(schema).sort())
   })
@@ -51,6 +53,7 @@ describe('config tables', () => {
       ['肆', 'agentTasks'],
       ['伍', 'jev'],
       ['陆', 'feishu'],
+      ['柒', 'wecom'],
     ])
     for (const s of SERVICES) expect(s.errors.length).toBeGreaterThan(0)
   })
@@ -63,6 +66,7 @@ describe('config tables', () => {
       agentTasks: 'src/agent-tasks/service.ts',
       jev: 'src/jev/service.ts',
       feishu: 'src/feishu/errors.ts',
+      wecom: 'src/wecom/errors.ts',
     }
     for (const s of SERVICES) {
       const text = readFileSync(new URL(`../../${sources[s.id]}`, import.meta.url), 'utf8')

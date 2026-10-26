@@ -1,0 +1,112 @@
+---
+title: 企业微信
+---
+import Base from '../../layouts/Base.astro'
+import ServiceDoc from '../../components/ServiceDoc.astro'
+import Notice from '../../components/Notice.astro'
+
+<Base title="企业微信" description="ctx.wecom 以企业微信智能机器人身份发送 Markdown 消息，长连接接收群内 @ 机器人与单聊消息并分发给业务插件，可直接回复收到的消息。">
+<ServiceDoc id="wecom">
+
+## 接口
+
+```ts
+const r = await ctx.wecom.send({
+  markdown: '## 标题\n正文',               // 或 text: '纯文本'（同样作为 Markdown 内容发送）
+  title: '库存告警',                       // 可选：加粗首行
+  target: { chatId: 'wrk…' },             // 或 { userId: 'zhangsan' }
+  at: { userIds: ['zhangsan'], all: false },
+  idempotencyKey: 'evt_...',
+  traceId: 'evt_...',
+  signal,
+})
+// r.results: Array<{ ok, messageId?, error? }>
+```
+
+`text` 与 `markdown` 二选一，都以 Markdown 发送，内容上限 20480 字节。`target` 省略时使用配置的 `defaultTarget`；群为 `chatId`，单聊为 `userId`。`idempotencyKey` 只在本进程内去重，发送失败不会自动重试。`dryRun: true` 时只记日志，不连接企业微信。
+
+接收群内 @ 机器人与单聊机器人的消息，并直接回复：
+
+```ts
+export const inject = ['wecom']
+export async function apply(ctx: Context) {
+  const sub = ctx.wecom.onMessage(
+    { conversationId: 'wrk_orders', match: (m) => m.content.startsWith('工单') },
+    async (message, { signal, reply }) => {
+      const result = await handleOrder(message.content, { eventId: message.eventId, signal })
+      await reply({ markdown: `已处理：${result}` })
+    },
+  )
+  await sub.ready
+}
+```
+
+`reply()` 基于收到的消息帧回复，失败写在返回结果里，不抛错；回复须在收到消息后 24 小时内，且同一条消息不能重复回复。配合设置页的「会话 → 插件」路由，插件用 `onPluginMessage` 接收：
+
+```ts
+const sub = ctx.wecom.onPluginMessage('business-orders', async (message, { signal, reply }) => {
+  await reply({ text: '收到' })
+})
+await sub.ready
+```
+
+对应配置为 `groupRoutes: [{ conversationId: 'wrk_orders', pluginId: 'business-orders' }]`；群的 `conversationId` 是 `chatid`，单聊是对方的 `userid`。一个会话只会转给一个目标插件；目标插件未注册时记入未命中，不回退给其他插件。`ctx.wecom.unmatchedMessages()` 返回最近未命中的消息摘要，新记录在前。
+
+查找发送目标：
+
+```ts
+const { candidates, complete } = await ctx.wecom.searchRecipients('group', 'wrk')
+// candidates: Array<{ name, target: { chatId } }>
+```
+
+企业微信没有按名称搜索群或成员的机器人接口，候选来自本机记录的「说过话的会话」，`name` 就是会话 ID。
+
+`status()` 返回机器人身份与长连接是否在线；`health()` 在连接建立之前为 `degraded`，连接建立后为 `ok`，凭据无效或被其他连接挤下线等不可恢复错误为 `failed`。
+
+## 消息字段
+
+`message` 是 `WecomAtMessage`，在公共字段之上带有企业微信特有字段。正文是外部输入，业务插件必须自行校验。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `eventId` | `string` | 去重键，取企业微信 `msgid`；进程内按它去重 |
+| `messageId` | `string` | 企业微信消息 ID，同 `eventId` |
+| `conversationId` | `string` | 群聊为 `chatid`，单聊为发送者的 `userid`；路由键 |
+| `chatType` | `'group' \| 'single'` | 群聊或单聊 |
+| `senderId` | `string` | 发送者 `userid`，可能是加密 ID |
+| `content` | `string` | 纯文本：`text` 取文字内容，群消息去掉开头的 @ 机器人（尽力而为的规则）；`mixed` 拼接其中的文字；`voice` 取转写文字；其他类型为空串。保留换行 |
+| `messageType` | `string` | 企业微信原始 `msgtype`，如 `text`、`mixed`、`voice`、`image` |
+| `quote` | `string?` | 被引用消息的文字（有则带） |
+| `timestamp` | `number?` | 消息创建时间（毫秒） |
+
+## 主动发送的前提与频率限制
+
+- 主动发送前，目标会话里须有人先给机器人发过消息；否则返回 `not_interacted`，请先在群里 @ 机器人一次（单聊则让对方先发一句）。
+- Service 在本机记录与机器人说过话的会话（最多 500 个，超出淘汰最久没说话的），作为主动发送的目标与 `searchRecipients` 的候选。
+- 每个会话每分钟 30 条、每小时 1000 条；超出时返回 `rate_limited`，可稍后重试。
+- 单条内容上限 20480 字节，超出返回 `invalid_target`。
+
+<Notice title="@ 成员的 Markdown 渲染尚未核实" tone="warn">
+`at.userIds` 会渲染为正文末尾的 `<@userid>`，`at.all` 渲染为 `<@all>`。企业微信官方文档只在 webhook 的 text / markdown 中给出 `<@userid>`，`@all` 只用于 text；智能机器人的 Markdown 消息是否支持这两种写法尚未确认，可能只显示为普通文字。待真机走查后再更新这里。
+</Notice>
+
+<Notice title="userid 可能是加密 ID" tone="info">
+机器人创建者不是企业超级管理员时，消息里的 `senderId`（单聊的 `conversationId` 也是它）为加密 ID，格式不固定，业务插件不要假设它的形态，也不要用它与通讯录比对。
+</Notice>
+
+## 部署
+
+- 在企业微信管理后台创建智能机器人，开启 API 模式并选择「长连接」，记下 BotID 与 Secret。
+- 安装可选依赖 `@wecom/aibot-node-sdk`（`^1.0.7`）；未安装时 `doctor` 报告，Service 启动失败。
+- Secret 不写入配置：用 `secretRef`（默认 `WECOM_BOT_SECRET`）引用，先读同名环境变量，再读 dsh 凭据文件。私有部署企业可用 `wsUrl` 指定长连接地址。
+- `doctor` 只检查 SDK、BotID 与 Secret，不在线检查连接：一个机器人只能有一条长连接，检查时建连会把运行中的 Agent 挤下线。admin 的 setup 提供需要确认的连接测试。
+- 本地没有机器人时，可设 `dryRun: true`，并用 `@baoyx/dsh-agent-kit/testing` 的假 SDK 测试。
+
+<Notice title="一个机器人只接一个 Profile" tone="warn">
+同一机器人只能有一条长连接。同一个机器人不要同时在多个 Profile（或多个进程）里启用，否则后建立的连接会把先前的挤下线；被挤下线后 Service 不会自动重连（状态为 `failed`），需要重载该行。需要接多个 Profile 时，请为每个 Profile 创建独立的机器人。
+</Notice>
+
+企业微信正文不可信；进程内按 `eventId` 去重，重启后仍可能重复投递，业务处理需自行幂等。真实企业微信租户的收发仍需用智能机器人端到端验收。
+
+</ServiceDoc>
+</Base>

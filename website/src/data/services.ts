@@ -1,7 +1,7 @@
-// 六个 Service 的展示元数据，顺序与 patch.yml 中的 loader 行一致。配置项表由 config-tables.ts 从源码 schema 生成；
+// 七个 Service 的展示元数据，顺序与 patch.yml 中的 loader 行一致。配置项表由 config-tables.ts 从源码 schema 生成；
 // 这里只补充 schema 里没有的内容：编号、摘要、跨字段约束、错误码，以及缺少 description 的字段说明。
 
-export type ServiceId = 'agentWs' | 'dingtalk' | 'notify' | 'agentTasks' | 'jev' | 'feishu'
+export type ServiceId = 'agentWs' | 'dingtalk' | 'notify' | 'agentTasks' | 'jev' | 'feishu' | 'wecom'
 
 export interface ServiceError {
   code: string
@@ -10,7 +10,7 @@ export interface ServiceError {
   meaning: string
 }
 
-export type ServiceNumeral = '壹' | '贰' | '叁' | '肆' | '伍' | '陆'
+export type ServiceNumeral = '壹' | '贰' | '叁' | '肆' | '伍' | '陆' | '柒'
 
 export interface ServiceMeta {
   id: ServiceId
@@ -210,6 +210,36 @@ export const SERVICES: ServiceMeta[] = [
     descriptions: {
       'retry.maxAttempts': '给出幂等键时，可重试失败的最多重试次数。',
     },
+  },
+  {
+    id: 'wecom',
+    numeral: '柒',
+    verb: '收发',
+    name: '企业微信',
+    context: 'ctx.wecom',
+    slug: 'wecom',
+    summary: '企业微信智能机器人：以 Markdown 发送消息，长连接接收群内 @ 机器人与单聊消息，按会话分发；可直接回复收到的消息。',
+    kitId: 'agent-kit-wecom',
+    notes: [
+      '智能机器人长连接；需安装可选依赖 @wecom/aibot-node-sdk ^1.0.7。',
+      'Secret 通过 secretRef 引用（默认 WECOM_BOT_SECRET），先读环境变量，再读 dsh 凭据文件。',
+      '主动发送前需对方先给机器人发过消息；每会话每分钟 30 条、每小时 1000 条。',
+      '一个机器人只能有一条长连接；被其他连接挤下线后不会自动重连，需要重载。',
+      'idempotencyKey 只在本进程内去重，不会自动重试。',
+      'doctor 不在线检查连接：建连会把运行中的 Agent 挤下线。',
+    ],
+    errors: [
+      { code: 'invalid_target', retryable: '否', meaning: '目标、@ 列表或内容非法（含超过 20480 字节），或企业微信报告 userid / chatid 不存在、不在群里。' },
+      { code: 'auth_failed', retryable: '否', meaning: 'BotID / Secret 无效，或机器人未开启长连接模式。' },
+      { code: 'not_interacted', retryable: '否', meaning: '该会话还没有人给机器人发过消息，无法主动发送；先在群里 @ 机器人一次。' },
+      { code: 'rate_limited', retryable: '是', meaning: '超过每会话每分钟 30 条、每小时 1000 条的限制，或触发企业微信接口频率限制。' },
+      { code: 'not_connected', retryable: '是', meaning: '长连接未就绪（如重连中）。' },
+      { code: 'timeout', retryable: '是', meaning: '单次请求超过 timeoutMs；超时不代表未送达。' },
+      { code: 'aborted', retryable: '否', meaning: '调用方 signal 中止或 Service 卸载。' },
+      { code: 'api_error', retryable: '否', meaning: '其余企业微信错误，含 req_id 过期（超过 24 小时的回复）与重复回复。' },
+      INVALID_CONFIG,
+    ],
+    descriptions: {},
   },
 ]
 
