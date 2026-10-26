@@ -134,7 +134,15 @@ export class WecomService extends KitService<WecomCounters> implements ChannelSe
           if (this.listener !== 'failed') this.listener = 'reconnecting'
           this.router.setReady(false)
         },
+        // 只有 SDK 放弃重连的终态错误才置为 failed（粘性）
         onError: (error) => this.fail(`wecom long connection failed: ${redact(error.message)}`, error),
+        // 网络错误、单次认证失败：SDK 会自动重连，只告警并保持 reconnecting（健康为 degraded），不拒绝 ready
+        onTransientError: (error) => {
+          this.authenticated = false
+          this.router.setReady(false)
+          if (this.listener !== 'failed') this.listener = 'reconnecting'
+          this.logger.warn('wecom long connection error, reconnecting', { error: redact(String(error?.message ?? error)) })
+        },
         // SDK 被挤下线后不会自动重连
         onKicked: () => this.fail('另一个进程用同一个机器人建立了连接，本连接已被企业微信断开；一个机器人只能接一个 Profile'),
         onMessage: (raw) => {
@@ -188,22 +196,35 @@ export class WecomService extends KitService<WecomCounters> implements ChannelSe
     if (this.frames.size > 1000) this.frames.delete(this.frames.keys().next().value!)
   }
 
-  /** 基于收到的帧回复；不受「对方须先发过消息」限制。 */
+  /**
+   * 基于收到的帧回复；不受「对方须先发过消息」限制。内容校验与 send() 一致（markdown 与 text 互斥）；
+   * 不支持 `idempotencyKey`（忽略）。
+   */
   private async replyTo(message: WecomAtMessage, options: ChannelSendCommon & { at?: unknown }): Promise<WecomSendResult> {
-    const content = buildContent({ title: options.title, markdown: options.markdown, text: options.markdown === undefined ? options.text : undefined, at: options.at as WecomAt | undefined })
+    let content: string
+    try {
+      content = buildContent({ title: options.title, markdown: options.markdown, text: options.text, at: options.at as WecomAt | undefined })
+    } catch (e) {
+      const error = e instanceof WecomSendError ? e : classifyThrown(e, true)
+      this.logger.warn('wecom reply failed', { traceId: options.traceId, code: error.code })
+      return { results: [{ ok: false, error }] }
+    }
     const frame = this.frames.get(message.eventId)
-    if (!frame) return { results: [{ ok: false, error: new WecomSendError('api_error', 'the inbound frame for this message is no longer available') }] }
+    const fail = (error: WecomSendError): WecomSendResult => {
+      this.recordFailure(error.code)
+      this.logger.warn('wecom reply failed', { traceId: options.traceId, code: error.code })
+      return { results: [{ ok: false, error }] }
+    }
+    if (!frame) return fail(new WecomSendError('api_error', 'the inbound frame for this message is no longer available'))
     if (this.config.dryRun) return { results: [{ ok: true }] }
-    if (!this.connection || !this.authenticated) return { results: [{ ok: false, error: new WecomSendError('not_connected', 'wecom long connection is not ready') }] }
-    if (options.signal?.aborted) return { results: [{ ok: false, error: new WecomSendError('aborted', 'wecom reply aborted') }] }
+    if (!this.connection || !this.authenticated) return fail(new WecomSendError('not_connected', 'wecom long connection is not ready'))
+    if (options.signal?.aborted) return fail(new WecomSendError('aborted', 'wecom reply aborted'))
     try {
       await this.connection.replyStream(frame, `reply-${message.eventId}-${Date.now().toString(36)}`, content)
       this.recordSuccess()
       return { results: [{ ok: true, messageId: frame.headers.req_id }] }
     } catch (e) {
-      const error = classifyThrown(e, true)
-      this.recordFailure(error.code)
-      return { results: [{ ok: false, error }] }
+      return fail(classifyThrown(e, true))
     }
   }
 

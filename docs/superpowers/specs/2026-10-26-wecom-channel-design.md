@@ -142,9 +142,10 @@ type ChannelMessageHandler<M> = (message: M, context: ChannelMessageContext) => 
 |---|---|
 | `authenticated` | `router.setReady(true)`，清除失败状态，唤醒等待中的订阅 |
 | `disconnected`、`reconnecting` | `router.setReady(false)`；健康状态 `degraded`，详情「重连中」 |
-| `error`（认证失败重试用尽） | `router.setReady(false)`；健康状态 `failed`，触发 `agent-kit/service-failed`，拒绝等待中的订阅 |
+| `error`，仅终态（`WSAuthFailureError` 认证失败重试用尽、`WSReconnectExhaustedError` 重连用尽） | `router.setReady(false)`；健康状态 `failed`，触发 `agent-kit/service-failed`，拒绝等待中的订阅 |
+| `error`，其他（网络错误如 ECONNREFUSED / DNS / hang up、单次认证失败） | SDK 1.0.7 每次 ws 错误都会触发 `error` 并继续重连：只记脱敏告警，`router.setReady(false)`，未 `failed` 时置为重连中（健康 `degraded`），不拒绝等待中的订阅 |
 | 被挤下线（`event.disconnected_event`） | 健康状态 `failed`，详情写明「另一个进程用同一机器人建立了连接」；SDK 1.0.7 此时不会自动重连（已读源码确认），需重载或停掉另一个进程 |
-| Service 卸载 | `disconnect()`，`router.reset()`，拒绝等待中的订阅 |
+| Service 卸载 | 先移除 SDK 客户端上的全部监听再 `disconnect()`（避免已卸载实例收到迟到的 `disconnected`），`router.reset()`，拒绝等待中的订阅 |
 
 - `maxReconnectAttempts: -1`（无限重连），`maxAuthFailureAttempts: 5`。
 - 文档写明一个机器人只接一个 Profile。
@@ -162,7 +163,7 @@ type ChannelMessageHandler<M> = (message: M, context: ChannelMessageContext) => 
 - 设置页卡片：表单字段 `botId`、可选 `wsUrl`；Secret 走现有行密钥面板（只写凭据文件，引用名为 `secretRef`）；会话路由面板、未命中消息面板、连接状态。
 - 通用收件人选择组件：把 `DingtalkTargetInput`、`FeishuTargetInput` 合并为 `ChannelTargetInput`，按渠道传入支持的类型（群 / 个人）、是否可搜索、手动填写的字段与提示。钉钉、飞书的行为与显示不变。新增字段类型 `wecom-target`：从说过话的会话中选择，或手动填写。
 - doctor（`checks/wecom.ts`）：SDK 已安装（修复建议 `dsh plugin --profile <名称> add @wecom/aibot-node-sdk`）、`botId` 已填写、Secret 可读取（只报告来源）。不做在线凭据检查：同一机器人只能有一条长连接，doctor 建连会挤掉运行中的 Agent；检查详情说明这一点，并提示在设置页查看连接状态。
-- setup（`configureWecom`）：输入 `botId`、以密码方式输入 Secret 写入凭据文件；可选连接测试，执行前提示「Agent 正在运行时会被短暂挤下线」，确认后才建立一次连接并在认证成功或失败后立即断开。默认通知渠道选择增加「企业微信」。
+- setup（`configureWecom`）：输入 `botId`、以密码方式输入 Secret 写入凭据文件；可选连接测试，执行前提示「运行中的 Agent 会被挤下线且不会自动重连，测试后需在设置页重载企业微信行」（默认答案为否），确认后才从 Profile 目录加载 SDK、建立一次连接并在认证成功或失败后立即断开。默认通知渠道选择增加「企业微信」。
 
 ### 4. 错误处理
 

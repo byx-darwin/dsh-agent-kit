@@ -23,7 +23,7 @@ const r = await ctx.wecom.send({
 // r.results: Array<{ ok, messageId?, error? }>
 ```
 
-`text` 与 `markdown` 二选一，都以 Markdown 发送，内容上限 20480 字节。`target` 省略时使用配置的 `defaultTarget`；群为 `chatId`，单聊为 `userId`。`idempotencyKey` 只在本进程内去重，发送失败不会自动重试。`dryRun: true` 时只记日志，不连接企业微信。
+`text` 与 `markdown` 二选一，都以 Markdown 发送，内容上限 20480 字节。`target` 省略时使用配置的 `defaultTarget`；群为 `chatId`，单聊为 `userId`。`idempotencyKey` 只在本进程内去重，发送失败不会自动重试。SDK 的消息回执超时固定为 5 秒，所以 `timeoutMs` 设得再大，单次发送实际最多约等 5 秒。`dryRun: true` 时只记日志，不连接企业微信；但仍需安装 SDK，且 Secret 必须能解析。
 
 接收群内 @ 机器人与单聊机器人的消息，并直接回复：
 
@@ -41,7 +41,7 @@ export async function apply(ctx: Context) {
 }
 ```
 
-`reply()` 基于收到的消息帧回复，失败写在返回结果里，不抛错；回复须在收到消息后 24 小时内，且同一条消息不能重复回复。配合设置页的「会话 → 插件」路由，插件用 `onPluginMessage` 接收：
+`reply()` 基于收到的消息帧回复，失败写在返回结果里，不抛错（失败时记带 `traceId` 与 `code` 的告警）；`text` 与 `markdown` 同样二选一，同时传入返回 `invalid_target`；`reply()` 忽略 `idempotencyKey`。回复须在收到消息后 24 小时内，且同一条消息不能重复回复。配合设置页的「会话 → 插件」路由，插件用 `onPluginMessage` 接收：
 
 ```ts
 const sub = ctx.wecom.onPluginMessage('business-orders', async (message, { signal, reply }) => {
@@ -61,7 +61,7 @@ const { candidates, complete } = await ctx.wecom.searchRecipients('group', 'wrk'
 
 企业微信没有按名称搜索群或成员的机器人接口，候选来自本机记录的「说过话的会话」，`name` 就是会话 ID。
 
-`status()` 返回机器人身份与长连接是否在线；`health()` 在连接建立之前为 `degraded`，连接建立后为 `ok`，凭据无效或被其他连接挤下线等不可恢复错误为 `failed`。
+`status()` 返回机器人身份与长连接是否在线；`health()` 在连接建立之前为 `degraded`，连接建立后为 `ok`。只有认证失败重试用尽（凭据无效）和被其他连接挤下线为 `failed`；网络错误（连接被拒、DNS 失败、连接中断）与单次认证失败时 SDK 会自动重连，状态为重连中（`degraded`），等待中的订阅不会被拒绝。
 
 ## 消息字段
 
@@ -100,7 +100,7 @@ const { candidates, complete } = await ctx.wecom.searchRecipients('group', 'wrk'
 - 安装可选依赖 `@wecom/aibot-node-sdk`（`^1.0.7`）；未安装时 `doctor` 报告，Service 启动失败。
 - Secret 不写入配置：用 `secretRef`（默认 `WECOM_BOT_SECRET`）引用，先读同名环境变量，再读 dsh 凭据文件。私有部署企业可用 `wsUrl` 指定长连接地址。
 - `doctor` 只检查 SDK、BotID 与 Secret，不在线检查连接：一个机器人只能有一条长连接，检查时建连会把运行中的 Agent 挤下线。admin 的 setup 提供需要确认的连接测试。
-- 本地没有机器人时，可设 `dryRun: true`，并用 `@baoyx/dsh-agent-kit/testing` 的假 SDK 测试。
+- 本地没有机器人时，可设 `dryRun: true`，并用 `@baoyx/dsh-agent-kit/testing` 的假 SDK 测试。`dryRun` 仍要求已安装 SDK 且 Secret 能解析。
 
 <Notice title="一个机器人只接一个 Profile" tone="warn">
 同一机器人只能有一条长连接。同一个机器人不要同时在多个 Profile（或多个进程）里启用，否则后建立的连接会把先前的挤下线；被挤下线后 Service 不会自动重连（状态为 `failed`），需要重载该行。需要接多个 Profile 时，请为每个 Profile 创建独立的机器人。

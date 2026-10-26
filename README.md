@@ -368,7 +368,9 @@ export async function apply(ctx: Context) {
 注意：
 
 - **主动发送前需对方先给机器人发过消息**：Service 在本机记录说过话的会话（最多 500 个），向没有记录的会话主动发送会得到 `not_interacted`，先在群里 @ 机器人一次即可；每会话每分钟 30 条、每小时 1000 条，超出为 `rate_limited`。`searchRecipients` 只能在这些会话里查，名称就是会话 ID。
-- `idempotencyKey` 只在本进程内去重，发送失败不会自动重试；`timeout` 不代表未送达。
+- `idempotencyKey` 只在本进程内去重，发送失败不会自动重试；`timeout` 不代表未送达。SDK 的消息回执超时固定为 5 秒，单次发送实际最多约等 5 秒。`reply()` 与 `send()` 一样要求 `text` / `markdown` 二选一，但忽略 `idempotencyKey`。
+- 只有认证失败重试用尽和被挤下线进入 `failed`；网络错误与单次认证失败时 SDK 自动重连，状态为重连中（`degraded`），不拒绝等待中的订阅。
+- `dryRun: true` 只记日志不连接，但仍需安装 SDK，且 Secret 必须能解析。
 - **一个机器人只接一个 Profile**：同一机器人只能有一条长连接，被其他连接挤下线后不会自动重连，状态进入 `failed`，需要重载该行。
 - 机器人创建者不是企业超级管理员时，`userid` 为加密 ID，不要假设它的格式。
 - 需要安装可选依赖 `@wecom/aibot-node-sdk`，开通方式见「环境要求」。未命中路由的消息同样保留最近记录，可在设置页企业微信卡片查看或调用 `ctx.wecom.unmatchedMessages()`。
@@ -489,7 +491,7 @@ npx @baoyx/dsh-agent-kit-admin doctor --profile my-agent
 - 安装：如果启用了钉钉而 `dws` 不在 `PATH` 中，`setup` 会展示 `npm i -g dingtalk-workspace-cli@1.0.62`，确认后安装。
 - 钉钉：固定 `user` 身份；未登录时可以拉起 `dws auth login`，可配置默认目标与 `dryRun`。
 - 飞书：检查可选依赖 `@larksuiteoapi/node-sdk`，引导填写 App ID、域名，App Secret 只写入密钥存储；
-- 企业微信：检查可选依赖 `@wecom/aibot-node-sdk`，引导填写 BotID，Secret 只写入密钥存储；可选的连接测试需要确认（建连会占用机器人唯一的长连接，可能挤掉运行中的 Agent）；`doctor` 不在线检查连接，原因相同；
+- 企业微信：检查可选依赖 `@wecom/aibot-node-sdk`，引导填写 BotID，Secret 只写入密钥存储；可选的连接测试需要确认（默认不做：建连会占用机器人唯一的长连接，把运行中的 Agent 挤下线且它不会自动重连，测试后需在设置页重载「企业微信」行）；`doctor` 不在线检查连接，原因相同；
 - 通知：选择默认渠道（钉钉、飞书或企业微信），所选渠道的行未启用时会提示。
 
 `setup` 只会修改 Profile 目录下的 `cordis.patch.yml`；`doctor` 只读，不修改任何文件，`--json` 输出机器可读的体检报告，可接入 CI。`doctor` 的 `agent-kit-notify.channel` 检查在所选渠道的行未启用时失败。两者都会在 `$DSH_HOME/profiles` 下扫描带有基础包（bundles 里含 `@baoyx/dsh-agent-kit`）的 Profile；只有一个候选时自动选中，有多个时需要 `--profile` 指定。

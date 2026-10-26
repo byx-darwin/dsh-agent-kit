@@ -19,8 +19,10 @@ export interface WecomHandlers {
   onAuthenticated(): void
   onDisconnected(reason: string): void
   onReconnecting(attempt: number): void
-  /** 认证失败重试用尽等终态错误。 */
+  /** 终态错误：认证失败重试用尽（`WSAuthFailureError`）或重连次数用尽（`WSReconnectExhaustedError`）。 */
   onError(error: Error): void
+  /** 非终态错误（网络错误、单次认证失败等）；SDK 仍会自动重连。 */
+  onTransientError(error: Error): void
   /** 被另一条连接挤下线；SDK 不会再自动重连。 */
   onKicked(): void
   /** 消息帧（`aibot_msg_callback`）；必须同步返回。 */
@@ -74,6 +76,13 @@ export function formatSdkLog(args: unknown[]): string {
   }).join(' ')
 }
 
+/** SDK 1.0.7 在每次 ws 错误、每次单独的认证失败时都会触发 `error`；只有这两类表示 SDK 已放弃重连。 */
+const TERMINAL_ERROR_NAMES = new Set(['WSAuthFailureError', 'WSReconnectExhaustedError'])
+
+export function isTerminalSdkError(error: unknown): boolean {
+  return typeof (error as { name?: unknown } | null)?.name === 'string' && TERMINAL_ERROR_NAMES.has((error as { name: string }).name)
+}
+
 /** 默认从 @wecom/aibot-node-sdk 加载（可选 peer，只在启用 wecom 时加载）。 */
 export const loadWecomSdk: WecomSdkLoader = async () => {
   let sdk: typeof import('@wecom/aibot-node-sdk')
@@ -103,7 +112,7 @@ export const loadWecomSdk: WecomSdkLoader = async () => {
       client.on('authenticated', handlers.onAuthenticated)
       client.on('disconnected', handlers.onDisconnected)
       client.on('reconnecting', handlers.onReconnecting)
-      client.on('error', handlers.onError)
+      client.on('error', (error: Error) => (isTerminalSdkError(error) ? handlers.onError(error) : handlers.onTransientError(error)))
       client.on('event.disconnected_event', () => handlers.onKicked())
       client.on('message', (frame) => handlers.onMessage(frame as unknown as WecomFrame))
       client.connect()
@@ -111,7 +120,11 @@ export const loadWecomSdk: WecomSdkLoader = async () => {
         sendMessage: (chatid, body) => client.sendMessage(chatid, body) as Promise<WecomFrame>,
         replyStream: (frame, streamId, content) => client.replyStream(frame as never, streamId, content, true) as Promise<WecomFrame>,
         get connected() { return client.isConnected },
-        disconnect: () => client.disconnect(),
+        disconnect: () => {
+          // 先摘掉监听：terminate 之后 ws 的 close 事件异步到达，已卸载的实例不应再收到 disconnected 等回调
+          client.removeAllListeners()
+          client.disconnect()
+        },
       }
     },
   }

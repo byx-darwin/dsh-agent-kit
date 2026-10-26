@@ -1,5 +1,5 @@
 import { WecomService } from '../wecom/service.js'
-import type { WecomConnection, WecomFrame, WecomHandlers, WecomSdk, WecomSendBody } from '../wecom/sdk.js'
+import { isTerminalSdkError, type WecomConnection, type WecomFrame, type WecomHandlers, type WecomSdk, type WecomSendBody } from '../wecom/sdk.js'
 
 export interface FakeWecomStep {
   errcode?: number
@@ -17,7 +17,10 @@ export interface FakeWecom {
   authenticate(): void
   disconnect(reason?: string): void
   reconnecting(): void
-  error(error: Error): void
+  /** 终态错误：默认 `WSAuthFailureError`（认证失败重试用尽）；传入的错误若不是终态名称，也按认证失败用尽处理。 */
+  error(error?: Error): void
+  /** 非终态错误（如 ECONNREFUSED）：普通 Error，SDK 会继续重连。 */
+  transientError(message?: string): void
   kick(): void
   /** 推送一帧消息并让路由器有机会投递。 */
   emit(frame: WecomFrame): Promise<void>
@@ -49,23 +52,27 @@ export function createFakeWecomSdk(options: { send?: FakeWecomStep[]; reply?: Fa
   let handlers: WecomHandlers | undefined
   let connected = false
   let closed = false
+  /** 与适配器一致：disconnect 时先摘掉监听，之后的回调都不再送达。 */
+  let detached = false
   let connects = 0
   let seq = 0
+  const noop: WecomHandlers = { onAuthenticated() {}, onDisconnected() {}, onReconnecting() {}, onError() {}, onTransientError() {}, onKicked() {}, onMessage() {} }
   const need = () => {
     if (!handlers) throw new Error('fake wecom: connect has not been called')
-    return handlers
+    return detached ? noop : handlers
   }
   return {
     sdk: {
       connect(_options, h): WecomConnection {
         handlers = h
         closed = false
+        detached = false
         connects++
         return {
           sendMessage: (chatid, body) => { sends.push({ chatid, body }); return settle(send.next(), `send_${++seq}`) },
           replyStream: (frame, streamId, content) => { replies.push({ frame, streamId, content }); return settle(reply.next(), frame.headers.req_id) },
           get connected() { return connected },
-          disconnect: () => { closed = true; connected = false },
+          disconnect: () => { detached = true; closed = true; connected = false },
         }
       },
     },
@@ -76,7 +83,12 @@ export function createFakeWecomSdk(options: { send?: FakeWecomStep[]; reply?: Fa
     authenticate: () => { connected = true; need().onAuthenticated() },
     disconnect: (reason = 'network') => { connected = false; need().onDisconnected(reason) },
     reconnecting: () => need().onReconnecting(1),
-    error: (e) => { connected = false; need().onError(e) },
+    error: (e) => {
+      connected = false
+      const terminal = e && isTerminalSdkError(e) ? e : Object.assign(new Error(e?.message ?? 'Max auth failure attempts exceeded (5)'), { name: 'WSAuthFailureError' })
+      need().onError(terminal)
+    },
+    transientError: (message = 'connect ECONNREFUSED 127.0.0.1:443') => { connected = false; need().onTransientError(new Error(message)) },
     kick: () => { connected = false; need().onKicked(); need().onDisconnected('New connection established, server disconnected this connection') },
     emit: async (frame) => {
       need().onMessage(frame)

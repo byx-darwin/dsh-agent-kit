@@ -156,10 +156,50 @@ describe('WecomService inbox', () => {
     const fork = await root.root.plugin(WecomService, { botId: 'bot1' })
     const wecom = root.root.get('wecom')!
     const first = wecom.onMessage({ conversationId: 'a' }, () => {})
-    fake.error(new Error('Max auth failure attempts reached'))
+    fake.error()
     await expect(first.ready).rejects.toThrow(/auth/i)
     expect(wecom.health().status).toBe('failed')
     await fork.dispose()
+  })
+
+  it('treats transient SDK errors as reconnecting: ready stays pending and health is degraded, not failed', async () => {
+    const fork = await root.root.plugin(WecomService, { botId: 'bot1' })
+    const wecom = root.root.get('wecom')!
+    const sub = wecom.onMessage({ conversationId: 'a' }, () => {})
+    let settled: 'resolved' | 'rejected' | undefined
+    sub.ready.then(() => { settled = 'resolved' }, () => { settled = 'rejected' })
+    fake.transientError('connect ECONNREFUSED 10.0.0.1:443')
+    fake.transientError('Authentication failed: invalid secret (code: 40001)')
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(settled).toBeUndefined()
+    expect(wecom.health()).toMatchObject({ status: 'degraded', detail: expect.stringContaining('reconnecting') })
+    expect(wecom.health().counters?.inbox.listener).toBe('reconnecting')
+    expect(root.failures.some((f) => f.service === 'wecom')).toBe(false)
+    expect(root.logs.some((l) => l.includes('wecom long connection error, reconnecting'))).toBe(true)
+    fake.authenticate()
+    await sub.ready
+    expect(settled).toBe('resolved')
+    expect(wecom.health().status).toBe('ok')
+    await fork.dispose()
+  })
+
+  it('keeps a terminal failure sticky when a transient error follows', async () => {
+    await root.root.plugin(WecomService, { botId: 'bot1' })
+    const wecom = root.root.get('wecom')!
+    fake.error(Object.assign(new Error('Max reconnect attempts exceeded (10)'), { name: 'WSReconnectExhaustedError' }))
+    fake.transientError()
+    expect(wecom.health().status).toBe('failed')
+    expect(wecom.health().counters?.inbox.listener).toBe('failed')
+  })
+
+  it('ignores late connection callbacks after unload', async () => {
+    const fork = await root.root.plugin(WecomService, { botId: 'bot1' })
+    fake.authenticate()
+    await fork.dispose()
+    const before = root.logs.length
+    fake.disconnect('late close after terminate')
+    fake.transientError()
+    expect(root.logs.slice(before).some((l) => l.includes('wecom'))).toBe(false)
   })
 
   it('refuses duplicate routes and listening in dryRun', async () => {
@@ -199,6 +239,31 @@ describe('WecomService inbox', () => {
     await until(() => got.length === 1)
     await until(() => root.logs.some((l) => l.includes('wecom conversation record failed')))
     spy.mockRestore()
+  })
+
+  it('rejects markdown together with text in reply exactly like send(), and warns with traceId and code', async () => {
+    await root.root.plugin(WecomService, { botId: 'bot1' })
+    let replied: any
+    root.root.get('wecom')!.onMessage({ conversationId: 'wrkG' }, async (_m, { reply }) => { replied = await reply({ markdown: '**a**', text: 'b', traceId: 't-1' } as never) })
+    fake.authenticate()
+    await fake.emit(groupText('m1', 'wrkG', 'hi'))
+    await until(() => replied !== undefined)
+    expect(replied.results[0]).toMatchObject({ ok: false, error: { code: 'invalid_target', message: expect.stringMatching(/mutually exclusive/) } })
+    expect(fake.replies).toHaveLength(0)
+    await expect(root.root.get('wecom')!.send({ markdown: '**a**', text: 'b', target: { chatId: 'wrkG' } })).rejects.toMatchObject({ code: 'invalid_target' })
+    expect(root.logs.some((l) => l.includes('wecom reply failed') && l.includes('t-1') && l.includes('invalid_target'))).toBe(true)
+  })
+
+  it('warns on reply delivery failures with traceId and code', async () => {
+    await root.root.plugin(WecomService, { botId: 'bot1' })
+    fake.setReply([{ errcode: 600039, errmsg: 'bad' }])
+    let replied: any
+    root.root.get('wecom')!.onMessage({ conversationId: 'wrkG' }, async (_m, { reply }) => { replied = await reply({ text: 'x', traceId: 't-2' }) })
+    fake.authenticate()
+    await fake.emit(groupText('m1', 'wrkG', 'hi'))
+    await until(() => replied !== undefined)
+    expect(replied.results[0].ok).toBe(false)
+    expect(root.logs.some((l) => l.includes('wecom reply failed') && l.includes('t-2'))).toBe(true)
   })
 
   it('returns api_error without throwing when the inbound frame was evicted', async () => {
