@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import type { AdminApi, ChannelRecipientSearchResult, EntryField, KitId } from './remote.js'
+import type { AdminApi, AdminChannel, ChannelRecipientSearchResult, EntryField, KitId } from './remote.js'
 
 export type T = (key: string, vars?: Record<string, string | number>) => string
 type Config = Record<string, unknown>
@@ -89,11 +89,12 @@ export function setPath(config: Config, path: string, value: unknown): Config {
 function EntryInput({ field, p, id }: { field: EntryField; p: FormProps; id: string }) {
   const value = getPath(p.config, field.path)
   const set = (v: unknown) => p.onChange(setPath(p.config, field.path, v))
-  switch (field.kind ?? 'text') {
+  const kind = field.kind ?? 'text'
+  switch (kind) {
     case 'dingtalk-target':
-      return <DingtalkTargetInput id={id} value={value} onChange={set} disabled={p.disabled} api={p.api} t={p.t} />
     case 'feishu-target':
-      return <FeishuTargetInput id={id} value={value} onChange={set} disabled={p.disabled} api={p.api} t={p.t} />
+    case 'wecom-target':
+      return <ChannelTargetInput spec={TARGET_SPECS[kind]} id={id} value={value} onChange={set} disabled={p.disabled} api={p.api} t={p.t} />
     case 'boolean':
       return <input id={id} type="checkbox" disabled={p.disabled} checked={value === true} onChange={(e) => set(e.target.checked)} />
     case 'number':
@@ -125,7 +126,38 @@ function EntryInput({ field, p, id }: { field: EntryField; p: FormProps; id: str
   }
 }
 
-function DingtalkTargetInput({ id, value, onChange, disabled, api, t }: {
+interface TargetKindSpec {
+  kind: 'group' | 'user'
+  /** 是否可按关键词搜索；否则只能手动填写。 */
+  search: boolean
+  /** 手动填写时写入的字段名，如 `openId`、`userId`、`chatId`。 */
+  manualKey?: string
+  manualPlaceholderKey?: string
+  hintKey?: string
+}
+
+interface TargetSpec {
+  channel: AdminChannel
+  kinds: TargetKindSpec[]
+  /** 搜索关键词最短长度。 */
+  minQuery: number
+  /** 已选值可能出现的字段（按顺序取第一个）。 */
+  selectedKeys: string[]
+  /** 其中哪些字段算「群」。 */
+  groupKeys: string[]
+  /** 搜索输入框的占位文案（按类型）。 */
+  queryPlaceholderKeys: Record<'group' | 'user', string>
+}
+
+const TARGET_SPECS: Record<'dingtalk-target' | 'feishu-target' | 'wecom-target', TargetSpec> = {
+  'dingtalk-target': { channel: 'dingtalk', kinds: [{ kind: 'group', search: true }, { kind: 'user', search: true }], minQuery: 2, selectedKeys: ['chatId', 'userId', 'openDingtalkId', 'chatIds'], groupKeys: ['chatId', 'chatIds'], queryPlaceholderKeys: { group: 'recipient.groupQuery', user: 'recipient.userQuery' } },
+  'feishu-target': { channel: 'feishu', kinds: [{ kind: 'group', search: true }, { kind: 'user', search: false, manualKey: 'openId', manualPlaceholderKey: 'recipient.openId', hintKey: 'recipient.feishuUserHint' }], minQuery: 2, selectedKeys: ['chatId', 'openId'], groupKeys: ['chatId'], queryPlaceholderKeys: { group: 'recipient.groupQuery', user: 'recipient.userQuery' } },
+  'wecom-target': { channel: 'wecom', kinds: [{ kind: 'group', search: true, manualKey: 'chatId', manualPlaceholderKey: 'recipient.wecomChatId' }, { kind: 'user', search: true, manualKey: 'userId', manualPlaceholderKey: 'recipient.wecomUserId' }], minQuery: 1, selectedKeys: ['chatId', 'userId'], groupKeys: ['chatId'], queryPlaceholderKeys: { group: 'recipient.wecomQuery', user: 'recipient.wecomQuery' } },
+}
+
+/** 通用收件人选择：按渠道规格决定可搜索、可手动填写的类型；已选值存 `{ chatId }`、`{ userId }` 等稳定 ID。 */
+function ChannelTargetInput({ spec, id, value, onChange, disabled, api, t }: {
+  spec: TargetSpec
   id: string
   value: unknown
   onChange(value: unknown): void
@@ -134,19 +166,24 @@ function DingtalkTargetInput({ id, value, onChange, disabled, api, t }: {
   t: T
 }) {
   const current = value && typeof value === 'object' && !Array.isArray(value) ? value as Config : {}
-  const [kind, setKind] = useState<'group' | 'user'>(current.userId || current.openDingtalkId ? 'user' : 'group')
+  const present = (key: string) => Array.isArray(current[key]) ? (current[key] as unknown[]).length > 0 : current[key] != null && current[key] !== ''
+  const selectedKey = spec.selectedKeys.find(present)
+  const [kind, setKind] = useState<'group' | 'user'>(selectedKey && !spec.groupKeys.includes(selectedKey) ? 'user' : 'group')
   const [query, setQuery] = useState('')
+  const [manual, setManual] = useState('')
   const [result, setResult] = useState<ChannelRecipientSearchResult>()
   const [error, setError] = useState<string>()
   const [loading, setLoading] = useState(false)
-  const selected = current.chatId ?? current.userId ?? current.openDingtalkId ?? (Array.isArray(current.chatIds) ? current.chatIds.join(', ') : undefined)
+  const kindSpec = spec.kinds.find((k) => k.kind === kind) ?? spec.kinds[0]!
+  const selected = selectedKey === undefined ? undefined : Array.isArray(current[selectedKey]) ? (current[selectedKey] as unknown[]).join(', ') : current[selectedKey]
+  const queryReady = query.trim().length >= spec.minQuery
   const search = async () => {
-    if (!api || query.trim().length < 2) return
+    if (!api || !queryReady) return
     setLoading(true)
     setError(undefined)
     setResult(undefined)
     try {
-      setResult(await api.channelSearchRecipients('dingtalk', kind, query.trim()))
+      setResult(await api.channelSearchRecipients(spec.channel, kind, query.trim()))
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -155,15 +192,24 @@ function DingtalkTargetInput({ id, value, onChange, disabled, api, t }: {
   }
   return (
     <div className="agent-kit-target-picker">
-      <select aria-label={t('recipient.kind')} value={kind} disabled={disabled} onChange={(e) => { setKind(e.target.value as 'group' | 'user'); setQuery(''); setResult(undefined) }}>
+      <select aria-label={t('recipient.kind')} value={kind} disabled={disabled} onChange={(e) => { setKind(e.target.value as 'group' | 'user'); setQuery(''); setManual(''); setResult(undefined) }}>
         <option value="group">{t('recipient.group')}</option>
         <option value="user">{t('recipient.user')}</option>
       </select>
-      <div className="agent-kit-target-search">
-        <input id={id} value={query} disabled={disabled} placeholder={kind === 'group' ? t('recipient.groupQuery') : t('recipient.userQuery')} onChange={(e) => setQuery(e.target.value)} />
-        <button type="button" className="agent-kit-btn" disabled={disabled || loading || !api || query.trim().length < 2} onClick={() => void search()}>{t('recipient.search')}</button>
-      </div>
-      {selected && <div className="agent-kit-hint">{t('recipient.selected')}（{current.chatId || current.chatIds ? t('recipient.group') : t('recipient.user')}）: <code>{String(selected)}</code> <button type="button" className="agent-kit-btn" disabled={disabled} onClick={() => onChange(undefined)}>{t('recipient.clear')}</button></div>}
+      {kindSpec.search && (
+        <div className="agent-kit-target-search">
+          <input id={id} value={query} disabled={disabled} placeholder={t(spec.queryPlaceholderKeys[kind])} onChange={(e) => setQuery(e.target.value)} />
+          <button type="button" className="agent-kit-btn" disabled={disabled || loading || !api || !queryReady} onClick={() => void search()}>{t('recipient.search')}</button>
+        </div>
+      )}
+      {kindSpec.manualKey && (
+        <div className="agent-kit-target-search">
+          <input id={kindSpec.search ? undefined : id} aria-label={kindSpec.search && kindSpec.manualPlaceholderKey ? t(kindSpec.manualPlaceholderKey) : undefined} value={manual} disabled={disabled} placeholder={kindSpec.manualPlaceholderKey ? t(kindSpec.manualPlaceholderKey) : undefined} onChange={(e) => setManual(e.target.value)} />
+          <button type="button" className="agent-kit-btn" disabled={disabled || !manual.trim()} onClick={() => { onChange({ [kindSpec.manualKey!]: manual.trim() }); setManual('') }}>{t('recipient.select')}</button>
+          {kindSpec.hintKey && <small>{t(kindSpec.hintKey)}</small>}
+        </div>
+      )}
+      {selected != null && <div className="agent-kit-hint">{t('recipient.selected')}（{selectedKey && spec.groupKeys.includes(selectedKey) ? t('recipient.group') : t('recipient.user')}）: <code>{String(selected)}</code> <button type="button" className="agent-kit-btn" disabled={disabled} onClick={() => onChange(undefined)}>{t('recipient.clear')}</button></div>}
       {result && <div className="agent-kit-route-suggestions">
         {result.candidates.length === 0 && <p className="agent-kit-hint">{t('recipient.empty')}</p>}
         {result.candidates.map((candidate) => {
@@ -195,58 +241,13 @@ function FeishuForm(p: FormProps) {
   )
 }
 
-/** 飞书：按群名搜索机器人所在的群（存 `{ chatId }`），个人只能手动填写 open_id（存 `{ openId }`）。 */
-function FeishuTargetInput({ id, value, onChange, disabled, api, t }: { id: string; value: unknown; onChange(value: unknown): void; disabled: boolean; api?: AdminApi; t: T }) {
-  const current = value && typeof value === 'object' && !Array.isArray(value) ? value as Config : {}
-  const [kind, setKind] = useState<'group' | 'user'>(current.openId ? 'user' : 'group')
-  const [query, setQuery] = useState('')
-  const [openId, setOpenId] = useState('')
-  const [result, setResult] = useState<ChannelRecipientSearchResult>()
-  const [error, setError] = useState<string>()
-  const [loading, setLoading] = useState(false)
-  const selected = current.chatId ?? current.openId
-  const search = async () => {
-    if (!api || query.trim().length < 2) return
-    setLoading(true)
-    setError(undefined)
-    setResult(undefined)
-    try {
-      setResult(await api.channelSearchRecipients('feishu', 'group', query.trim()))
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setLoading(false)
-    }
-  }
+/** 企业微信智能机器人：BotID 与可选的私有部署长连接地址；Secret 走卡片下方的密钥面板。 */
+function WecomForm(p: FormProps) {
   return (
-    <div className="agent-kit-target-picker">
-      <select aria-label={t('recipient.kind')} value={kind} disabled={disabled} onChange={(e) => { setKind(e.target.value as 'group' | 'user'); setQuery(''); setResult(undefined) }}>
-        <option value="group">{t('recipient.group')}</option>
-        <option value="user">{t('recipient.user')}</option>
-      </select>
-      {kind === 'group' ? (
-        <div className="agent-kit-target-search">
-          <input id={id} value={query} disabled={disabled} placeholder={t('recipient.groupQuery')} onChange={(e) => setQuery(e.target.value)} />
-          <button type="button" className="agent-kit-btn" disabled={disabled || loading || !api || query.trim().length < 2} onClick={() => void search()}>{t('recipient.search')}</button>
-        </div>
-      ) : (
-        <div className="agent-kit-target-search">
-          <input id={id} value={openId} disabled={disabled} placeholder={t('recipient.openId')} onChange={(e) => setOpenId(e.target.value)} />
-          <button type="button" className="agent-kit-btn" disabled={disabled || !openId.trim()} onClick={() => { onChange({ openId: openId.trim() }); setOpenId('') }}>{t('recipient.select')}</button>
-          <small>{t('recipient.feishuUserHint')}</small>
-        </div>
-      )}
-      {selected != null && <div className="agent-kit-hint">{t('recipient.selected')}（{current.chatId ? t('recipient.group') : t('recipient.user')}）: <code>{String(selected)}</code> <button type="button" className="agent-kit-btn" disabled={disabled} onClick={() => onChange(undefined)}>{t('recipient.clear')}</button></div>}
-      {result && <div className="agent-kit-route-suggestions">
-        {result.candidates.length === 0 && <p className="agent-kit-hint">{t('recipient.empty')}</p>}
-        {result.candidates.map((candidate) => {
-          const candidateId = Object.values(candidate.target)[0]!
-          return <button type="button" className="agent-kit-btn" key={candidateId} disabled={disabled} onClick={() => onChange(candidate.target)}>{candidate.name} · {candidateId}</button>
-        })}
-        {!result.complete && <p className="agent-kit-hint">{t('recipient.incomplete')}</p>}
-      </div>}
-      {error && <p role="alert">{error}</p>}
-    </div>
+    <>
+      {text(p, 'botId', p.t('wecom.botId'))}
+      {text(p, 'wsUrl', p.t('wecom.wsUrl'))}
+    </>
   )
 }
 
@@ -268,4 +269,5 @@ export const FORMS: Partial<Record<KitId, (p: FormProps) => ReactNode>> = {
   'agent-kit-agent-tasks': AgentTasksForm,
   'agent-kit-jev': JevForm,
   'agent-kit-feishu': FeishuForm,
+  'agent-kit-wecom': WecomForm,
 }

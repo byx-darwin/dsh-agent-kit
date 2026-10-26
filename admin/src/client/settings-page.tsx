@@ -157,6 +157,7 @@ export function SettingsPage({ api, t }: { api: AdminApi; t: T }) {
               </>
             )}
             {s.id === 'agent-kit-feishu' && s.enabled && status.writable && <ChannelUnmatchedPanel channel="feishu" api={api} t={t} />}
+            {s.id === 'agent-kit-wecom' && s.enabled && status.writable && <ChannelUnmatchedPanel channel="wecom" api={api} t={t} />}
           </ServiceCard>
         ))}
       </div>

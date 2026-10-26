@@ -35,12 +35,12 @@ export interface AgentKitEntry {
   dependsOn?: readonly KitId[]
 }
 
-export type EntryFieldKind = 'text' | 'number' | 'boolean' | 'select' | 'list' | 'dingtalk-target' | 'feishu-target'
+export type EntryFieldKind = 'text' | 'number' | 'boolean' | 'select' | 'list' | 'dingtalk-target' | 'feishu-target' | 'wecom-target'
 export interface EntryField {
   /** 相对 config 的点分路径，如 `alertTarget.chatId`。 */
   path: string
   label: string
-  /** 缺省为 `text`；`list` 是字符串数组；`dingtalk-target` 是群或个人的稳定 ID；`feishu-target` 是飞书群（`{ chatId }`）或用户（`{ openId }`）。 */
+  /** 缺省为 `text`；`list` 是字符串数组；`dingtalk-target` 是群或个人的稳定 ID；`feishu-target` 是飞书群（`{ chatId }`）或用户（`{ openId }`）；`wecom-target` 是企业微信群（`{ chatId }`）或单聊用户（`{ userId }`），只能从说过话的会话中选或手动填写。 */
   kind?: EntryFieldKind
   /** `select` 的可选值。 */
   options?: readonly string[]

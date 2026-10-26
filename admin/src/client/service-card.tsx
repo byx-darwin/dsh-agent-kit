@@ -1,10 +1,13 @@
 import { useState, type ReactNode } from 'react'
 import { EntryForm, FORMS, type T } from './forms.js'
-import type { AdminApi, AdminStatus, CheckResult, KitId, ServiceStatus } from './remote.js'
+import type { AdminApi, AdminChannel, AdminStatus, CheckResult, KitId, ServiceStatus } from './remote.js'
 import { AdminError } from './remote.js'
 import { ChannelRoutesPanel } from './channel-routes.js'
 
 type Service = ServiceStatus
+
+/** 支持群路由的服务及其渠道。 */
+const ROUTE_CHANNELS: Partial<Record<KitId, AdminChannel>> = { 'agent-kit-dingtalk': 'dingtalk', 'agent-kit-feishu': 'feishu', 'agent-kit-wecom': 'wecom' }
 
 const WS_FORM_DEFAULTS = { pingIntervalMs: 30_000, readTimeoutMs: 75_000 }
 
@@ -90,6 +93,7 @@ function statusTone(service: Service): 'ok' | 'warn' | 'error' | 'neutral' {
 export function ServiceCard(props: { service: Service; checks: CheckResult[]; status: AdminStatus; api: AdminApi; t: T; onSaved(version: string): void; onConflict(): void; onSecretChanged?(): void; children?: ReactNode }) {
   const { service, t } = props
   const [enabled, setEnabled] = useState(service.enabled)
+  const routeChannel = ROUTE_CHANNELS[service.id as KitId]
   const [config, setConfig] = useState<Record<string, unknown>>(() => initialConfig(service))
   const [message, setMessage] = useState<{ text: string; error: boolean }>()
   const [saving, setSaving] = useState(false)
@@ -164,7 +168,7 @@ export function ServiceCard(props: { service: Service; checks: CheckResult[]; st
             {Form ? <Form config={config} onChange={setConfig} disabled={disabled} t={t} /> : <EntryForm fields={service.fields ?? []} config={config} onChange={setConfig} disabled={disabled} t={t} api={props.api} />}
           </div>
         )}
-        {enabled && (service.id === 'agent-kit-dingtalk' || service.id === 'agent-kit-feishu') && <ChannelRoutesPanel channel={service.id === 'agent-kit-feishu' ? 'feishu' : 'dingtalk'} config={config} onChange={setConfig} status={props.status} api={props.api} disabled={disabled} t={t} />}
+        {enabled && routeChannel && <ChannelRoutesPanel channel={routeChannel} config={config} onChange={setConfig} status={props.status} api={props.api} disabled={disabled} t={t} />}
         {props.children}
         {message && reloadHint && <p className="agent-kit-hint agent-kit-reload">{reloadHint}</p>}
         {service.secrets?.length ? <EntrySecrets service={service} status={props.status} api={props.api} t={t} onChanged={props.onSecretChanged ?? (() => {})} /> : null}

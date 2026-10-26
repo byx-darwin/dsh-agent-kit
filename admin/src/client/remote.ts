@@ -28,7 +28,7 @@ export interface CheckResult {
 export interface EntryField {
   path: string
   label: string
-  kind?: 'text' | 'number' | 'boolean' | 'select' | 'list' | 'dingtalk-target' | 'feishu-target'
+  kind?: 'text' | 'number' | 'boolean' | 'select' | 'list' | 'dingtalk-target' | 'feishu-target' | 'wecom-target'
   options?: string[]
   placeholder?: string
   help?: string

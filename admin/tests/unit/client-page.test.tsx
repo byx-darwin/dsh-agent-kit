@@ -203,6 +203,40 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(api.saveService).toHaveBeenLastCalledWith('business-orders', true, { forwardTo: { openId: 'ou_z' } }, 'v2'))
   })
 
+  it('shows the WeCom card with its form, routes, unmatched panel and Secret', async () => {
+    const s = status()
+    s.services.splice(3, 0, { id: 'agent-kit-wecom', title: '企业微信', enabled: true, phase: 'active', health: { status: 'ok', detail: 'bot: bot1' }, config: { botId: 'bot1', groupRoutes: [] }, secrets: [{ label: 'Secret', ref: 'WECOM_BOT_SECRET', configured: false }] })
+    const api = fakeApi(s)
+    render(<SettingsPage api={api} t={t} />)
+    const card = await screen.findByRole('region', { name: '企业微信' })
+    expect(within(card).getByLabelText(zh['wecom.botId']!)).toHaveProperty('value', 'bot1')
+    expect(within(card).getByLabelText(zh['wecom.wsUrl']!)).toBeTruthy()
+    expect(within(card).getByRole('region', { name: zh['routes.title']! })).toBeTruthy()
+    expect(within(card).getByText(/WECOM_BOT_SECRET/)).toBeTruthy()
+    fireEvent.click(within(card).getByRole('button', { name: zh['unmatched.refresh']! }))
+    await waitFor(() => expect(api.channelUnmatched).toHaveBeenCalledWith('wecom'))
+  })
+
+  it('lets a business card pick a WeCom group by search or enter a user id manually', async () => {
+    const s = status()
+    s.services.push({ id: 'business-orders', title: '工单插件', enabled: true, phase: 'active', health: null, config: {}, registered: true,
+      fields: [{ path: 'forwardTo', label: '转发目标', kind: 'wecom-target' }] })
+    const api = fakeApi(s)
+    api.channelSearchRecipients = vi.fn(async () => ({ candidates: [{ name: 'wrkOps', target: { chatId: 'wrkOps' } }], complete: true }))
+    render(<SettingsPage api={api} t={t} />)
+    fireEvent.change(await screen.findByRole('textbox', { name: '转发目标' }), { target: { value: 'w' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['recipient.search']! }))
+    await waitFor(() => expect(api.channelSearchRecipients).toHaveBeenCalledWith('wecom', 'group', 'w'))
+    fireEvent.click(await screen.findByRole('button', { name: 'wrkOps · wrkOps' }))
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} 工单插件` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenCalledWith('business-orders', true, { forwardTo: { chatId: 'wrkOps' } }, 'v1'))
+    fireEvent.change(screen.getByRole('combobox', { name: zh['recipient.kind']! }), { target: { value: 'user' } })
+    fireEvent.change(screen.getByPlaceholderText(zh['recipient.wecomUserId']!), { target: { value: 'zhangsan' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['recipient.select']! }))
+    fireEvent.click(screen.getByRole('button', { name: `${zh.save} 工单插件` }))
+    await waitFor(() => expect(api.saveService).toHaveBeenLastCalledWith('business-orders', true, { forwardTo: { userId: 'zhangsan' } }, 'v2'))
+  })
+
   it('enables a service and saves with the current version', async () => {
     const api = fakeApi(status())
     render(<SettingsPage api={api} t={t} />)
