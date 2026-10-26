@@ -8,7 +8,7 @@ export default defineConfig({
     // 与 tsconfig.json 的 paths 一致：测试直接对着基础包源码
     alias: [
       { find: /^@baoyx\/dsh-agent-kit$/, replacement: `${kitSrc}index.ts` },
-      { find: /^@baoyx\/dsh-agent-kit\/(ws|dingtalk|feishu|notify|agent-tasks|jev|secrets|testing)$/, replacement: `${kitSrc}$1/index.ts` },
+      { find: /^@baoyx\/dsh-agent-kit\/(ws|dingtalk|feishu|wecom|notify|agent-tasks|jev|secrets|testing)$/, replacement: `${kitSrc}$1/index.ts` },
     ],
   },
   test: {

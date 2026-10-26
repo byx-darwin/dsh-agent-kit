@@ -34,7 +34,7 @@ describe('admin bundle in a real dsh loader', () => {
     expect(ids).toContainEqual(['agent-kit-admin', undefined])
     expect(ids.filter(([id]) => id !== 'agent-kit-admin').every(([, disabled]) => disabled === true)).toBe(true)
     const c = await start()
-    for (const name of ['agentWs', 'dingtalk', 'feishu', 'notify', 'agentTasks', 'jev']) expect(c.get(name)).toBeUndefined()
+    for (const name of ['agentWs', 'dingtalk', 'feishu', 'wecom', 'notify', 'agentTasks', 'jev']) expect(c.get(name)).toBeUndefined()
   })
 
   it('exposes AgentKitAdmin as a Remote service', async () => {

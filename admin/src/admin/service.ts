@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { createCheckContext, runChecks, type CheckResult } from '../checks/index.js'
 import { FEISHU_APP_SECRET_REF } from '@baoyx/dsh-agent-kit/feishu'
+import { WECOM_SECRET_REF } from '@baoyx/dsh-agent-kit/wecom'
 import { isKitError } from '@baoyx/dsh-agent-kit'
 import { redact } from '@baoyx/dsh-agent-kit'
 import type { ChannelAtMessage, ChannelInbox, ChannelRecipientKind, ChannelRecipientSearchResult, ChannelUnmatchedMessage, DingtalkRecipientKind, DingtalkRecipientSearchResult, DingtalkUnmatchedMessage, ServiceHealth } from '@baoyx/dsh-agent-kit'
@@ -119,9 +120,14 @@ function feishuSecretRef(config: Record<string, unknown> | undefined): string {
   return ((config ?? {}) as { appSecretRef?: string }).appSecretRef ?? FEISHU_APP_SECRET_REF
 }
 
-const CHANNEL_SERVICES = ['dingtalk', 'feishu'] as const
+/** 企业微信行的 Secret 引用。 */
+function wecomSecretRef(config: Record<string, unknown> | undefined): string {
+  return ((config ?? {}) as { secretRef?: string }).secretRef ?? WECOM_SECRET_REF
+}
+
+const CHANNEL_SERVICES = ['dingtalk', 'feishu', 'wecom'] as const
 type AdminChannel = (typeof CHANNEL_SERVICES)[number]
-const CHANNEL_TITLES: Record<AdminChannel, string> = { dingtalk: 'DingTalk', feishu: 'Feishu' }
+const CHANNEL_TITLES: Record<AdminChannel, string> = { dingtalk: 'DingTalk', feishu: 'Feishu', wecom: 'WeCom' }
 
 /**
  * 同上，但供 `setSecret`/`clearSecret` 写入/清除单个钥匙串条目时使用：数组形式的
@@ -369,6 +375,8 @@ export class AgentKitAdmin extends TypertRemoteService {
     const layaSecrets = layaRef ? [{ label: 'Laya API Key', ref: layaRef, ...(await describeSecretRef(layaRef, this.keyStore)) }] : undefined
     const feishuRef = feishuSecretRef(snapshot.entries['agent-kit-feishu'].config)
     const feishuSecrets = [{ label: 'App Secret', ref: feishuRef, ...(await describeSecretRef(feishuRef, this.keyStore)) }]
+    const wecomRef = wecomSecretRef(snapshot.entries['agent-kit-wecom'].config)
+    const wecomSecrets = [{ label: 'Secret', ref: wecomRef, ...(await describeSecretRef(wecomRef, this.keyStore)) }]
     return {
       profile: profile.name,
       patchReload: profile.patchReload,
@@ -389,6 +397,7 @@ export class AgentKitAdmin extends TypertRemoteService {
             config: snapshot.entries[meta.id].config,
             ...(meta.id === 'agent-kit-jev' && layaSecrets ? { secrets: layaSecrets } : {}),
             ...(meta.id === 'agent-kit-feishu' ? { secrets: feishuSecrets } : {}),
+            ...(meta.id === 'agent-kit-wecom' ? { secrets: wecomSecrets } : {}),
             ...this.dependents(registered.entries, meta.id),
           }
         }),
@@ -436,7 +445,7 @@ export class AgentKitAdmin extends TypertRemoteService {
     if (target !== 'credentials') failWith('bad_request', `secret ${ref} can only be stored in the credentials file`)
     const profile = await this.writable()
     const kit = (await readKitEntries(profile.patchFile)).entries
-    if (ref === layaKeyRef(kit['agent-kit-jev'].config) || ref === feishuSecretRef(kit['agent-kit-feishu'].config)) return
+    if (ref === layaKeyRef(kit['agent-kit-jev'].config) || ref === feishuSecretRef(kit['agent-kit-feishu'].config) || ref === wecomSecretRef(kit['agent-kit-wecom'].config)) return
     const { entries } = await collectEntries(profile, this.registry.values())
     if (!entries.some(({ entry, state }) => entrySecretRefs(entry, state.config).some((s) => s.ref === ref))) failWith('bad_request', `unknown secret ref ${ref}`)
   }

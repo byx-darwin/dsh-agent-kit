@@ -136,7 +136,7 @@ describe('patch file', () => {
   })
 
   it('exposes metadata for every kit service', () => {
-    expect(KIT_ENTRIES.map((e) => e.id)).toEqual(['agent-kit-ws', 'agent-kit-dingtalk', 'agent-kit-feishu', 'agent-kit-notify', 'agent-kit-agent-tasks', 'agent-kit-jev'])
+    expect(KIT_ENTRIES.map((e) => e.id)).toEqual(['agent-kit-ws', 'agent-kit-dingtalk', 'agent-kit-feishu', 'agent-kit-wecom', 'agent-kit-notify', 'agent-kit-agent-tasks', 'agent-kit-jev'])
     expect(KIT_ENTRIES.find((e) => e.id === 'agent-kit-notify')!.validate({ channel: 'email' })).toMatchObject({ ok: false, errors: [{ path: 'channel' }] })
     expect(KIT_ENTRIES.find((e) => e.id === 'agent-kit-notify')!.validate({ channel: 'dingtalk' }).ok).toBe(true)
     expect(KIT_ENTRIES.find((e) => e.id === 'agent-kit-dingtalk')!.validate({ identity: 'bot' }).ok).toBe(false)

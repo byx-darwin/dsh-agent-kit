@@ -6,7 +6,7 @@ function snapshot(entries: Partial<KitSnapshot['entries']>): KitSnapshot {
   const off = { enabled: false, config: undefined }
   return {
     version: 'v',
-    entries: { 'agent-kit-ws': off, 'agent-kit-dingtalk': off, 'agent-kit-feishu': off, 'agent-kit-notify': off, 'agent-kit-agent-tasks': off, 'agent-kit-jev': off, ...entries },
+    entries: { 'agent-kit-ws': off, 'agent-kit-dingtalk': off, 'agent-kit-feishu': off, 'agent-kit-wecom': off, 'agent-kit-notify': off, 'agent-kit-agent-tasks': off, 'agent-kit-jev': off, ...entries },
   }
 }
 

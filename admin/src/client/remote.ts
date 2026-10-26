@@ -1,7 +1,7 @@
 import type { ClientContext, RemoteResult } from './host-types.js'
 
-export type KitId = 'agent-kit-ws' | 'agent-kit-dingtalk' | 'agent-kit-feishu' | 'agent-kit-notify' | 'agent-kit-agent-tasks' | 'agent-kit-jev'
-export type AdminChannel = 'dingtalk' | 'feishu'
+export type KitId = 'agent-kit-ws' | 'agent-kit-dingtalk' | 'agent-kit-feishu' | 'agent-kit-wecom' | 'agent-kit-notify' | 'agent-kit-agent-tasks' | 'agent-kit-jev'
+export type AdminChannel = 'dingtalk' | 'feishu' | 'wecom'
 export interface ChannelUnmatchedMessage {
   eventId: string
   messageId?: string

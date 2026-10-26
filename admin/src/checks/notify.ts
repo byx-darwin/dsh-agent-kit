@@ -1,7 +1,7 @@
 import type { KitId } from '../profile/index.js'
 import type { Check } from './types.js'
 
-const TITLES: Record<string, string> = { dingtalk: '钉钉', feishu: '飞书' }
+const TITLES: Record<string, string> = { dingtalk: '钉钉', feishu: '飞书', wecom: '企业微信' }
 
 /** 默认通知渠道对应的渠道行应已启用，否则未指定 targets 的通知会报 channel_unavailable。 */
 export const notifyChecks: Check = (ctx) => {

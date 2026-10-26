@@ -104,6 +104,18 @@ describe('AgentKitAdmin', () => {
     expect(await admin.setSecret('credentials', 'app-secret', 'FEISHU_APP_SECRET')).toEqual({ configured: true, source: 'credentials' })
   })
 
+  it('shows the WeCom Secret on its row, accepts it and a custom secretRef, and serves the wecom channel endpoints', async () => {
+    const admin = await setup('127.0.0.1')
+    const s = await admin.status()
+    expect(s.services.find((x) => x.id === 'agent-kit-wecom')).toMatchObject({ title: '企业微信', secrets: [{ label: 'Secret', ref: 'WECOM_BOT_SECRET', configured: false }] })
+    expect(await admin.setSecret('credentials', 'v', 'WECOM_BOT_SECRET')).toEqual({ configured: true, source: 'credentials' })
+    const { version } = await admin.status()
+    await admin.saveService('agent-kit-wecom', false, { botId: 'bot1', secretRef: 'MY_WECOM_SECRET' }, version)
+    expect(await admin.setSecret('credentials', 'v', 'MY_WECOM_SECRET')).toEqual({ configured: true, source: 'credentials' })
+    expect(await admin.channelUnmatched('wecom')).toEqual([])
+    await expect(admin.channelSearchRecipients('wecom', 'group', 'ab')).rejects.toThrow(/WeCom service is not running/)
+  })
+
   it('rejects an unknown secret ref and accepts a custom Feishu appSecretRef', async () => {
     const admin = await setup('127.0.0.1')
     await expect(admin.setSecret('credentials', 'v', 'SOME_UNKNOWN_REF')).rejects.toThrow(/unknown secret ref/)
