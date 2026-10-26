@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { StringDecoder } from 'node:string_decoder'
 import type { ChannelAtMessage, ChannelMessageHandler, ChannelMessageRoute, ChannelMessageSubscription } from '../common/channel.js'
-import { MessageRouter, type MessageRouterCounts } from '../common/inbox.js'
+import { MessageRouter, type MessageRouterCounts, type ReplyFactory } from '../common/inbox.js'
 import { killTree } from '../common/process.js'
 import type { KitLogger } from '../common/logger.js'
 import { redact } from '../common/redact.js'
@@ -72,8 +72,9 @@ export class DingtalkInbox {
     private readonly captureUnmatched = false,
     private readonly profile: () => string | undefined = () => undefined,
     private readonly groupRoutes: ReadonlyMap<string, string> = new Map(),
+    private readonly replyFor?: ReplyFactory<DingtalkAtMessage>,
   ) {
-    this.router = new MessageRouter<DingtalkAtMessage>({ channel: 'dingtalk', logger, onUnmatched, pluginRoutes: groupRoutes })
+    this.router = new MessageRouter<DingtalkAtMessage>({ channel: 'dingtalk', logger, onUnmatched, pluginRoutes: groupRoutes, replyFor })
   }
 
   stats(): DingtalkInboxStats {

@@ -12,6 +12,7 @@ import { buildSendArgs, type DingtalkAt, type DingtalkTarget } from './args.js'
 import { DingtalkConfig } from './config.js'
 import { DingtalkSendError } from './errors.js'
 import { DingtalkInbox, type DingtalkAtMessage, type DingtalkInboxStats, type DingtalkMessageHandler, type DingtalkMessageRoute, type DingtalkMessageSubscription } from './inbox.js'
+import { safeReply } from '../common/reply.js'
 import { unmatchedFileKey } from '../common/unmatched.js'
 import { DingtalkUnmatchedStore, type DingtalkUnmatchedMessage } from './unmatched.js'
 import { parseErrorOutput, parseSendOutput, type TargetResult } from './output.js'
@@ -71,6 +72,13 @@ export function parseDwsDeviceLogin(text: string): DwsDeviceLogin | undefined {
   const userCode = /authorization code:\s*([A-Za-z0-9-]+)/i.exec(text)?.[1]
   const seconds = Number(/expire in (\d+) seconds/i.exec(text)?.[1])
   return { url, ...(userCode ? { userCode } : {}), ttlMs: seconds > 0 ? seconds * 1000 : DEFAULT_LOGIN_TTL_MS }
+}
+
+/** 钉钉回复目标：`cidme` 开头的会话为单聊，回复发送者；其余为群。规则与 iproost 生产代码一致。 */
+function replyTarget(message: DingtalkAtMessage): DingtalkTarget {
+  return message.conversationId.startsWith('cidme') && message.senderOpenDingtalkId
+    ? { openDingtalkId: message.senderOpenDingtalkId }
+    : { chatId: message.conversationId }
 }
 
 export class DingtalkService extends KitService<DingtalkCounters>
@@ -141,6 +149,7 @@ export class DingtalkService extends KitService<DingtalkCounters>
       true,
       () => this.activeProfile,
       groupRoutes,
+      (message) => (options) => safeReply('dingtalk', () => this.send({ ...options, target: replyTarget(message), at: options.at as DingtalkAt | undefined })),
     )
     this.logger.info('dws resolved', { dwsPath: this.dwsPath, identity: config.identity, dryRun: config.dryRun })
     ctx.effect(() => () => {

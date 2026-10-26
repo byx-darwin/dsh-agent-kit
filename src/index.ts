@@ -7,6 +7,8 @@ export type { HealthStatus, ServiceHealth, ServiceFailedEvent } from './common/s
 export type {
   ChannelAtMessage,
   ChannelInbox,
+  ChannelMessageContext,
+  ChannelReplyOptions,
   ChannelRecipientKind,
   ChannelRecipientSearchResult,
   ChannelUnmatchedMessage,

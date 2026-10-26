@@ -56,7 +56,19 @@ export interface ChannelMessageRoute<M extends ChannelAtMessage = ChannelAtMessa
   priority?: number
 }
 
-export type ChannelMessageHandler<M extends ChannelAtMessage = ChannelAtMessage> = (message: M, context: { signal: AbortSignal }) => void | Promise<void>
+/** `reply()` 的参数：与 `send()` 的公共参数相同，`at` 为该渠道自己的 @ 结构。 */
+export interface ChannelReplyOptions extends ChannelSendCommon {
+  at?: unknown
+}
+
+export interface ChannelMessageContext {
+  /** 路由器的中止信号：超时、注销或服务停止时触发。 */
+  signal: AbortSignal
+  /** 回复这条消息；未传 `signal` 时使用上面的 signal。失败写在结果里，不抛错。 */
+  reply(options: ChannelReplyOptions): Promise<ChannelSendResult>
+}
+
+export type ChannelMessageHandler<M extends ChannelAtMessage = ChannelAtMessage> = (message: M, context: ChannelMessageContext) => void | Promise<void>
 
 export interface ChannelMessageSubscription {
   /** 监听就绪后完成；监听启动失败时拒绝。 */

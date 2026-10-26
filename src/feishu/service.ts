@@ -6,6 +6,7 @@ import { MessageRouter, type MessageRouterCounts } from '../common/inbox.js'
 import { UnmatchedStore, unmatchedFileKey, type ChannelUnmatchedMessage } from '../common/unmatched.js'
 import { parseFeishuEvent, type FeishuAtMessage } from './event.js'
 import { ConfigError } from '../common/errors.js'
+import { safeReply } from '../common/reply.js'
 import { digest, redact, registerSecret } from '../common/redact.js'
 import { KitService, type ServiceHealth } from '../common/service.js'
 import { resolveSecretRef, type KeyStoreOptions } from '../secrets/index.js'
@@ -87,7 +88,8 @@ export class FeishuService extends KitService<FeishuCounters> implements Channel
       (chatId) => this.chatName(chatId),
       (error) => this.logger.warn('feishu unmatched metadata unavailable', { error: redact(String(error)) }),
     )
-    this.router = new MessageRouter<FeishuAtMessage>({ channel: 'feishu', logger: this.logger, onUnmatched: (m) => this.unmatched.add(m), pluginRoutes: groupRoutes })
+    this.router = new MessageRouter<FeishuAtMessage>({ channel: 'feishu', logger: this.logger, onUnmatched: (m) => this.unmatched.add(m), pluginRoutes: groupRoutes,
+      replyFor: (message) => (options) => safeReply('feishu', () => this.send({ ...options, target: { chatId: message.conversationId }, at: options.at as FeishuAt | undefined })) })
     ctx.effect(() => () => this.controller.abort(), 'feishu.abortInFlight')
   }
 

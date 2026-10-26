@@ -1,4 +1,6 @@
-import type { ChannelAtMessage, ChannelMessageHandler, ChannelMessageRoute } from './channel.js'
+import type { ChannelAtMessage, ChannelMessageHandler, ChannelMessageRoute, ChannelReplyOptions, ChannelSendResult } from './channel.js'
+import type { ServiceName } from './errors.js'
+import { replyUnsupported } from './reply.js'
 import type { KitLogger } from './logger.js'
 import { redact } from './redact.js'
 
@@ -15,6 +17,9 @@ export interface MessageRouterCounts {
   handlerErrors: number
 }
 
+/** 由渠道提供：为一条收到的消息生成回复函数。 */
+export type ReplyFactory<M extends ChannelAtMessage> = (message: M) => (options: ChannelReplyOptions) => Promise<ChannelSendResult>
+
 export interface MessageRouterOptions<M extends ChannelAtMessage> {
   /** 日志前缀，如 `dingtalk`。 */
   channel: string
@@ -24,6 +29,8 @@ export interface MessageRouterOptions<M extends ChannelAtMessage> {
   /** 会话 ID → 插件 ID；配置了的会话只投递给该插件，不再看 `register()` 的路由。 */
   pluginRoutes?: ReadonlyMap<string, string>
   handlerTimeoutMs?: number
+  /** 渠道的回复实现；未提供时 `reply()` 返回 `reply_unsupported` 失败结果。 */
+  replyFor?: ReplyFactory<M>
 }
 
 type Route<M extends ChannelAtMessage> = { id: number; config: ChannelMessageRoute<M>; handler: ChannelMessageHandler<M>; controller: AbortController }
@@ -46,6 +53,12 @@ export class MessageRouter<M extends ChannelAtMessage> {
   private readonly counts: MessageRouterCounts = { received: 0, dispatched: 0, unmatched: 0, duplicate: 0, dropped: 0, handlerErrors: 0 }
 
   constructor(private readonly options: MessageRouterOptions<M>) {}
+
+  private replyTo(message: M, signal: AbortSignal): (options: ChannelReplyOptions) => Promise<ChannelSendResult> {
+    const send = this.options.replyFor?.(message)
+    if (!send) return () => replyUnsupported(this.options.channel as ServiceName)
+    return (options) => send({ ...options, signal: options.signal ?? signal })
+  }
 
   /** 已注册的路由与插件处理器总数。 */
   get size(): number {
@@ -161,7 +174,7 @@ export class MessageRouter<M extends ChannelAtMessage> {
         let onAbort: (() => void) | undefined
         try {
           await Promise.race([
-            Promise.resolve().then(() => selected.handler(message, { signal })),
+            Promise.resolve().then(() => selected.handler(message, { signal, reply: this.replyTo(message, signal) })),
             new Promise<never>((_, reject) => {
               onAbort = () => reject(new Error('handler aborted or timed out'))
               if (signal.aborted) onAbort()

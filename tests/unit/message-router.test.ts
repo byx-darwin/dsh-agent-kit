@@ -13,6 +13,32 @@ function router(options: { pluginRoutes?: Map<string, string>; handlerTimeoutMs?
 }
 
 describe('MessageRouter', () => {
+
+  it('passes a reply function built by replyFor, defaulting the signal to the handler signal', async () => {
+    const calls: Array<{ text?: string; signal?: AbortSignal; eventId: string }> = []
+    const r = new MessageRouter<ChannelAtMessage>({
+      channel: 'test', logger, onUnmatched: async () => {},
+      replyFor: (m) => async (o) => { calls.push({ text: o.text, signal: o.signal, eventId: m.eventId }); return { results: [{ ok: true, messageId: 'r1' }] } },
+    })
+    let handlerSignal: AbortSignal | undefined
+    let replied: unknown
+    r.register({ conversationId: 'c1' }, async (_m, { signal, reply }) => { handlerSignal = signal; replied = await reply({ text: 'pong' }) })
+    r.setReady(true)
+    r.accept(msg('e1', 'c1'))
+    await until(() => replied !== undefined)
+    expect(replied).toEqual({ results: [{ ok: true, messageId: 'r1' }] })
+    expect(calls).toEqual([{ text: 'pong', signal: handlerSignal, eventId: 'e1' }])
+  })
+
+  it('returns a reply_unsupported failure when the channel provides no replyFor', async () => {
+    const { r } = router()
+    let replied: any
+    r.register({ conversationId: 'c1' }, async (_m, { reply }) => { replied = await reply({ text: 'x' }) })
+    r.setReady(true)
+    r.accept(msg('e1', 'c1'))
+    await until(() => replied !== undefined)
+    expect(replied.results[0]).toMatchObject({ ok: false, error: { code: 'reply_unsupported', retryable: false } })
+  })
   it('dispatches each message to the highest-priority matching route, then registration order', async () => {
     const { r, unmatched } = router()
     const got: string[] = []
