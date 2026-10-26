@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConversationStore, MAX_CONVERSATIONS } from '../../src/wecom/conversations.js'
 import { parseWecomFrame, type WecomAtMessage } from '../../src/wecom/event.js'
 import { WecomService } from '../../src/wecom/service.js'
@@ -52,6 +52,20 @@ describe('ConversationStore', () => {
     expect(items.some((c) => c.conversationId === 'c1')).toBe(false)
     expect(await store.has('c0')).toBe(true)
     if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600)
+  })
+
+  it('keeps every entry under concurrent records and holds the cap', async () => {
+    const file = join(dir, 'conc.json')
+    const store = new ConversationStore(file, () => {})
+    await Promise.all(Array.from({ length: 20 }, (_, i) => store.record({ conversationId: `k${i}`, chatType: 'single', at: i })))
+    expect(await new ConversationStore(file, () => {}).list()).toHaveLength(20)
+    const big = join(dir, 'big.json')
+    const bigStore = new ConversationStore(big, () => {})
+    await Promise.all(Array.from({ length: MAX_CONVERSATIONS + 20 }, (_, i) => bigStore.record({ conversationId: `b${i}`, chatType: 'group', at: i })))
+    const items = await new ConversationStore(big, () => {}).list()
+    expect(items).toHaveLength(MAX_CONVERSATIONS)
+    expect(items.some((c) => c.conversationId === 'b0')).toBe(false)
+    expect(items.some((c) => c.conversationId === `b${MAX_CONVERSATIONS + 19}`)).toBe(true)
   })
 })
 
@@ -138,7 +152,7 @@ describe('WecomService inbox', () => {
     expect(fake.disconnected()).toBe(true)
   })
 
-  it('rejects pending ready on auth failure and on unload', async () => {
+  it('rejects pending ready on auth failure', async () => {
     const fork = await root.root.plugin(WecomService, { botId: 'bot1' })
     const wecom = root.root.get('wecom')!
     const first = wecom.onMessage({ conversationId: 'a' }, () => {})
@@ -153,4 +167,49 @@ describe('WecomService inbox', () => {
     await root.root.plugin(WecomService, { botId: 'bot1', dryRun: true })
     expect(() => root.root.get('wecom')!.onMessage({ conversationId: 'x' }, () => {})).toThrow(/dryRun/)
   })
+  it('keeps failed sticky across reconnecting until re-authenticated', async () => {
+    await root.root.plugin(WecomService, { botId: 'bot1' })
+    const wecom = root.root.get('wecom')!
+    fake.authenticate()
+    fake.kick()
+    fake.reconnecting()
+    expect(wecom.health().status).toBe('failed')
+    expect(wecom.health().counters?.inbox.listener).toBe('failed')
+    fake.authenticate()
+    expect(wecom.health().status).toBe('ok')
+    expect(wecom.health().counters?.inbox.listener).toBe('ready')
+  })
+
+  it('rejects pending ready on unload', async () => {
+    const fork = await root.root.plugin(WecomService, { botId: 'bot1' })
+    const wecom = root.root.get('wecom')!
+    const sub = wecom.onMessage({ conversationId: 'a' }, () => {})
+    const assertion = expect(sub.ready).rejects.toThrow(/stopped/)
+    await fork.dispose()
+    await assertion
+  })
+
+  it('logs conversation record failures and still delivers the message', async () => {
+    const spy = vi.spyOn(ConversationStore.prototype, 'record').mockRejectedValueOnce(new Error('disk full'))
+    await root.root.plugin(WecomService, { botId: 'bot1' })
+    const got: string[] = []
+    root.root.get('wecom')!.onMessage({ conversationId: 'wrkG' }, (m) => { got.push(m.eventId) })
+    fake.authenticate()
+    await fake.emit(groupText('m1', 'wrkG', 'hi'))
+    await until(() => got.length === 1)
+    await until(() => root.logs.some((l) => l.includes('wecom conversation record failed')))
+    spy.mockRestore()
+  })
+
+  it('returns api_error without throwing when the inbound frame was evicted', async () => {
+    await root.root.plugin(WecomService, { botId: 'bot1' })
+    const replies: Array<(o: { text: string }) => Promise<any>> = []
+    root.root.get('wecom')!.onMessage({ conversationId: 'wrkG' }, (_m, { reply }) => { replies.push(reply as never) })
+    fake.authenticate()
+    for (let i = 0; i < 1001; i++) await fake.emit(groupText(`e${i}`, 'wrkG', 'x'))
+    await until(() => replies.length === 1001, 15000)
+    const result = await replies[0]!({ text: 'late' })
+    expect(result.results[0]).toMatchObject({ ok: false, error: { code: 'api_error' } })
+    expect(fake.replies).toHaveLength(0)
+  }, 30000)
 })

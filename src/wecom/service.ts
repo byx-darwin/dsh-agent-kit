@@ -62,7 +62,7 @@ export class WecomService extends KitService<WecomCounters> implements ChannelSe
   private readonly router: MessageRouter<WecomAtMessage>
   private readonly unmatched: UnmatchedStore
   private readonly conversations: ConversationStore
-  /** 收到的帧，按消息 ID 保存以便回复（24 小时窗口；只保留最近 1000 个）。 */
+  /** 收到的帧，按消息 ID 保存以便回复；按数量限制，只保留最近 1000 个。超过企业微信 24 小时窗口的帧在 SDK 处失败，归类为 api_error。 */
   private readonly frames = new Map<string, WecomFrame>()
   private listener: 'idle' | 'ready' | 'reconnecting' | 'failed' = 'idle'
   private readyWaiters: Array<{ resolve: () => void; reject: (error: Error) => void }> = []
@@ -130,7 +130,8 @@ export class WecomService extends KitService<WecomCounters> implements ChannelSe
         },
         onReconnecting: () => {
           this.authenticated = false
-          this.listener = 'reconnecting'
+          // failed 是粘性状态，只有重新认证成功才能恢复
+          if (this.listener !== 'failed') this.listener = 'reconnecting'
           this.router.setReady(false)
         },
         onError: (error) => this.fail(`wecom long connection failed: ${redact(error.message)}`, error),
@@ -144,7 +145,7 @@ export class WecomService extends KitService<WecomCounters> implements ChannelSe
             return
           }
           this.rememberFrame(parsed.message.eventId, parsed.frame)
-          void this.conversations.record({ conversationId: parsed.message.conversationId, chatType: parsed.message.chatType, ...(parsed.message.senderId ? { lastSenderId: parsed.message.senderId } : {}) }).catch(() => {})
+          void this.conversations.record({ conversationId: parsed.message.conversationId, chatType: parsed.message.chatType, ...(parsed.message.senderId ? { lastSenderId: parsed.message.senderId } : {}) }).catch((e: unknown) => this.logger.warn('wecom conversation record failed', { error: redact(String(e)) }))
           this.router.accept(parsed.message)
         },
       },
