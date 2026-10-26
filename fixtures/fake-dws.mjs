@@ -82,10 +82,11 @@ if (args[0] === 'event' && args[1] === '+listen-im') {
   process.stderr.write('[event] ready event_key=user_im_message_receive_at bus_pid=1 subscribe_id=fake-sub\n')
   await new Promise((r) => setTimeout(r, scenario.eventDelayMs ?? 30))
   for (const event of scenario.events ?? []) process.stdout.write(`${JSON.stringify(event)}\n`)
+  // 与真实 dws 一致：一直运行，直到调用方关闭 stdin 或结束进程
   process.stdin.resume()
   process.stdin.on('end', () => process.exit(0))
-  setInterval(() => {}, 1000)
-  process.exit(0)
+  // 阻塞在这里，不往下落到其他命令的处理分支
+  await new Promise(() => setInterval(() => {}, 1000))
 }
 
 if (args[0] === 'chat' && args[1] === '+conversation-info') {

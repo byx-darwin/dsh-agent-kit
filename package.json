@@ -74,8 +74,8 @@
   },
   "peerDependencies": {
     "@larksuiteoapi/node-sdk": "^1.76.0",
-    "@deepseek-ai/cordis": "4.0.2 || 4.0.4",
-    "@deepseek-ai/dsh-typert-protocol": "0.1.5-rc.3 || 0.1.7-alpha.2 || 0.1.7-rc.2",
+    "@deepseek-ai/cordis": "4.0.2 || 4.0.4 || 4.0.5",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.5-rc.3 || 0.1.7-alpha.2 || 0.1.7-rc.2 || 0.2.1-rc.2",
     "@deepseek-ai/schemastery": "^3.18.2",
     "@typesafe-ai/sdk": "^0.6.0"
   },

@@ -102,6 +102,7 @@ export class FakeSubagentRuntime extends Service implements SubagentRuntime {
   start(name: string, request: SubagentStartRequest): Promise<SubagentRun> {
     const provider = this.providers.get(name)
     if (!provider) return Promise.reject(new Error(`no provider ${name}`))
+    if (!provider.start) return Promise.reject(new Error(`provider ${name} has no start`))
     return provider.start({ ...request, descriptor: { mode: 'one-shot', provider: name, label: request.label } })
   }
 }

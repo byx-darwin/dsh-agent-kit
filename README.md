@@ -69,7 +69,8 @@
 ## 环境要求
 
 - Node.js `^22.19` 或 `>=24`
-- [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh) CLI `0.1.5-rc.3` 或 `0.1.7-alpha.2`（均为预发布版本，dsh 与 cordis 相关依赖需锁定到与所用 dsh 一致的版本；以下示例以 `0.1.5-rc.3` 为准，使用 0.1.7 时把版本号一并替换）
+- [`@deepseek-ai/dsh`](https://www.npmjs.com/package/@deepseek-ai/dsh) CLI `0.1.5-rc.3`、`0.1.7-alpha.2` 或 `0.2.1-rc.2`（均为预发布版本，dsh 与 cordis 相关依赖需锁定到与所用 dsh 一致的版本；以下示例以 `0.1.5-rc.3` 为准，使用其他版本时把版本号一并替换）
+- dsh `0.2` 起，某一行配置有误时 dsh 不再整体启动失败：只有这一行不运行，其余照常启动。请用 `doctor` 或设置页查看各行状态
 - 使用 `ctx.dingtalk`：已安装并登录 `dws`（已验证 `dingtalk-workspace-cli@1.0.62`），仅支持 `user` 身份
 - 使用 `ctx.feishu`：安装 `@larksuiteoapi/node-sdk`（^1.76.0），在飞书开发者后台创建自建应用并开启机器人能力，事件订阅选长连接并订阅「接收消息 v2.0」，开通 im:message:send_as_bot、im:message.group_at_msg:readonly、im:message.p2p_msg:readonly；App Secret 用 appSecretRef 引用（默认 FEISHU_APP_SECRET）。
 - 使用 `ctx.notify`：同时启用默认渠道（钉钉或飞书）的 Service
@@ -122,7 +123,7 @@ dsh --profile my-agent --no-open
 }
 ```
 
-`@deepseek-ai/cordis` 的版本与目标 dsh 依赖的版本保持一致（dsh `0.1.5-rc.3` 对应 `4.0.2`，`0.1.7-alpha.2` 对应 `4.0.4`）。开发期可以用 `link:` 指向本包的本地 checkout。
+`@deepseek-ai/cordis` 的版本与目标 dsh 依赖的版本保持一致（dsh `0.1.5-rc.3` 对应 `4.0.2`，`0.1.7-alpha.2` 对应 `4.0.4`，`0.2.1-rc.2` 对应 `4.0.5`）。开发期可以用 `link:` 指向本包的本地 checkout。
 
 插件示例（发通知推荐用 `ctx.notify`，由默认渠道（已登录的钉钉 user 或飞书机器人）发送）：
 

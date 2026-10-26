@@ -54,3 +54,30 @@ jobs:
       - run: npx vitest run
       - run: npx tsc -p tsconfig.json --noEmit && npm run build && npx vitest run
         working-directory: admin
+
+  dsh-021:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      # 与 dsh 0.2.1-rc.2 配套的整套依赖：集成测试在其真实 loader 中加载本包
+      - run: >-
+          npm i --no-save --force
+          @deepseek-ai/cordis@4.0.5
+          @deepseek-ai/dsh-typert-protocol@0.2.1-rc.2
+          @deepseek-ai/schemastery@3.18.5
+          @deepseek-ai/cordis-plugin-loader@1.0.6
+          @deepseek-ai/dsh-app-boot@0.2.1-rc.2
+          @deepseek-ai/dsh-atomic-write@0.2.1-rc.2
+          @deepseek-ai/dsh-subagent@0.2.1-rc.2
+          @deepseek-ai/dsh-subagent-claude-code@0.2.1-rc.2
+          @deepseek-ai/dsh-subprocess-local@0.2.1-rc.2
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npx vitest run
+      - run: npx tsc -p tsconfig.json --noEmit && npm run build && npx vitest run
+        working-directory: admin

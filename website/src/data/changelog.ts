@@ -9,6 +9,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: '0.3.0',
     date: '2026-10-21',
     items: [
+      '支持 dsh 0.2.1-rc.2：agentTasks 改为直接调用 provider 的 start()（dsh 0.2 移除了 subagents.start），peer 依赖放宽到 cordis 4.0.5 与 dsh-typert-protocol 0.2.1-rc.2，CI 新增 dsh-021 任务。dsh 0.2 起某一行配置有误时只有该行不运行。',
       '新增渠道公共约定 ChannelService 与 ChannelAtMessage，为接入飞书、企业微信做准备；钉钉消息新增 senderId，原有字段不变。',
       '钉钉收件的路由、去重、队列与超时逻辑抽为与渠道无关的 MessageRouter，行为不变。',
       'ctx.notify：未指定 targets 时发往默认渠道，指定了则只发这些渠道并行发送；返回 { deliveries }，单个渠道的失败只出现在它自己的结果中。',

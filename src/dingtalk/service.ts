@@ -271,8 +271,9 @@ export class DingtalkService extends KitService<DingtalkCounters>
   private recordLogin(r: { ok: boolean; detail: string }): void {
     this.counters.loginOk = r.ok
     this.counters.lastPreflightAt = Date.now()
-    if (r.ok && this.inbox.stats().listener !== 'failed') this.clearFailed()
-    else this.markFailed(r.detail)
+    if (!r.ok) this.markFailed(r.detail)
+    // 登录正常但事件监听已失败时，保留监听自己的失败原因，不用登录结果覆盖它
+    else if (this.inbox.stats().listener !== 'failed') this.clearFailed()
   }
 
   /** 实时检查登录状态。dryRun 下只报告，不改变 health()。 */
