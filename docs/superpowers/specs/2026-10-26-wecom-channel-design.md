@@ -143,10 +143,11 @@ type ChannelMessageHandler<M> = (message: M, context: ChannelMessageContext) => 
 | `authenticated` | `router.setReady(true)`，清除失败状态，唤醒等待中的订阅 |
 | `disconnected`、`reconnecting` | `router.setReady(false)`；健康状态 `degraded`，详情「重连中」 |
 | `error`（认证失败重试用尽） | `router.setReady(false)`；健康状态 `failed`，触发 `agent-kit/service-failed`，拒绝等待中的订阅 |
+| 被挤下线（`event.disconnected_event`） | 健康状态 `failed`，详情写明「另一个进程用同一机器人建立了连接」；SDK 1.0.7 此时不会自动重连（已读源码确认），需重载或停掉另一个进程 |
 | Service 卸载 | `disconnect()`，`router.reset()`，拒绝等待中的订阅 |
 
 - `maxReconnectAttempts: -1`（无限重连），`maxAuthFailureAttempts: 5`。
-- 断开原因表明被另一连接挤掉时，健康详情写明「另一个进程用同一机器人建立了连接」。文档写明一个机器人只接一个 Profile。
+- 文档写明一个机器人只接一个 Profile。
 - 订阅的 `ready` 在长连接认证成功时完成，在失败或卸载时拒绝（与飞书相同）。
 - 首次认证前健康状态为 `degraded`，详情「starting」。
 

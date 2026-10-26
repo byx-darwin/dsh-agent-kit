@@ -1,13 +1,20 @@
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Service, type Context } from '@deepseek-ai/cordis'
-import type { ChannelSendCommon, ChannelService, ChannelStatus } from '../common/channel.js'
+import type { ChannelInbox, ChannelMessageHandler, ChannelMessageRoute, ChannelMessageSubscription, ChannelRecipientKind, ChannelRecipientSearchResult, ChannelSendCommon, ChannelService, ChannelStatus } from '../common/channel.js'
+import { MessageRouter, type MessageRouterCounts } from '../common/inbox.js'
+import { UnmatchedStore, unmatchedFileKey, type ChannelUnmatchedMessage } from '../common/unmatched.js'
+import { safeReply } from '../common/reply.js'
 import { ConfigError } from '../common/errors.js'
-import { digest, registerSecret } from '../common/redact.js'
+import { digest, redact, registerSecret } from '../common/redact.js'
 import { KitService, type ServiceHealth } from '../common/service.js'
 import { resolveSecretRef, type KeyStoreOptions } from '../secrets/index.js'
 import { WecomConfig, type WecomTarget } from './config.js'
 import { WecomSendError, classifyThrown } from './errors.js'
 import { buildContent, resolveTarget, type WecomAt } from './message.js'
-import { loadWecomSdk, type WecomConnection, type WecomSdkLoader } from './sdk.js'
+import { loadWecomSdk, type WecomConnection, type WecomFrame, type WecomSdkLoader } from './sdk.js'
+import { parseWecomFrame, type WecomAtMessage } from './event.js'
+import { ConversationStore } from './conversations.js'
 
 export interface WecomSendOptions extends ChannelSendCommon {
   target?: WecomTarget
@@ -23,6 +30,7 @@ export interface WecomCounters {
   failure: number
   lastFailureAt: number | null
   lastErrorCode: string | null
+  inbox: MessageRouterCounts & { listener: 'idle' | 'ready' | 'reconnecting' | 'failed'; routes: number }
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -37,7 +45,7 @@ const DEDUPE_MS = 10 * 60_000
  * 企业微信智能机器人：长连接收发。企业微信没有服务端去重字段，`idempotencyKey` 只在本进程内去重，
  * 且不自动重试（超时时无法判断是否已送达）。SDK 只经 {@link WecomSdk} 使用；`sdkLoader` 是测试替换入口。
  */
-export class WecomService extends KitService<WecomCounters> implements ChannelService<WecomTarget, WecomAt> {
+export class WecomService extends KitService<WecomCounters> implements ChannelService<WecomTarget, WecomAt>, ChannelInbox<WecomAtMessage, ChannelUnmatchedMessage, WecomTarget> {
   static Config = WecomConfig
   /** 测试钩子：替换 SDK 的加载方式。 */
   static sdkLoader: WecomSdkLoader = loadWecomSdk
@@ -50,13 +58,37 @@ export class WecomService extends KitService<WecomCounters> implements ChannelSe
   protected readonly controller = new AbortController()
   private lastSuccessAt: number | null = null
   private readonly sent = new Map<string, { at: number; result: WecomSendResult }>()
-  private readonly counters: WecomCounters = { success: 0, failure: 0, lastFailureAt: null, lastErrorCode: null }
+  private readonly counters: Omit<WecomCounters, 'inbox'> = { success: 0, failure: 0, lastFailureAt: null, lastErrorCode: null }
+  private readonly router: MessageRouter<WecomAtMessage>
+  private readonly unmatched: UnmatchedStore
+  private readonly conversations: ConversationStore
+  /** 收到的帧，按消息 ID 保存以便回复（24 小时窗口；只保留最近 1000 个）。 */
+  private readonly frames = new Map<string, WecomFrame>()
+  private listener: 'idle' | 'ready' | 'reconnecting' | 'failed' = 'idle'
+  private readyWaiters: Array<{ resolve: () => void; reject: (error: Error) => void }> = []
 
   constructor(ctx: Context, config: WecomConfig) {
     super(ctx, 'wecom')
     this.config = config
     if (!config.botId?.trim()) throw new ConfigError('wecom', 'botId is required', { field: 'botId' })
     if (config.defaultTarget) resolveTarget(config.defaultTarget)
+    const groupRoutes = new Map<string, string>()
+    for (const route of config.groupRoutes ?? []) {
+      const conversationId = route.conversationId?.trim()
+      const pluginId = route.pluginId?.trim()
+      if (!conversationId || !pluginId) throw new ConfigError('wecom', 'group route requires conversationId and pluginId', { field: 'groupRoutes' })
+      if (groupRoutes.has(conversationId)) throw new ConfigError('wecom', `duplicate group route: ${conversationId}`, { field: 'groupRoutes' })
+      groupRoutes.set(conversationId, pluginId)
+    }
+    const baseUrl = (ctx as Context & { baseUrl?: string }).baseUrl
+    const base = baseUrl ? join(dirname(fileURLToPath(new URL('./cordis.yml', baseUrl))), '.agent-kit') : undefined
+    const key = unmatchedFileKey(config.botId)
+    this.unmatched = new UnmatchedStore(base ? join(base, 'wecom-unmatched', `${key}.json`) : undefined, async () => undefined, (error) => this.logger.warn('wecom unmatched store unavailable', { error: redact(String(error)) }))
+    this.conversations = new ConversationStore(base ? join(base, 'wecom-conversations', `${key}.json`) : undefined, (error) => this.logger.warn('wecom conversation store unavailable', { error: redact(String(error)) }))
+    this.router = new MessageRouter<WecomAtMessage>({
+      channel: 'wecom', logger: this.logger, onUnmatched: (m) => this.unmatched.add(m), pluginRoutes: groupRoutes,
+      replyFor: (message) => (options) => safeReply('wecom', () => this.replyTo(message, options)),
+    })
     ctx.effect(() => () => this.controller.abort(), 'wecom.abortInFlight')
   }
 
@@ -77,26 +109,140 @@ export class WecomService extends KitService<WecomCounters> implements ChannelSe
     return this.controller.signal.aborted || this.ctx.fiber.uid === null
   }
 
-  /** Task 3 扩展：接收、会话记录、生命周期。这里只维护认证状态。 */
   protected startConnection(sdk: Awaited<ReturnType<WecomSdkLoader>>): void {
     const connection = sdk.connect(
       { botId: this.config.botId, secret: this.secret!, ...(this.config.wsUrl ? { wsUrl: this.config.wsUrl } : {}), requestTimeout: this.config.timeoutMs, logger: this.logger },
       {
-        onAuthenticated: () => { this.authenticated = true },
-        onDisconnected: () => { this.authenticated = false },
-        onReconnecting: () => { this.authenticated = false },
-        onError: () => { this.authenticated = false },
-        onKicked: () => { this.authenticated = false },
-        onMessage: () => {},
+        onAuthenticated: () => {
+          this.authenticated = true
+          this.listener = 'ready'
+          this.clearFailed()
+          this.router.setReady(true)
+          const waiters = this.readyWaiters
+          this.readyWaiters = []
+          for (const w of waiters) w.resolve()
+        },
+        onDisconnected: (reason) => {
+          this.authenticated = false
+          this.router.setReady(false)
+          if (this.listener !== 'failed') this.listener = 'reconnecting'
+          this.logger.warn('wecom long connection disconnected', { reason: redact(reason) })
+        },
+        onReconnecting: () => {
+          this.authenticated = false
+          this.listener = 'reconnecting'
+          this.router.setReady(false)
+        },
+        onError: (error) => this.fail(`wecom long connection failed: ${redact(error.message)}`, error),
+        // SDK 被挤下线后不会自动重连
+        onKicked: () => this.fail('另一个进程用同一个机器人建立了连接，本连接已被企业微信断开；一个机器人只能接一个 Profile'),
+        onMessage: (raw) => {
+          const parsed = parseWecomFrame(raw)
+          if (!parsed) {
+            this.router.drop()
+            this.logger.warn('invalid wecom frame dropped')
+            return
+          }
+          this.rememberFrame(parsed.message.eventId, parsed.frame)
+          void this.conversations.record({ conversationId: parsed.message.conversationId, chatType: parsed.message.chatType, ...(parsed.message.senderId ? { lastSenderId: parsed.message.senderId } : {}) }).catch(() => {})
+          this.router.accept(parsed.message)
+        },
       },
     )
     this.connection = connection
-    this.ctx.effect(() => () => connection.disconnect(), 'wecom.connection')
+    this.ctx.effect(() => () => {
+      this.rejectWaiters(new Error('wecom service stopped'))
+      connection.disconnect()
+      this.router.reset()
+      this.authenticated = false
+      this.listener = 'idle'
+    }, 'wecom.connection')
   }
 
-  /** Task 3 用会话记录判断 846607；这里没有记录，一律视为未互动。 */
-  protected hasInteracted(_conversationId: string): boolean {
-    return false
+  private fail(detail: string, error?: unknown): void {
+    this.authenticated = false
+    this.listener = 'failed'
+    this.router.setReady(false)
+    this.markFailed(detail, error)
+    this.rejectWaiters(new Error(detail))
+  }
+
+  private rejectWaiters(error: Error): void {
+    const waiters = this.readyWaiters
+    this.readyWaiters = []
+    for (const w of waiters) w.reject(error)
+  }
+
+  private readyPromise(): Promise<void> {
+    if (this.listener === 'ready') return Promise.resolve()
+    const promise = this.listener === 'failed' || this.failure
+      ? Promise.reject(new Error(this.failure ?? 'wecom long connection failed'))
+      : new Promise<void>((resolve, reject) => { this.readyWaiters.push({ resolve, reject }) })
+    promise.catch(() => {})
+    return promise
+  }
+
+  private rememberFrame(messageId: string, frame: WecomFrame): void {
+    this.frames.set(messageId, frame)
+    if (this.frames.size > 1000) this.frames.delete(this.frames.keys().next().value!)
+  }
+
+  /** 基于收到的帧回复；不受「对方须先发过消息」限制。 */
+  private async replyTo(message: WecomAtMessage, options: ChannelSendCommon & { at?: unknown }): Promise<WecomSendResult> {
+    const content = buildContent({ title: options.title, markdown: options.markdown, text: options.markdown === undefined ? options.text : undefined, at: options.at as WecomAt | undefined })
+    const frame = this.frames.get(message.eventId)
+    if (!frame) return { results: [{ ok: false, error: new WecomSendError('api_error', 'the inbound frame for this message is no longer available') }] }
+    if (this.config.dryRun) return { results: [{ ok: true }] }
+    if (!this.connection || !this.authenticated) return { results: [{ ok: false, error: new WecomSendError('not_connected', 'wecom long connection is not ready') }] }
+    if (options.signal?.aborted) return { results: [{ ok: false, error: new WecomSendError('aborted', 'wecom reply aborted') }] }
+    try {
+      await this.connection.replyStream(frame, `reply-${message.eventId}-${Date.now().toString(36)}`, content)
+      this.recordSuccess()
+      return { results: [{ ok: true, messageId: frame.headers.req_id }] }
+    } catch (e) {
+      const error = classifyThrown(e, true)
+      this.recordFailure(error.code)
+      return { results: [{ ok: false, error }] }
+    }
+  }
+
+  onMessage(route: ChannelMessageRoute<WecomAtMessage>, handler: ChannelMessageHandler<WecomAtMessage>): ChannelMessageSubscription {
+    return this.subscribe(this.router.register(route, handler), 'wecom.onMessage')
+  }
+
+  onPluginMessage(pluginId: string, handler: ChannelMessageHandler<WecomAtMessage>): ChannelMessageSubscription {
+    return this.subscribe(this.router.registerPlugin(pluginId, handler), 'wecom.onPluginMessage')
+  }
+
+  private subscribe(dispose: () => void, label: string): ChannelMessageSubscription {
+    if (this.config.dryRun) {
+      dispose()
+      throw new ConfigError('wecom', 'cannot listen for messages in dryRun mode', { field: 'dryRun' })
+    }
+    const subscription: ChannelMessageSubscription = { ready: this.readyPromise(), close: async () => dispose() }
+    try {
+      this.ctx.effect(() => () => dispose(), label)
+    } catch (error) {
+      dispose()
+      throw error
+    }
+    return subscription
+  }
+
+  unmatchedMessages(): Promise<ChannelUnmatchedMessage[]> {
+    return this.unmatched.list()
+  }
+
+  /** 只在本地「说过话的会话」中查找；企业微信没有群搜索接口。 */
+  async searchRecipients(kind: ChannelRecipientKind, query: string): Promise<ChannelRecipientSearchResult<WecomTarget>> {
+    if (kind !== 'group' && kind !== 'user') throw new TypeError('recipient kind must be group or user')
+    const term = query?.trim()
+    if (!term || term.length > 80) throw new TypeError('recipient search query must be 1–80 characters')
+    const chatType = kind === 'group' ? 'group' : 'single'
+    const candidates = (await this.conversations.list())
+      .filter((c) => c.chatType === chatType && (c.conversationId.includes(term) || c.lastSenderId?.includes(term)))
+      .map((c) => ({ name: c.conversationId, target: chatType === 'group' ? { chatId: c.conversationId } : { userId: c.conversationId } }))
+    return { candidates, complete: true }
   }
 
   /**
@@ -152,7 +298,7 @@ export class WecomService extends KitService<WecomCounters> implements ChannelSe
       ])
       return frame.headers.req_id
     } catch (e) {
-      return classifyThrown(e, this.hasInteracted(target.conversationId))
+      return classifyThrown(e, await this.conversations.has(target.conversationId))
     }
   }
 
@@ -179,12 +325,14 @@ export class WecomService extends KitService<WecomCounters> implements ChannelSe
   }
 
   health(): ServiceHealth<WecomCounters> {
-    const counters = { ...this.counters }
+    const counters: WecomCounters = { ...this.counters, inbox: { listener: this.listener, routes: this.router.size, ...this.router.counters() } }
     if (this.failure) return { status: 'failed', detail: this.failure, counters }
+    if (!this.config.dryRun && this.listener === 'idle') return { status: 'degraded', detail: 'wecom long connection starting', counters }
+    if (this.listener === 'reconnecting') return { status: 'degraded', detail: 'wecom long connection reconnecting', counters }
     if (counters.lastFailureAt !== null && (this.lastSuccessAt === null || counters.lastFailureAt > this.lastSuccessAt)) {
       return { status: 'degraded', detail: `last send failed: ${counters.lastErrorCode}`, counters }
     }
-    return { status: 'ok', detail: this.config.dryRun ? 'dry-run' : `bot: ${this.config.botId}`, counters }
+    return { status: 'ok', detail: this.config.dryRun ? 'dry-run' : `bot: ${this.config.botId}; @ inbox listening (${counters.inbox.routes} route(s))`, counters }
   }
 }
 
