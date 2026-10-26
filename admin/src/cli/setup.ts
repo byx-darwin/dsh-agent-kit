@@ -7,7 +7,7 @@ import { CHANNEL_CLIS, installArgs, installCommand, type ChannelCliId } from '..
 import { FEISHU_APP_SECRET_REF } from '@baoyx/dsh-agent-kit/feishu'
 import { probeFeishu, sendFeishuTestMessage, type FeishuProbe } from '../feishu-probe.js'
 import { WECOM_SECRET_REF } from '@baoyx/dsh-agent-kit/wecom'
-import { probeWecom, type WecomProbe } from '../wecom-probe.js'
+import { createWecomProbe, profileWecomSdkLoader, type WecomProbe } from '../wecom-probe.js'
 import { buildSendArgs } from '@baoyx/dsh-agent-kit/dingtalk'
 import { NOTIFY_CHANNELS, type NotifyChannel } from '@baoyx/dsh-agent-kit/notify'
 import type { CheckContext } from '../checks/index.js'
@@ -200,7 +200,9 @@ async function configureWecom(p: Prompter, current: Config, keyStore: KeyStoreOp
   }
   const secret = await resolveSecretRef(ref, keyStore)
   if (secret && (await p.confirm(msg.WECOM_PROBE_CONFIRM, false))) {
-    const r = await (deps.wecomProbe ?? probeWecom)({ botId, secret: secret.value, wsUrl: current.wsUrl as string | undefined })
+    // SDK 装在 Profile 里，按 Profile 目录解析（与 doctor 一致），而不是相对 admin 包
+    const probe = deps.wecomProbe ?? createWecomProbe(profileWecomSdkLoader(ctx.profile.dir))
+    const r = await probe({ botId, secret: secret.value, wsUrl: current.wsUrl as string | undefined })
     io.out(`${r.detail}\n`)
   }
   io.out(msg.WECOM_SETUP_HINT)

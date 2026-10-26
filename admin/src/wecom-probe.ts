@@ -1,3 +1,6 @@
+import { createRequire } from 'node:module'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { redact, registerSecret } from '@baoyx/dsh-agent-kit'
 
 /** 企业微信连接测试：建立一次长连接，认证成功或失败后立即断开。会把同一机器人的其他连接挤下线，调用方必须先征得确认。 */
@@ -24,6 +27,30 @@ const DISCONNECTED = '连接被服务端断开（可能同一机器人在别处�
 
 const defaultLoad: WecomSdkLoader = async () => (await import('@wecom/aibot-node-sdk')) as unknown as WecomProbeSdk
 
+/**
+ * 按 dsh 的解析规则从 Profile 目录加载 SDK（与 doctor 的检查一致）。
+ * admin 经 npx 运行时，相对 admin 包的 import 找不到 Profile 里安装的 SDK。
+ */
+export function profileWecomSdkLoader(profileDir: string): WecomSdkLoader {
+  return async () => {
+    const resolved = createRequire(join(profileDir, 'package.json')).resolve('@wecom/aibot-node-sdk')
+    return (await import(pathToFileURL(resolved).href)) as WecomProbeSdk
+  }
+}
+
+/** 只有认证类错误才标为「认证失败」：SDK 的终态 WSAuthFailureError，或带 errcode 的认证响应。 */
+function isAuthError(e: Error | undefined): boolean {
+  if (e?.name === 'WSAuthFailureError') return true
+  const message = String(e?.message ?? '')
+  return /^Authentication failed\b/i.test(message) || /\(code: \d+\)|errcode[=:]\s*\d+/i.test(message)
+}
+
+function describeError(e: Error | undefined): string {
+  if (e?.name === 'WSReconnectExhaustedError') return DISCONNECTED
+  const message = e?.message ?? String(e)
+  return isAuthError(e) ? `认证失败：${message}` : `连接失败：${message}`
+}
+
 export function createWecomProbe(load: WecomSdkLoader): WecomProbe {
   return async ({ botId, secret, wsUrl, timeoutMs = 10_000 }) => {
     let sdk: WecomProbeSdk
@@ -44,7 +71,7 @@ export function createWecomProbe(load: WecomSdkLoader): WecomProbe {
           client = new sdk.WSClient({ botId, secret, ...(wsUrl ? { wsUrl } : {}), maxReconnectAttempts: 0, maxAuthFailureAttempts: 0, logger: quiet })
           timer = setTimeout(() => done({ ok: false, detail: `${Math.ceil(timeoutMs / 1000)} 秒内没有完成认证` }), timeoutMs)
           client.on('authenticated', () => done({ ok: true, detail: '认证成功' }))
-          client.on('error', (e: Error) => done({ ok: false, detail: e?.name === 'WSReconnectExhaustedError' ? DISCONNECTED : `认证失败：${e?.message ?? String(e)}` }))
+          client.on('error', (e: Error) => done({ ok: false, detail: describeError(e) }))
           client.on('disconnected', () => done({ ok: false, detail: DISCONNECTED }))
           client.connect()
         } catch (e) {
@@ -63,4 +90,5 @@ export function createWecomProbe(load: WecomSdkLoader): WecomProbe {
   }
 }
 
+/** 相对 admin 包加载 SDK；setup 用 {@link profileWecomSdkLoader}，此导出仅为兼容保留。 */
 export const probeWecom: WecomProbe = createWecomProbe(defaultLoad)

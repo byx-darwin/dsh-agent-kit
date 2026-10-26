@@ -1,6 +1,9 @@
 import { EventEmitter } from 'node:events'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createWecomProbe, type WecomSdkLoader } from '../../src/wecom-probe.js'
+import { createWecomProbe, profileWecomSdkLoader, type WecomSdkLoader } from '../../src/wecom-probe.js'
 
 class FakeClient extends EventEmitter {
   static last: FakeClient
@@ -35,13 +38,26 @@ describe('probeWecom', () => {
     vi.useFakeTimers()
     const p = createWecomProbe(loader)(input)
     await vi.advanceTimersByTimeAsync(0)
-    FakeClient.last.emit('error', new Error(`bad secret ${input.secret}`))
+    FakeClient.last.emit('error', new Error(`Authentication failed: bad secret ${input.secret} (code: 40001)`))
     const r = await p
     expect(r.ok).toBe(false)
     expect(r.detail).toContain('认证失败')
     expect(r.detail).not.toContain(input.secret)
     expect(FakeClient.last.disconnects).toBe(1)
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('labels auth-exhaustion errors as auth failures and network errors as connection failures', async () => {
+    vi.useFakeTimers()
+    const exhausted = createWecomProbe(loader)(input)
+    await vi.advanceTimersByTimeAsync(0)
+    FakeClient.last.emit('error', Object.assign(new Error('Max auth failure attempts exceeded (0)'), { name: 'WSAuthFailureError' }))
+    expect((await exhausted).detail).toMatch(/^认证失败：/)
+    const network = createWecomProbe(loader)(input)
+    await vi.advanceTimersByTimeAsync(0)
+    FakeClient.last.emit('error', new Error('connect ECONNREFUSED 10.0.0.1:443'))
+    const r = await network
+    expect(r).toEqual({ ok: false, detail: '连接失败：connect ECONNREFUSED 10.0.0.1:443' })
   })
 
   it('maps reconnect exhaustion to a clear message', async () => {
@@ -114,5 +130,28 @@ describe('probeWecom', () => {
     const r = await createWecomProbe(async () => ({ WSClient: ConnectBoom }))(input)
     expect(r).toMatchObject({ ok: false, detail: expect.stringContaining('sync boom') })
     expect(FakeClient.last.disconnects).toBe(1)
+  })
+})
+
+describe('profileWecomSdkLoader', () => {
+  let dir: string
+  afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }) })
+
+  it('resolves the SDK relative to the Profile directory', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'wecom-profile-'))
+    writeFileSync(join(dir, 'package.json'), '{}')
+    const sdkDir = join(dir, 'node_modules', '@wecom', 'aibot-node-sdk')
+    mkdirSync(sdkDir, { recursive: true })
+    writeFileSync(join(sdkDir, 'package.json'), JSON.stringify({ name: '@wecom/aibot-node-sdk', version: '1.0.7', type: 'module', main: 'index.mjs' }))
+    writeFileSync(join(sdkDir, 'index.mjs'), "export class WSClient { static fromProfile = true }\n")
+    const sdk = await profileWecomSdkLoader(dir)()
+    expect((sdk.WSClient as unknown as { fromProfile?: boolean }).fromProfile).toBe(true)
+  })
+
+  it('reports a missing SDK when the Profile does not have it', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'wecom-profile-'))
+    writeFileSync(join(dir, 'package.json'), '{}')
+    await expect(profileWecomSdkLoader(dir)()).rejects.toThrow()
+    expect(await createWecomProbe(profileWecomSdkLoader(dir))({ botId: 'b', secret: 'sup3r-secret-value' })).toEqual({ ok: false, detail: '未安装 @wecom/aibot-node-sdk' })
   })
 })

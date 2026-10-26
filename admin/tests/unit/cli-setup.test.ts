@@ -170,6 +170,31 @@ describe('setup', () => {
     expect(out.join('')).toContain('认证成功')
   })
 
+  it('loads the WeCom SDK from the Profile for the connection test and warns that the running Agent will not reconnect', async () => {
+    // Profile 里放一个假的 SDK（不联网）：connect 后立即认证成功
+    const sdkDir = join(home, 'profiles', 'kit', 'node_modules', '@wecom', 'aibot-node-sdk')
+    mkdirSync(sdkDir, { recursive: true })
+    writeFileSync(join(sdkDir, 'package.json'), JSON.stringify({ name: '@wecom/aibot-node-sdk', version: '1.0.7', type: 'module', main: 'index.mjs' }))
+    writeFileSync(join(sdkDir, 'index.mjs'), [
+      "import { EventEmitter } from 'node:events'",
+      'export class WSClient extends EventEmitter {',
+      "  connect() { setImmediate(() => this.emit('authenticated')); return this }",
+      '  disconnect() {}',
+      '}',
+    ].join('\n'))
+    const confirms: Array<{ message: string; def: unknown }> = []
+    const base = scriptedPrompter([['agent-kit-wecom'], 'bot1', 's3cret', true /* 确认连接测试 */, true])
+    const prompter = { ...base, confirm: (m: string, def?: boolean) => (confirms.push({ message: m, def }), base.confirm(m, def)) }
+    const code = await main(['setup', '--profile', 'kit'], io(), { ...deps([]), prompter })
+    expect(code).toBe(0)
+    expect(out.join('')).toContain('认证成功')
+    const probeConfirm = confirms.find((c) => c.message.includes('测试连接'))!
+    expect(probeConfirm.def).toBe(false)
+    expect(probeConfirm.message).toMatch(/挤下线/)
+    expect(probeConfirm.message).toMatch(/不会自动重连/)
+    expect(probeConfirm.message).toMatch(/重载「企业微信」行/)
+  })
+
   it('does not run the wecom connection test when the user declines', async () => {
     const probeCalls: unknown[] = []
     const wecomProbe = async (input: unknown) => (probeCalls.push(input), { ok: true, detail: '认证成功' })
