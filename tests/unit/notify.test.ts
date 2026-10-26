@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DingtalkService } from '../../src/dingtalk/service.js'
 import { FeishuService } from '../../src/feishu/service.js'
+import { WecomService } from '../../src/wecom/service.js'
 import { NotifyService } from '../../src/notify/service.js'
 import { createFakeDws } from '../../src/testing/fake-dws.js'
 import { createFakeFeishuSdk, useFakeFeishuSdk } from '../../src/testing/fake-feishu.js'
+import { createFakeWecomSdk, useFakeWecomSdk } from '../../src/testing/fake-wecom.js'
 import { createRoot, type TestRoot } from '../helpers.js'
 
 describe('NotifyService', () => {
@@ -36,6 +38,26 @@ describe('NotifyService', () => {
       expect(fake.sends[0]!.data.receive_id).toBe('oc_ops')
       await expect(notify.login('feishu')).rejects.toMatchObject({ code: 'login_unsupported' })
       expect((await notify.status()).channels.feishu).toMatchObject({ running: true, identity: 'bot' })
+    } finally {
+      restore()
+    }
+  })
+
+  it('sends to WeCom alongside DingTalk and reports it as a bot channel', async () => {
+    process.env.WECOM_BOT_SECRET = 'secret-value'
+    const fake = createFakeWecomSdk()
+    const restore = useFakeWecomSdk(fake)
+    try {
+      await root.root.plugin(DingtalkService, { dwsPath: dws.path, identity: 'user', defaultTarget: { chatId: 'cidA' } })
+      await root.root.plugin(WecomService, { botId: 'bot1', defaultTarget: { chatId: 'wrkG' } })
+      await root.root.plugin(NotifyService, { channel: 'dingtalk' })
+      fake.authenticate()
+      const notify = root.root.get('notify')!
+      const r = await notify.send({ text: 'hello', targets: { dingtalk: 'default', wecom: 'default' } })
+      expect(r.deliveries.map((d) => [d.channel, d.results[0]!.ok])).toEqual([['dingtalk', true], ['wecom', true]])
+      expect(fake.sends.at(-1)!.chatid).toBe('wrkG')
+      await expect(notify.login('wecom')).rejects.toMatchObject({ code: 'login_unsupported' })
+      expect((await notify.status()).channels.wecom).toMatchObject({ running: true, identity: 'bot' })
     } finally {
       restore()
     }
@@ -88,7 +110,7 @@ describe('NotifyService', () => {
   it('rejects unknown channels in targets', async () => {
     await root.root.plugin(NotifyService, { channel: 'dingtalk' })
     const notify = root.root.get('notify')!
-    await expect(notify.send({ text: 'hello', targets: { wecom: { chatId: 'x' } } as never })).rejects.toMatchObject({ code: 'invalid_channel' })
+    await expect(notify.send({ text: 'hello', targets: { email: { address: 'x' } } as never })).rejects.toMatchObject({ code: 'invalid_channel' })
   })
 
   it('reports the default channel and each channel without runtime switching', async () => {

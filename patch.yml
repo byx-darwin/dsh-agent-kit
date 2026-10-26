@@ -20,6 +20,9 @@
     - id: agent-kit-feishu
       name: '@baoyx/dsh-agent-kit/feishu'
       disabled: true
+    - id: agent-kit-wecom
+      name: '@baoyx/dsh-agent-kit/wecom'
+      disabled: true
     - id: agent-kit-notify
       name: '@baoyx/dsh-agent-kit/notify'
       disabled: true

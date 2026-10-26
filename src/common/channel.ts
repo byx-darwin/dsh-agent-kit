@@ -3,9 +3,9 @@ export type { ChannelUnmatchedMessage } from './unmatched.js'
 import type { KitError } from './errors.js'
 import type { HealthStatus } from './service.js'
 
-/** 渠道名称；类型为后续渠道预留，`CHANNEL_NAMES` 只列出已实现的渠道。 */
+/** 渠道名称；类型为后续渠道预留，`CHANNEL_NAMES` 只列出已实现的渠道（目前为钉钉、飞书、企业微信）。 */
 export type ChannelName = 'dingtalk' | 'feishu' | 'wecom'
-export const CHANNEL_NAMES: readonly ChannelName[] = ['dingtalk', 'feishu']
+export const CHANNEL_NAMES: readonly ChannelName[] = ['dingtalk', 'feishu', 'wecom']
 
 /** 各渠道 `send()` 共有的参数；目标与 @ 由各渠道自己定义。 */
 export interface ChannelSendCommon {

@@ -23,6 +23,10 @@
       "types": "./lib/feishu/index.d.ts",
       "default": "./lib/feishu/index.js"
     },
+    "./wecom": {
+      "types": "./lib/wecom/index.d.ts",
+      "default": "./lib/wecom/index.js"
+    },
     "./notify": {
       "types": "./lib/notify/index.d.ts",
       "default": "./lib/notify/index.js"
@@ -77,13 +81,17 @@
     "@deepseek-ai/dsh-typert-protocol": "0.1.5-rc.3 || 0.1.7-alpha.2 || 0.1.7-rc.2 || 0.2.1-rc.2",
     "@deepseek-ai/schemastery": "^3.18.2",
     "@larksuiteoapi/node-sdk": "^1.76.0",
-    "@typesafe-ai/sdk": "^0.6.0"
+    "@typesafe-ai/sdk": "^0.6.0",
+    "@wecom/aibot-node-sdk": "^1.0.7"
   },
   "peerDependenciesMeta": {
     "@larksuiteoapi/node-sdk": {
       "optional": true
     },
     "@typesafe-ai/sdk": {
+      "optional": true
+    },
+    "@wecom/aibot-node-sdk": {
       "optional": true
     }
   },

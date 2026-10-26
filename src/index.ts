@@ -62,6 +62,21 @@ export {
   type FeishuTarget,
 } from './feishu/index.js'
 export {
+  WecomService,
+  WecomConfig,
+  WecomSendError,
+  WECOM_SECRET_REF,
+  buildContent as buildWecomContent,
+  parseWecomFrame,
+  type WecomAt,
+  type WecomAtMessage,
+  type WecomCounters,
+  type WecomErrorCode,
+  type WecomSendOptions,
+  type WecomSendResult,
+  type WecomTarget,
+} from './wecom/index.js'
+export {
   NotifyService,
   NotifyConfig,
   NotifyError,
