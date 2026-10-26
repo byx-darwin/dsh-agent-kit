@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { buildContent, resolveTarget, MAX_CONTENT_BYTES } from '../../src/wecom/message.js'
+import { formatSdkLog } from '../../src/wecom/sdk.js'
 import { classifyErrcode } from '../../src/wecom/errors.js'
 import { WecomService } from '../../src/wecom/service.js'
 import { createFakeWecomSdk, useFakeWecomSdk, type FakeWecom } from '../../src/testing/fake-wecom.js'
@@ -30,6 +31,22 @@ describe('wecom message building', () => {
     expect(classifyErrcode(846607, 'x', true)).toMatchObject({ code: 'rate_limited', retryable: true })
     expect(classifyErrcode(45009, 'x', true)).toMatchObject({ code: 'rate_limited', retryable: true })
     expect(classifyErrcode(123456, 'x', true)).toMatchObject({ code: 'api_error', retryable: false })
+  })
+})
+
+describe('wecom sdk log formatting', () => {
+  it('keeps message bodies out of SDK log lines', () => {
+    const a = formatSdkLog(['[server -> plugin] cmd=aibot_msg_callback, reqId=r1, body={"text":{"content":"秘密内容"}}'])
+    expect(a).toContain('cmd=aibot_msg_callback')
+    expect(a).toContain('reqId=r1')
+    expect(a).toContain('body=[omitted]')
+    expect(a).not.toContain('秘密内容')
+    const b = formatSdkLog(['Received unknown frame: {"headers":{"req_id":"x"},"body":{"secret":"s"}}'])
+    expect(b).not.toContain('secret')
+    expect(b).toContain('[json omitted]')
+    const c = formatSdkLog([{ errcode: 846607, errmsg: 'limited', body: { content: 'x' } }])
+    expect(c).toBe('errcode=846607 errmsg=limited')
+    expect(c).not.toContain('content')
   })
 })
 
@@ -72,6 +89,9 @@ describe('WecomService send', () => {
     fake.setSend([{ errcode: 45009, errmsg: 'freq' }, {}])
     expect((await wecom.send({ text: 'y', idempotencyKey: 'k2' })).results[0]).toMatchObject({ ok: false, error: { code: 'rate_limited' } })
     expect(fake.sends).toHaveLength(2)
+    // 失败结果不进去重缓存：同一 key 再发会再次到达 SDK
+    expect((await wecom.send({ text: 'y', idempotencyKey: 'k2' })).results[0]).toMatchObject({ ok: true })
+    expect(fake.sends).toHaveLength(3)
   })
 
   it('maps a 846607 to an unknown conversation as not_interacted', async () => {
