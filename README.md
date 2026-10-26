@@ -52,8 +52,8 @@
 │        │ inject                                 │
 │        ▼                                        │
 │  @baoyx/dsh-agent-kit（各 Service 单独启用）         │
-│    agentWs · dingtalk · feishu · wecom · notify ·        │
-│    agentTasks · jev                             │
+│    agentWs · dingtalk · feishu · wecom ·        │
+│    notify · agentTasks · jev                    │
 │        │                                        │
 │        ▼                                        │
 │  dsh：subagent-claude-code / subagent-codex、    │
@@ -360,7 +360,7 @@ export async function apply(ctx: Context) {
 | 字段 | 说明 |
 |---|---|
 | `chatType` | `'group'`（群聊）或 `'single'`（单聊） |
-| `messageType` | 企业微信原始 `msgtype`；`text` 取文字（群消息去掉开头的 @ 机器人，规则为尽力而为），`mixed` 拼接其中的文字，`voice` 取转写文字，其他类型为空串 |
+| `messageType` | 企业微信原始 `msgtype`；`text` 取文字（群消息去掉开头的 @ 机器人，规则为尽力而为，尚未用真实消息验证），`mixed` 拼接其中的文字，`voice` 取转写文字，其他类型为空串 |
 | `quote` | 被引用消息的文字（有则带） |
 
 `senderId` 是发送者的 `userid`，`eventId` 取企业微信 `msgid`。错误为 `WecomSendError`，`code` 为 `invalid_target`、`auth_failed`、`not_interacted`、`rate_limited`、`not_connected`、`timeout`、`aborted`、`api_error`；其中 `rate_limited`、`not_connected`、`timeout` 可重试，其余不可重试。

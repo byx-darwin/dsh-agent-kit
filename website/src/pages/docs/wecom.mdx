@@ -73,8 +73,8 @@ const { candidates, complete } = await ctx.wecom.searchRecipients('group', 'wrk'
 | `messageId` | `string` | 企业微信消息 ID，同 `eventId` |
 | `conversationId` | `string` | 群聊为 `chatid`，单聊为发送者的 `userid`；路由键 |
 | `chatType` | `'group' \| 'single'` | 群聊或单聊 |
-| `senderId` | `string` | 发送者 `userid`，可能是加密 ID |
-| `content` | `string` | 纯文本：`text` 取文字内容，群消息去掉开头的 @ 机器人（尽力而为的规则）；`mixed` 拼接其中的文字；`voice` 取转写文字；其他类型为空串。保留换行 |
+| `senderId` | `string?` | 发送者 `userid`，可能是加密 ID |
+| `content` | `string` | 纯文本：`text` 取文字内容，群消息去掉开头的 @ 机器人（尽力而为的规则，尚未用真实消息验证）；`mixed` 拼接其中的文字；`voice` 取转写文字；其他类型为空串。保留换行 |
 | `messageType` | `string` | 企业微信原始 `msgtype`，如 `text`、`mixed`、`voice`、`image` |
 | `quote` | `string?` | 被引用消息的文字（有则带） |
 | `timestamp` | `number?` | 消息创建时间（毫秒） |
