@@ -6,6 +6,8 @@ import { SHARED_KEYCHAIN_SERVICE, defaultKeyTarget, describeSecretRef, describeT
 import { CHANNEL_CLIS, installArgs, installCommand, type ChannelCliId } from '../clis.js'
 import { FEISHU_APP_SECRET_REF } from '@baoyx/dsh-agent-kit/feishu'
 import { probeFeishu, sendFeishuTestMessage, type FeishuProbe } from '../feishu-probe.js'
+import { WECOM_SECRET_REF } from '@baoyx/dsh-agent-kit/wecom'
+import { probeWecom, type WecomProbe } from '../wecom-probe.js'
 import { buildSendArgs } from '@baoyx/dsh-agent-kit/dingtalk'
 import { NOTIFY_CHANNELS, type NotifyChannel } from '@baoyx/dsh-agent-kit/notify'
 import type { CheckContext } from '../checks/index.js'
@@ -26,6 +28,8 @@ export interface SetupDeps extends CliDeps {
   /** 飞书凭据检查与测试消息，测试可替换。 */
   feishuProbe?: FeishuProbe
   sendFeishuTest?: typeof sendFeishuTestMessage
+  /** 企业微信连接测试，测试可替换。 */
+  wecomProbe?: WecomProbe
 }
 
 const nonEmpty = (v: string) => (v.trim() ? true : msg.NOT_EMPTY)
@@ -185,6 +189,24 @@ async function configureFeishu(p: Prompter, current: Config, keyStore: KeyStoreO
   return config
 }
 
+/** 企业微信：BotID、Secret（凭据文件），连接测试需用户确认（会挤掉同一机器人的其他连接）。 */
+async function configureWecom(p: Prompter, current: Config, keyStore: KeyStoreOptions, io: CliIO, deps: SetupDeps, ctx: CheckContext, profileName: string): Promise<Config> {
+  if (!ctx.resolveModule('@wecom/aibot-node-sdk')) io.out(msg.WECOM_SDK_MISSING(profileName))
+  const botId = await p.input(msg.WECOM_BOT_ID_MESSAGE, current.botId as string | undefined, nonEmpty)
+  const ref = (current.secretRef as string | undefined) ?? WECOM_SECRET_REF
+  const existing = await describeSecretRef(ref, keyStore)
+  if (!(existing.configured && (await p.confirm(msg.wecomSecretFoundMessage(ref, existing.source!), true)))) {
+    await saveSecretRef(ref, await p.password(msg.WECOM_SECRET_MESSAGE), keyStore)
+  }
+  const secret = await resolveSecretRef(ref, keyStore)
+  if (secret && (await p.confirm(msg.WECOM_PROBE_CONFIRM, false))) {
+    const r = await (deps.wecomProbe ?? probeWecom)({ botId, secret: secret.value, wsUrl: current.wsUrl as string | undefined })
+    io.out(`${r.detail}\n`)
+  }
+  io.out(msg.WECOM_SETUP_HINT)
+  return { ...current, botId }
+}
+
 /** 选择默认通知渠道；只有一个可选渠道时直接使用，不提问。 */
 async function configureNotify(p: Prompter, io: CliIO, current: Config, enabledChannels: NotifyChannel[]): Promise<Config> {
   const channel = NOTIFY_CHANNELS.length === 1
@@ -252,11 +274,11 @@ export async function runSetup(opts: { home: string; profileName?: string; io: C
   const snap = await readKitEntries(profile.patchFile)
   const ctx = await createCheckContext(profile, deps.checkOverrides)
 
-  const ids: KitId[] = ['agent-kit-ws', 'agent-kit-dingtalk', 'agent-kit-feishu', 'agent-kit-notify', 'agent-kit-agent-tasks', 'agent-kit-jev']
+  const ids: KitId[] = ['agent-kit-ws', 'agent-kit-dingtalk', 'agent-kit-feishu', 'agent-kit-wecom', 'agent-kit-notify', 'agent-kit-agent-tasks', 'agent-kit-jev']
   const enabled = await p.checkbox(msg.SELECT_SERVICES_MESSAGE, ids.map((id) => ({ value: id, name: msg.KIT_TITLES[id]!, checked: snap.entries[id].enabled })))
 
   // 先装好渠道 CLI，后面的登录检查、按群名搜索才用得上
-  const channelRows: Record<NotifyChannel, KitId | undefined> = { dingtalk: 'agent-kit-dingtalk', feishu: 'agent-kit-feishu', wecom: undefined }
+  const channelRows: Record<NotifyChannel, KitId | undefined> = { dingtalk: 'agent-kit-dingtalk', feishu: 'agent-kit-feishu', wecom: 'agent-kit-wecom' }
   const enabledChannels = NOTIFY_CHANNELS.filter((c) => channelRows[c] !== undefined && enabled.includes(channelRows[c]!))
   // 只有带 CLI 的渠道需要安装检查
   await installMissingClis(p, io, deps, ctx.findExecutable, enabledChannels.filter((c): c is ChannelCliId & NotifyChannel => c in CHANNEL_CLIS))
@@ -277,6 +299,7 @@ export async function runSetup(opts: { home: string; profileName?: string; io: C
     const config =
       id === 'agent-kit-dingtalk' ? await configureDingtalk(p, current, deps, io, loggedIn, ctx.exec, dws)
       : id === 'agent-kit-feishu' ? await configureFeishu(p, current, keyStore, io, deps, ctx, profile.name)
+      : id === 'agent-kit-wecom' ? await configureWecom(p, current, keyStore, io, deps, ctx, profile.name)
       : id === 'agent-kit-notify' ? await configureNotify(p, io, current, enabledChannels)
       : id === 'agent-kit-agent-tasks' ? await configureAgentTasks(p, current)
       : id === 'agent-kit-jev' ? await configureJev(p, current, keyStore, io)

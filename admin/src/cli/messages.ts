@@ -127,6 +127,16 @@ export const FEISHU_PERMISSIONS_HINT = '请确认飞书开发者后台已开启�
 export const FEISHU_TEST_CONFIRM = '向一个飞书群发送测试消息？'
 export const FEISHU_TEST_CHAT_MESSAGE = '群 chat_id（oc_ 开头，机器人需已在群里）'
 
+// ---- wecom ----
+export const WECOM_BOT_ID_MESSAGE = '企业微信智能机器人 BotID（管理后台 → 智能机器人 → API 模式）'
+export const WECOM_SECRET_MESSAGE = '企业微信机器人 Secret（只写入 dsh 凭据文件）'
+export function wecomSecretFoundMessage(ref: string, source: string): string {
+  return `已找到 ${ref}（来源：${source}），继续使用？`
+}
+export const WECOM_PROBE_CONFIRM = '现在测试连接？如果使用该机器人的 Agent 正在运行，测试会让它短暂断开（企业微信只允许一条长连接）'
+export const WECOM_SDK_MISSING = (profile: string) => `未安装 @wecom/aibot-node-sdk，启用企业微信前请运行：dsh plugin --profile ${profile} add @wecom/aibot-node-sdk\n`
+export const WECOM_SETUP_HINT = '请确认企业微信管理后台已为机器人开启 API 模式并选择长连接。主动发消息前，需要先有人在该会话里给机器人发过消息。\n'
+
 // ---- notify ----
 
 export const NOTIFY_CHANNEL_TITLES: Record<string, string> = { dingtalk: '钉钉', feishu: '飞书', wecom: '企业微信' }

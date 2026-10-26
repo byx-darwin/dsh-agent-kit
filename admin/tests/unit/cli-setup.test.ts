@@ -147,4 +147,37 @@ describe('setup', () => {
     expect((await resolveSecretRef('FEISHU_APP_SECRET', d.keyStore))?.value).toBe('s3cret')
     expect(out.join('')).toContain('飞书凭据有效')
   })
+  it('configures wecom with an opt-in connection test and selects it as the default notify channel', async () => {
+    const probeCalls: unknown[] = []
+    const wecomProbe = async (input: unknown) => (probeCalls.push(input), { ok: true, detail: '认证成功' })
+    const answers = [
+      ['agent-kit-wecom', 'agent-kit-notify'],
+      'bot1', // BotID
+      's3cret', // Secret（password）
+      true, // 确认连接测试
+      'wecom', // 默认通知渠道
+      true, // 确认写入
+    ]
+    const d = deps(answers, { wecomProbe })
+    const code = await main(['setup', '--profile', 'kit'], io(), d)
+    expect(code).toBe(0)
+    const text = readFileSync(patchFile, 'utf8')
+    expect(text).toMatch(/id: agent-kit-wecom\n\s+disabled: false\n\s+config:\n\s+botId: bot1/)
+    expect(text).toMatch(/id: agent-kit-notify[\s\S]*channel: wecom/)
+    expect(text).not.toContain('s3cret')
+    expect((await resolveSecretRef('WECOM_BOT_SECRET', d.keyStore))?.value).toBe('s3cret')
+    expect(probeCalls).toEqual([expect.objectContaining({ botId: 'bot1', secret: 's3cret' })])
+    expect(out.join('')).toContain('认证成功')
+  })
+
+  it('does not run the wecom connection test when the user declines', async () => {
+    const probeCalls: unknown[] = []
+    const wecomProbe = async (input: unknown) => (probeCalls.push(input), { ok: true, detail: '认证成功' })
+    const answers = [['agent-kit-wecom'], 'bot1', 's3cret', false /* 不测试连接 */, true]
+    const d = deps(answers, { wecomProbe })
+    const code = await main(['setup', '--profile', 'kit'], io(), d)
+    expect(code).toBe(0)
+    expect(probeCalls).toEqual([])
+    expect(readFileSync(patchFile, 'utf8')).toContain('botId: bot1')
+  })
 })

@@ -184,3 +184,22 @@ describe('feishu checks', () => {
     expect(byId(report, 'agent-kit-feishu.credential')).toMatchObject({ status: 'fail', detail: expect.stringContaining('10003') })
   })
 })
+
+describe('wecom checks', () => {
+  const wecom = (config: Record<string, unknown>) => snapshot({ 'agent-kit-wecom': { enabled: true, config } })
+
+  it('reports SDK, botId and secret source, and explains why there is no online check', async () => {
+    const report = await runChecks(ctx({ snapshot: wecom({ botId: 'bot1' }), resolveModule: (name) => name === '@wecom/aibot-node-sdk', env: { WECOM_BOT_SECRET: 's' } }))
+    expect(byId(report, 'agent-kit-wecom.sdk')).toMatchObject({ status: 'pass' })
+    expect(byId(report, 'agent-kit-wecom.botId')).toMatchObject({ status: 'pass' })
+    expect(byId(report, 'agent-kit-wecom.secret')).toMatchObject({ status: 'pass', detail: expect.stringContaining('环境变量') })
+    expect(byId(report, 'agent-kit-wecom.connection')).toMatchObject({ status: 'skip', detail: expect.stringContaining('设置页') })
+  })
+
+  it('fails with install and configuration fixes', async () => {
+    const report = await runChecks(ctx({ snapshot: wecom({}), resolveModule: () => false, env: {} }))
+    expect(byId(report, 'agent-kit-wecom.sdk')).toMatchObject({ status: 'fail', fix: expect.stringContaining('add @wecom/aibot-node-sdk') })
+    expect(byId(report, 'agent-kit-wecom.botId')).toMatchObject({ status: 'fail' })
+    expect(byId(report, 'agent-kit-wecom.secret')).toMatchObject({ status: 'fail' })
+  })
+})
