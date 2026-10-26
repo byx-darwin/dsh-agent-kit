@@ -3,3 +3,4 @@ export { FakeSubagentProvider, FakeSubagentRuntime, type FakeSubagentHandler, ty
 export { createJevMock, defaultAnswers, jevHttpError, type JevMock, type JevMockHandler, type JevMockRequest } from './jev-mock.js'
 export { createFakeDws, fakeDwsPath, type FakeDwsCall, type FakeDwsScenario, type FakeDwsSendStep } from './fake-dws.js'
 export { createFakeFeishuSdk, useFakeFeishuSdk, type FakeFeishu, type FakeFeishuSendStep } from './fake-feishu.js'
+export { createFakeWecomSdk, useFakeWecomSdk, type FakeWecom, type FakeWecomStep } from './fake-wecom.js'
