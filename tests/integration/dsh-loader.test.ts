@@ -29,6 +29,8 @@ beforeEach(async () => {
   dws = createFakeDws()
   process.env.DWS_CONFIG_DIR = dws.dir
   process.env.TYPESAFE_API_KEY = 'ts-integration-key'
+  // 不读取运行测试的用户真实的 ~/.dsh 凭据文件
+  process.env.DSH_HOME = tmp
 })
 
 afterEach(async () => {
@@ -105,7 +107,8 @@ describe('bundle patch.yml in a real dsh loader', () => {
   it('does not start a service whose config is invalid', async () => {
     await expectRowFails([enable('dingtalk', { identity: 'bot' })], 'dingtalk', /expected|failed to load|did not activate/)
     delete process.env.TYPESAFE_API_KEY
-    await expectRowFails([enable('jev', {})], 'jev', /TYPESAFE_API_KEY|failed to load|did not activate/)
+    // keychainService 为空数组：不查开发机上真实的 macOS 钥匙串，否则可能读到共享的 ai.typesafe.api-key
+    await expectRowFails([enable('jev', { keychainService: [] })], 'jev', /TYPESAFE_API_KEY|failed to load|did not activate/)
   })
 
   it('notify sends through the DingTalk user service for a plugin that injects only notify', async () => {
